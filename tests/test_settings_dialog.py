@@ -34,3 +34,26 @@ def test_invalid_hotkey_blocks_accept(qtbot):
     d.hotkey_edit.setText("space")
     d.accept()
     assert d.result() != QDialog.DialogCode.Accepted and "değiştirici" in d.error_label.text()
+
+
+def test_batch_controls_round_trip(qtbot):
+    from dikte.config import Settings, SttSettings
+
+    s = Settings(stt=SttSettings(batch_enabled=False, batch_threshold_s=45.0))
+    d = SettingsDialog(s, (), None)
+    qtbot.addWidget(d)
+    assert d.batch_check.isChecked() is False
+    assert d.batch_threshold_spin.value() == 45
+
+    d.batch_check.setChecked(True)
+    d.batch_threshold_spin.setValue(90)
+    out = d.result_settings()
+    assert out.stt.batch_enabled is True and out.stt.batch_threshold_s == 90.0
+
+
+def test_autostart_label_is_platform_neutral(qtbot):
+    from dikte.config import Settings
+
+    d = SettingsDialog(Settings(), (), None)
+    qtbot.addWidget(d)
+    assert "Windows" not in d.autostart_check.text()

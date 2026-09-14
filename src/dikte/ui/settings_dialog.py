@@ -59,7 +59,15 @@ class SettingsDialog(QDialog):
         self.provider_combo.setCurrentText(settings.llm.provider)
         self.llm_model_edit = QLineEdit(settings.llm.model)
         self.ollama_host_edit = QLineEdit(settings.llm.ollama_host)
-        self.autostart_check = QCheckBox("Windows ile başlat")
+        self.batch_check = QCheckBox("Uzun kayıtlarda toplu çözümleme (daha hızlı, +VRAM)")
+        self.batch_check.setChecked(settings.stt.batch_enabled)
+        self.batch_threshold_spin = QSpinBox()
+        self.batch_threshold_spin.setRange(5, 600)
+        self.batch_threshold_spin.setSuffix(" sn")
+        self.batch_threshold_spin.setValue(int(settings.stt.batch_threshold_s))
+        self.batch_threshold_spin.setEnabled(settings.stt.batch_enabled)
+        self.batch_check.toggled.connect(self.batch_threshold_spin.setEnabled)
+        self.autostart_check = QCheckBox("Oturum açılışında başlat")
         self.autostart_check.setChecked(settings.autostart)
         self.close_after_copy_check = QCheckBox("Kopyaladıktan sonra pencereyi gizle")
         self.close_after_copy_check.setChecked(settings.close_after_copy)
@@ -76,6 +84,8 @@ class SettingsDialog(QDialog):
         form.addRow("LLM sağlayıcı", self.provider_combo)
         form.addRow("LLM modeli", self.llm_model_edit)
         form.addRow("Ollama host", self.ollama_host_edit)
+        form.addRow("Toplu çözümleme eşiği", self.batch_threshold_spin)
+        form.addRow(self.batch_check)
         form.addRow("Geçmiş kayıt sayısı", self.history_spin)
         form.addRow(self.autostart_check)
         form.addRow(self.close_after_copy_check)
@@ -111,6 +121,8 @@ class SettingsDialog(QDialog):
                     update={
                         "model": self.stt_model_edit.text().strip(),
                         "compute_type": self.compute_combo.currentText(),
+                        "batch_enabled": self.batch_check.isChecked(),
+                        "batch_threshold_s": float(self.batch_threshold_spin.value()),
                     }
                 ),
                 "llm": s.llm.model_copy(

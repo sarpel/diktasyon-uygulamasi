@@ -12,6 +12,7 @@ from dikte.config import SttSettings
 from dikte.stt.result import Segment, TranscriptResult
 
 log = logging.getLogger(__name__)
+SAMPLE_RATE = 16000  # Whisper her zaman 16 kHz bekler
 
 
 class SttError(Exception):
@@ -36,11 +37,40 @@ def _default_model_factory(*args, **kwargs):
     return WhisperModel(*args, **kwargs)
 
 
+def _default_pipeline_factory(model):
+    from faster_whisper import BatchedInferencePipeline
+
+    return BatchedInferencePipeline(model=model)
+
+
+def _default_cuda_probe() -> int:
+    """Kullanılabilir CUDA aygıtı sayısı; sorgulanamazsa 0."""
+    from dikte.cuda_dlls import register_nvidia_dll_dirs
+
+    register_nvidia_dll_dirs()
+    try:
+        import ctranslate2
+
+        return int(ctranslate2.get_cuda_device_count())
+    except (ImportError, RuntimeError, OSError) as exc:  # sürücü/kütüphane eksik
+        log.error("CUDA aygıtları sorgulanamadı: %s", exc)
+        return 0
+
+
 class FasterWhisperEngine:
-    def __init__(self, settings: SttSettings, model_factory: Callable | None = None):
+    def __init__(
+        self,
+        settings: SttSettings,
+        model_factory: Callable | None = None,
+        pipeline_factory: Callable | None = None,
+        cuda_probe: Callable[[], int] | None = None,
+    ):
         self._settings = settings
         self._factory = model_factory or _default_model_factory
+        self._pipeline_factory = pipeline_factory or _default_pipeline_factory
+        self._cuda_probe = cuda_probe or _default_cuda_probe
         self._model = None
+        self._pipeline = None
         self._lock = threading.Lock()
 
     @property
@@ -51,6 +81,12 @@ class FasterWhisperEngine:
         with self._lock:
             if self._model is not None:
                 return
+            if self._cuda_probe() < 1:
+                raise SttError(
+                    "CUDA destekli GPU bulunamadı. Dikte yalnızca GPU üzerinde çalışır; "
+                    "NVIDIA sürücüsünü (CUDA 12 uyumlu, ≥ 525) ve cuBLAS/cuDNN paketlerini "
+                    'kontrol edin (uv pip install -e ".[cuda]").'
+                )
             try:
                 self._model = self._factory(
                     self._settings.model,
@@ -67,22 +103,40 @@ class FasterWhisperEngine:
             self._settings.compute_type,
         )
 
+    def _use_batching(self, audio: np.ndarray) -> bool:
+        if not self._settings.batch_enabled:
+            return False
+        return audio.size / SAMPLE_RATE >= self._settings.batch_threshold_s
+
+    def _get_pipeline(self):
+        if self._pipeline is None:
+            self._pipeline = self._pipeline_factory(self._model)
+            log.info("Toplu çözümleme açıldı (batch_size=%s)", self._settings.batch_size)
+        return self._pipeline
+
     def transcribe(self, audio: np.ndarray, language: str | None = None) -> TranscriptResult:
         if audio.size == 0:
             raise SttError("Ses kaydı boş")
         if not self.is_loaded:
             self.load()
         lang = language or self._settings.language
+        kwargs = {
+            "language": lang,
+            "task": "transcribe",
+            "beam_size": self._settings.beam_size,
+            "vad_filter": self._settings.vad_filter,
+            "initial_prompt": self._settings.initial_prompt or None,
+        }
         try:
             with self._lock:
-                seg_iter, info = self._model.transcribe(
-                    audio.astype(np.float32, copy=False),
-                    language=lang,
-                    task="transcribe",
-                    beam_size=self._settings.beam_size,
-                    vad_filter=self._settings.vad_filter,
-                    initial_prompt=self._settings.initial_prompt or None,
-                    condition_on_previous_text=True,
+                if self._use_batching(audio):
+                    target = self._get_pipeline()
+                    kwargs["batch_size"] = self._settings.batch_size
+                else:
+                    target = self._model
+                    kwargs["condition_on_previous_text"] = True
+                seg_iter, info = target.transcribe(
+                    audio.astype(np.float32, copy=False), **kwargs
                 )
                 segments = tuple(Segment(s.start, s.end, s.text.strip()) for s in seg_iter)
         except Exception as exc:

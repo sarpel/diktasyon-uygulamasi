@@ -6,7 +6,9 @@ Tray'de sürekli açık durur, tek bir global kısayolla kaydı başlatır/durdu
 sesi GPU'da metne çevirir, yerel bir LLM ile yanlış tanınan kelimeleri düzeltir
 ve metni isteğe bağlı olarak İngilizce'ye ya da bir AI agent prompt'una dönüştürür.
 
-- **STT:** faster-whisper `large-v3-turbo`, CUDA (hedef: RTX 3060 Ti 8 GB)
+- **STT:** faster-whisper `large-v3-turbo`, **yalnızca CUDA** (hedef: RTX 3060 Ti 8 GB).
+  CPU'ya geri dönüş yoktur; GPU bulunamazsa uygulama hata verir.
+  60 saniyeyi aşan kayıtlarda `BatchedInferencePipeline` devreye girer (ayarlardan kapatılabilir).
 - **Düzeltme / çeviri / prompt:** Ollama üzerinde yerel LLM (varsayılan `qwen3.5:4b`,
   alternatif `gemma4:e4b-it-qat`), isteğe bağlı Anthropic API
 - **UI:** PySide6 tray uygulaması + kayıt overlay'i + üç panelli sonuç penceresi

@@ -15,12 +15,16 @@ log = logging.getLogger(__name__)
 class SttSettings(BaseModel):
     model_config = ConfigDict(frozen=True)
     model: str = "large-v3-turbo"
-    device: Literal["cuda", "cpu"] = "cuda"
+    device: Literal["cuda"] = "cuda"  # CPU kasıtlı olarak desteklenmez; GPU yoksa hata verilir
     compute_type: str = "float16"
     language: str = "tr"
     beam_size: int = Field(default=5, ge=1, le=10)
     vad_filter: bool = True
     initial_prompt: str = "Türkçe konuşma. Noktalama işaretleri kullanılır."
+    # Uzun kayıtlarda BatchedInferencePipeline; kısa diktede kazanç yok, VRAM'i artırır.
+    batch_enabled: bool = True
+    batch_threshold_s: float = Field(default=60.0, ge=0)
+    batch_size: int = Field(default=8, ge=1, le=32)
 
 
 class LlmSettings(BaseModel):

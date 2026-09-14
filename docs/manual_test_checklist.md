@@ -30,3 +30,12 @@
 - [ ] Tray ipucu global kısayol yerine `dikte --toggle` yazar, hata bildirimi çıkmaz.
 - [ ] Veriler `~/.config/Dikte/`, modeller `~/.cache/Dikte/models/` altına yazılır.
 - [ ] Mikrofon PulseAudio/PipeWire üzerinden seçilebilir (`libportaudio2` kurulu).
+
+## GPU zorunluluğu ve toplu çözümleme
+
+- [ ] NVIDIA sürücüsü devre dışıyken (veya `CUDA_VISIBLE_DEVICES=-1`) uygulama açılır,
+      tray'de "CUDA destekli GPU bulunamadı" hatası çıkar ve CPU'ya düşmez.
+- [ ] 10 saniyelik kayıt → tek geçişli çözümleme (log'da "Toplu çözümleme açıldı" yok).
+- [ ] 90 saniyelik kayıt → log'da "Toplu çözümleme açıldı (batch_size=8)" görünür,
+      `nvidia-smi` anlık VRAM artışı < 2 GB ve toplam < 7,5 GB.
+- [ ] Ayarlar → "Uzun kayıtlarda toplu çözümleme" kapatıldığında uzun kayıt da tek geçişte çözülür.
