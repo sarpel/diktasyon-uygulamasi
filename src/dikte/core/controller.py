@@ -74,9 +74,25 @@ class DictationController(QObject):
         # Isınma iptal kuşağının dışındadır: kullanıcı iptali modeli yüklemeyi bozmamalı.
         self._track(
             run_in_pool(
-                self._stt.load,
+                self._stt.warm_up,
                 lambda _: self.ready_changed.emit(True),
                 lambda e: self.error.emit(f"STT modeli yüklenemedi: {e}"),
+                self._pool,
+            )
+        )
+        self.prewarm_llm()
+
+    @Slot()
+    def prewarm_llm(self) -> None:
+        """LLM sağlayıcıyı (destekliyorsa) arka planda ısındırır; sonucu beklenmez."""
+        warm = getattr(self._llm, "warm_up", None)
+        if not (self._settings.llm.enabled and self._settings.llm.prewarm and warm is not None):
+            return
+        self._track(
+            run_in_pool(
+                warm,
+                lambda _: None,
+                lambda e: log.warning("LLM ısındırma başarısız: %s", e),
                 self._pool,
             )
         )

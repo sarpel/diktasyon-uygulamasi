@@ -13,6 +13,7 @@ from dikte.stt.result import Segment, TranscriptResult
 
 log = logging.getLogger(__name__)
 SAMPLE_RATE = 16000  # Whisper her zaman 16 kHz bekler
+WARM_UP_SECONDS = 1.0
 # GPU desteklemiyorsa bu sırayla ilk desteklenen tipe düşülür.
 # float16 CC >= 7.0, int8 CC >= 7.0 veya 6.1 ister; eski kartlarda float32 kalır.
 COMPUTE_TYPE_PREFERENCE = ("float16", "int8_float16", "bfloat16", "int8_float32", "float32")
@@ -27,6 +28,8 @@ class SttEngine(Protocol):
     def is_loaded(self) -> bool: ...
 
     def load(self) -> None: ...
+
+    def warm_up(self) -> None: ...
 
     def transcribe(self, audio: np.ndarray, language: str | None = None) -> TranscriptResult: ...
 
@@ -150,6 +153,25 @@ class FasterWhisperEngine:
             self._settings.device,
             self._compute_type,
         )
+
+    def warm_up(self) -> None:
+        """Modeli yükler ve ilk gerçek isteğin yavaş olmaması için kısa bir çözümleme yapar."""
+        if not self.is_loaded:
+            self.load()
+        if not self._settings.warm_up:
+            return
+        rng = np.random.default_rng(0)
+        audio = (rng.standard_normal(int(SAMPLE_RATE * WARM_UP_SECONDS)) * 0.01).astype(np.float32)
+        try:
+            with self._lock:
+                seg_iter, _info = self._model.transcribe(
+                    audio, language=self._settings.language, beam_size=1, vad_filter=False
+                )
+                list(seg_iter)
+        except Exception as exc:  # noqa: BLE001 - ısınma hatası uygulamayı durdurmamalı
+            log.warning("STT ısınma çözümlemesi başarısız: %s", exc)
+        else:
+            log.info("STT ısınması tamamlandı")
 
     def _use_batching(self, audio: np.ndarray) -> bool:
         if not self._settings.batch_enabled:

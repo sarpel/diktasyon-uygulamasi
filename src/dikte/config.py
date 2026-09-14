@@ -25,12 +25,16 @@ class SttSettings(BaseModel):
     batch_enabled: bool = True
     batch_threshold_s: float = Field(default=60.0, ge=0)
     batch_size: int = Field(default=8, ge=1, le=32)
+    # Model yüklendikten sonra kısa bir sahte çözümleme; ilk gerçek diktenin gecikmesini alır.
+    warm_up: bool = True
 
 
 class LlmSettings(BaseModel):
     model_config = ConfigDict(frozen=True)
     # VRAM'i STT ile paylaşmak istemeyen makinelerde düzeltme tamamen kapatılabilir.
     enabled: bool = True
+    # Whisper yüklenirken LLM'i de belleğe alır (yalnızca Ollama'da anlamlı).
+    prewarm: bool = True
     provider: Literal["ollama", "anthropic"] = "ollama"
     model: str = "qwen3.5:4b"
     ollama_host: str = "http://127.0.0.1:11434"

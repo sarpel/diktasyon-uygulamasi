@@ -32,7 +32,7 @@ class FakeRecorder(QObject):
 
 class FakeStt:
     def __init__(self, text="merhaba dünya"):
-        self.text, self.loaded = text, False
+        self.text, self.loaded, self.warmed = text, False, False
 
     @property
     def is_loaded(self):
@@ -40,6 +40,10 @@ class FakeStt:
 
     def load(self):
         self.loaded = True
+
+    def warm_up(self):
+        self.load()
+        self.warmed = True
 
     def transcribe(self, audio, language=None):
         return TranscriptResult(self.text, "tr", 1.0, ())
@@ -50,6 +54,10 @@ class FakeLlm:
 
     def __init__(self):
         self.calls = []
+        self.warmed = False
+
+    def warm_up(self):
+        self.warmed = True
 
     def complete(self, system, user, *, json_schema=None, temperature=0.2):
         self.calls.append(user)
@@ -281,3 +289,37 @@ def test_cancel_in_result_state_is_noop(ctl, qtbot):
     qtbot.waitUntil(lambda: c.state is DictationState.RESULT, timeout=5000)
     c.cancel()
     assert c.state is DictationState.RESULT
+
+
+def test_warm_up_calls_stt_and_llm_warm_up(qtbot):
+    stt, llm = FakeStt(), FakeLlm()
+    c = DictationController(
+        Settings(), recorder=FakeRecorder(), stt=stt, llm=llm, pool=QThreadPool()
+    )
+    ready = []
+    c.ready_changed.connect(ready.append)
+    c.warm_up()
+    qtbot.waitUntil(lambda: ready == [True], timeout=3000)
+    qtbot.waitUntil(lambda: llm.warmed, timeout=3000)
+    assert stt.warmed
+
+
+def test_warm_up_skips_llm_when_disabled(qtbot):
+    settings, _ = _disabled_llm_settings()
+    llm = FakeLlm()
+    c = DictationController(
+        settings, recorder=FakeRecorder(), stt=FakeStt(), llm=llm, pool=QThreadPool()
+    )
+    c.warm_up()
+    qtbot.wait(150)
+    assert not llm.warmed
+
+
+def test_prewarm_llm_runs_after_provider_change(qtbot):
+    c = DictationController(
+        Settings(), recorder=FakeRecorder(), stt=FakeStt(), llm=FakeLlm(), pool=QThreadPool()
+    )
+    new = FakeLlm()
+    c.set_llm(new)
+    c.prewarm_llm()
+    qtbot.waitUntil(lambda: new.warmed, timeout=3000)

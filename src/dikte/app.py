@@ -172,6 +172,7 @@ def _open_settings(ctx: AppContext) -> None:
     ctx.controller.update_settings(new)
     if llm_changed:  # sağlayıcı yeniden kurulur, yeniden başlatma gerekmez
         ctx.controller.set_llm(_make_llm(new))
+        ctx.controller.prewarm_llm()
     ctx.window.set_llm_enabled(new.llm.enabled)
     ctx.window.close_after_copy = new.close_after_copy
     _apply_hotkey(ctx)

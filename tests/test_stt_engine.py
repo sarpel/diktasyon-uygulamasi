@@ -12,9 +12,11 @@ class FakeModel:
     def __init__(self, *args, **kwargs):
         self.init_args, self.init_kwargs = args, kwargs
         self.calls = []
+        self.audios = []
 
     def transcribe(self, audio, **kwargs):
         self.calls.append(kwargs)
+        self.audios.append(audio)
         segs = [
             SimpleNamespace(start=0.0, end=1.2, text=" merhaba"),
             SimpleNamespace(start=1.2, end=2.0, text=" dünya"),
@@ -216,3 +218,31 @@ def test_probe_failure_does_not_block_load():
     )
     eng.load()
     assert eng.is_loaded
+
+
+def test_warm_up_runs_one_dummy_transcribe():
+    eng, created = make_engine()
+    eng.warm_up()
+    model = created["model"]
+    assert len(model.calls) == 1
+    audio = model.audios[0]
+    assert audio.dtype == np.float32 and audio.shape[0] == 16_000
+    assert model.calls[0]["beam_size"] == 1 and model.calls[0]["vad_filter"] is False
+
+
+def test_warm_up_swallows_transcribe_errors(caplog):
+    class FailingModel(FakeModel):
+        def transcribe(self, audio, **kwargs):
+            raise RuntimeError("cuDNN patladı")
+
+    eng = FasterWhisperEngine(
+        SttSettings(), model_factory=lambda *a, **kw: FailingModel(*a, **kw), cuda_probe=lambda: 1
+    )
+    eng.warm_up()  # yükseltmez
+    assert "ısınma" in caplog.text.lower()
+
+
+def test_warm_up_skipped_when_disabled():
+    eng, created = make_engine(SttSettings(warm_up=False))
+    eng.warm_up()
+    assert eng.is_loaded and created["model"].calls == []
