@@ -102,6 +102,27 @@ Kayıt süresi varsayılan olarak **sınırsızdır** (Ayarlar → "Kayıt süre
 kullanımı 16 kHz float32 ham ses için yaklaşık **230 MB/saat**'tir. Bir sınır girilirse süre
 dolunca kayıt sessizce kesilmez; otomatik durur ve o ana kadarki ses çözümlenir.
 
+### Uzak LLM sağlayıcıları
+
+Metin düzeltme varsayılan olarak yereldeki Ollama ile yapılır. İsterseniz uzak bir sağlayıcı seçebilirsiniz:
+
+| Sağlayıcı | Ortam değişkeni (varsayılan ad) | Kurulum | Base URL |
+|---|---|---|---|
+| Ollama | — | çekirdek | `http://127.0.0.1:11434` |
+| OpenAI | `OPENAI_API_KEY` | `uv pip install -e ".[openai]"` | `https://api.openai.com/v1` |
+| Anthropic | `ANTHROPIC_API_KEY` | `uv pip install -e ".[anthropic]"` | — |
+| Gemini | `GEMINI_API_KEY` | `uv pip install -e ".[gemini]"` | — |
+| Custom (OpenAI-uyumlu) | kendi belirlediğiniz ad (boş bırakılabilir) | `.[openai]` | ör. `http://localhost:1234/v1` |
+| Custom (Anthropic-uyumlu) | kendi belirlediğiniz ad (boş bırakılabilir) | `.[anthropic]` | proxy adresiniz |
+
+**Gizlilik:** Uzak sağlayıcı seçtiğinizde dikte edilen metin ilgili servise gönderilir.
+API anahtarları **yalnızca ortam değişkeninden** okunur; `config.json`'a yazılmaz, loglanmaz ve
+arayüzde gösterilmez — ayarlarda yalnızca "✓ tanımlı / ✗ yok" bilgisi görünür.
+
+Özel uç noktanın hangi protokolü konuştuğunu Ayarlar → Metin Düzeltme → "Format" ile seçersiniz
+(OpenAI-uyumlu ya da Anthropic-uyumlu). OpenAI-uyumlu sunucu `json_schema` desteklemiyorsa
+otomatik olarak `json_object` moduna düşülür.
+
 ### Ayarlar
 
 Ayarlar penceresi (tepsi menüsü veya araç çubuğu → "Ayarlar…") altı sekmeden oluşur:

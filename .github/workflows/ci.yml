@@ -51,7 +51,7 @@ jobs:
             libportaudio2
 
       - name: Bağımlılıklar
-        run: pip install -e ".[dev]"
+        run: pip install -e ".[dev,anthropic,openai,gemini]"
 
       - name: Testler
         run: pytest -q --cov=src --cov-report=term-missing

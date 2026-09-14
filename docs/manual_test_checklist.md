@@ -70,3 +70,16 @@
 - [ ] Ayarlardaki "Geçmiş kayıt sayısı" 200 iken 201. kayıt eklenince en eski düşer.
 - [ ] Durum çubuğu: sol tarafta "12 sn · 34 kelime", sağda "large-v3-turbo · float16 · LLM: …".
 - [ ] Değişiklik listesinde `x → x` biçiminde özdeş satır görünmez.
+
+## LLM sağlayıcıları
+
+- [ ] Ollama (varsayılan): yerel model çalışırken düzeltme yapılıyor, keep_alive uygulanıyor.
+- [ ] OpenAI: `OPENAI_API_KEY` tanımlı, anahtar durumu "✓ tanımlı"; düzeltme JSON şemasıyla dönüyor.
+- [ ] Anthropic: `ANTHROPIC_API_KEY` ile düzeltme çalışıyor.
+- [ ] Gemini: `GEMINI_API_KEY` ile düzeltme çalışıyor.
+- [ ] Custom / openai formatı: LM Studio (`http://localhost:1234/v1`), anahtar alanı boş; şema
+      desteklenmiyorsa `json_object`'e düşüp yine de düzeltme üretiyor.
+- [ ] Custom / anthropic formatı: Anthropic-uyumlu bir proxy base URL'i ile çalışıyor.
+- [ ] Anahtar tanımlı değilken sağlayıcı seçilirse uygulama çökmüyor; tepside açıklayıcı hata çıkıyor
+      ve ham metin gösteriliyor.
+- [ ] Ayar dosyasında (`config.json`) hiçbir anahtar **değeri** yok, yalnızca ortam değişkeni adları var.

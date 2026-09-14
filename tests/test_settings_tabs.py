@@ -127,3 +127,44 @@ def test_reject_stops_microphone_test(dlg):
     dlg.audio.stop_test = lambda: stopped.append(1)
     dlg.reject()
     assert stopped == [1]
+
+
+def test_provider_combo_lists_five_options(dlg):
+    options = [dlg.provider_combo.itemText(i) for i in range(dlg.provider_combo.count())]
+    assert options == ["ollama", "openai", "anthropic", "gemini", "custom"]
+
+
+def test_custom_group_fields_round_trip(dlg):
+    dlg.provider_combo.setCurrentText("custom")
+    assert dlg.custom_group.isVisibleTo(dlg.llm)
+    dlg.custom_format_combo.setCurrentText("anthropic")
+    dlg.custom_base_url_edit.setText("http://localhost:1234")
+    dlg.custom_model_edit.setText("yerel-model")
+    dlg.custom_key_env_edit.setText("LOCAL_KEY")
+    s = dlg.result_settings()
+    assert s.llm.provider == "custom" and s.llm.custom_format == "anthropic"
+    assert s.llm.custom_base_url == "http://localhost:1234"
+    assert s.llm.custom_model == "yerel-model" and s.llm.custom_api_key_env == "LOCAL_KEY"
+
+
+def test_custom_without_url_blocks_accept(dlg):
+    dlg.provider_combo.setCurrentText("custom")
+    dlg.accept()
+    assert "base URL" in dlg.error_label.text()
+
+
+def test_key_status_shows_presence_not_value(dlg, monkeypatch):
+    monkeypatch.setenv("TEST_KEY_ENV", "çok-gizli")
+    dlg.openai_key_env_edit.setText("TEST_KEY_ENV")
+    assert dlg.llm.openai_key_status.text() == "✓ tanımlı"
+    monkeypatch.delenv("TEST_KEY_ENV")
+    dlg.openai_key_env_edit.setText("TEST_KEY_ENV ")
+    assert dlg.llm.openai_key_status.text() == "✗ yok"
+
+
+def test_remote_provider_models_round_trip(dlg):
+    dlg.provider_combo.setCurrentText("gemini")
+    dlg.gemini_model_edit.setText("gemini-3.5-pro")
+    dlg.gemini_key_env_edit.setText("MY_GEMINI")
+    s = dlg.result_settings()
+    assert s.llm.gemini_model == "gemini-3.5-pro" and s.llm.gemini_api_key_env == "MY_GEMINI"
