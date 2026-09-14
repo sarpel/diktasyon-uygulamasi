@@ -39,3 +39,5 @@
 - [ ] 90 saniyelik kayıt → log'da "Toplu çözümleme açıldı (batch_size=8)" görünür,
       `nvidia-smi` anlık VRAM artışı < 2 GB ve toplam < 7,5 GB.
 - [ ] Ayarlar → "Uzun kayıtlarda toplu çözümleme" kapatıldığında uzun kayıt da tek geçişte çözülür.
+- [ ] CC < 7.0 GPU'da (ör. GTX 970) uygulama açılır, `float32`'ye düşer ve tray'de
+      "GPU ... desteklemiyor" bildirimi çıkar; transkripsiyon çalışır.

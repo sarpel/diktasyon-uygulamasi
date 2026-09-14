@@ -9,6 +9,8 @@ ve metni isteğe bağlı olarak İngilizce'ye ya da bir AI agent prompt'una dön
 - **STT:** faster-whisper `large-v3-turbo`, **yalnızca CUDA** (hedef: RTX 3060 Ti 8 GB).
   CPU'ya geri dönüş yoktur; GPU bulunamazsa uygulama hata verir.
   60 saniyeyi aşan kayıtlarda `BatchedInferencePipeline` devreye girer (ayarlardan kapatılabilir).
+  `float16` için Compute Capability ≥ 7.0 (RTX 20xx ve üzeri) gerekir; daha eski kartlarda
+  (ör. GTX 970 = CC 5.2) motor otomatik olarak `float32`'ye düşer ve tray'de uyarı gösterir.
 - **Düzeltme / çeviri / prompt:** Ollama üzerinde yerel LLM (varsayılan `qwen3.5:4b`,
   alternatif `gemma4:e4b-it-qat`), isteğe bağlı Anthropic API
 - **UI:** PySide6 tray uygulaması + kayıt overlay'i + üç panelli sonuç penceresi

@@ -180,3 +180,19 @@ def test_apply_hotkey_notifies_on_windows_failure(ctx, monkeypatch):
     ctx.tray.notify = lambda *a, **k: notifications.append(a)
     app_mod._apply_hotkey(ctx)
     assert len(notifications) == 1
+
+
+def test_downgrade_notice_is_shown_once_ready(ctx):
+    notifications = []
+    ctx.tray.notify = lambda *a, **k: notifications.append(a[1])
+    ctx.stt._downgraded = True
+    ctx.stt._compute_type = "float32"
+    ctx.controller.ready_changed.emit(True)
+    assert len(notifications) == 1 and "float32" in notifications[0]
+
+
+def test_no_notice_when_compute_type_is_honoured(ctx):
+    notifications = []
+    ctx.tray.notify = lambda *a, **k: notifications.append(a)
+    ctx.controller.ready_changed.emit(True)
+    assert notifications == []

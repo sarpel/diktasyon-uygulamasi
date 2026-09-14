@@ -52,7 +52,9 @@ class SettingsDialog(QDialog):
             self.device_combo.setCurrentIndex(max(pos, 0))
         self.stt_model_edit = QLineEdit(settings.stt.model)
         self.compute_combo = QComboBox()
-        self.compute_combo.addItems(["float16", "int8_float16", "int8"])
+        self.compute_combo.addItems(
+            ["float16", "int8_float16", "bfloat16", "int8_float32", "float32"]
+        )
         self.compute_combo.setCurrentText(settings.stt.compute_type)
         self.provider_combo = QComboBox()
         self.provider_combo.addItems(["ollama", "anthropic"])

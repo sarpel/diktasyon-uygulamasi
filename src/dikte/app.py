@@ -45,6 +45,7 @@ class AppContext:
     window: ResultWindow
     hotkey: GlobalHotkey
     history: History
+    stt: FasterWhisperEngine
 
 
 class _NullLlm:
@@ -77,7 +78,7 @@ def build_app(settings: Settings) -> AppContext:
     overlay = RecordingOverlay()
     window = ResultWindow()
     history = History(paths.history_path(), settings.history_limit)
-    ctx = AppContext(settings, controller, tray, overlay, window, hotkey, history)
+    ctx = AppContext(settings, controller, tray, overlay, window, hotkey, history, stt)
     _wire(ctx)
     return ctx
 
@@ -89,6 +90,7 @@ def _wire(ctx: AppContext) -> None:
     c.buckets_changed.connect(ctx.overlay.on_buckets)
     c.state_changed.connect(ctx.tray.set_state)
     c.ready_changed.connect(ctx.tray.set_ready)
+    c.ready_changed.connect(lambda ready: ready and _warn_if_downgraded(ctx))
     c.error.connect(lambda m: ctx.tray.notify(APP_NAME, m, critical=True))
     c.state_changed.connect(lambda s: s is DictationState.RESULT and ctx.history.append(c.session))
     ctx.hotkey.activated.connect(c.toggle)
@@ -98,6 +100,16 @@ def _wire(ctx: AppContext) -> None:
     )
     ctx.tray.settings_requested.connect(lambda: _open_settings(ctx))
     ctx.tray.quit_requested.connect(lambda: _quit(ctx))
+
+
+def _warn_if_downgraded(ctx: AppContext) -> None:
+    if not ctx.stt.is_downgraded:
+        return
+    ctx.tray.notify(
+        APP_NAME,
+        f"GPU '{ctx.settings.stt.compute_type}' hassasiyetini desteklemiyor; "
+        f"'{ctx.stt.compute_type}' kullanılıyor. Daha yavaş çalışabilir.",
+    )
 
 
 def _apply_hotkey(ctx: AppContext) -> None:

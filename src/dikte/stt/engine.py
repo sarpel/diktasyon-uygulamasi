@@ -13,6 +13,9 @@ from dikte.stt.result import Segment, TranscriptResult
 
 log = logging.getLogger(__name__)
 SAMPLE_RATE = 16000  # Whisper her zaman 16 kHz bekler
+# GPU desteklemiyorsa bu sırayla ilk desteklenen tipe düşülür.
+# float16 CC >= 7.0, int8 CC >= 7.0 veya 6.1 ister; eski kartlarda float32 kalır.
+COMPUTE_TYPE_PREFERENCE = ("float16", "int8_float16", "bfloat16", "int8_float32", "float32")
 
 
 class SttError(Exception):
@@ -43,6 +46,12 @@ def _default_pipeline_factory(model):
     return BatchedInferencePipeline(model=model)
 
 
+def _default_supported_types_probe() -> set[str]:
+    import ctranslate2
+
+    return set(ctranslate2.get_supported_compute_types("cuda"))
+
+
 def _default_cuda_probe() -> int:
     """Kullanılabilir CUDA aygıtı sayısı; sorgulanamazsa 0."""
     from dikte.cuda_dlls import register_nvidia_dll_dirs
@@ -64,18 +73,56 @@ class FasterWhisperEngine:
         model_factory: Callable | None = None,
         pipeline_factory: Callable | None = None,
         cuda_probe: Callable[[], int] | None = None,
+        supported_types_probe: Callable[[], set[str]] | None = None,
     ):
         self._settings = settings
         self._factory = model_factory or _default_model_factory
         self._pipeline_factory = pipeline_factory or _default_pipeline_factory
         self._cuda_probe = cuda_probe or _default_cuda_probe
+        self._types_probe = supported_types_probe or _default_supported_types_probe
         self._model = None
         self._pipeline = None
+        self._compute_type = settings.compute_type
+        self._downgraded = False
         self._lock = threading.Lock()
 
     @property
     def is_loaded(self) -> bool:
         return self._model is not None
+
+    @property
+    def is_downgraded(self) -> bool:
+        """Ayardaki compute_type GPU'da desteklenmediği için düşürüldü mü?"""
+        return self._downgraded
+
+    @property
+    def compute_type(self) -> str:
+        """Fiilen kullanılan compute_type (GPU desteğine göre düşürülmüş olabilir)."""
+        return self._compute_type
+
+    def _resolve_compute_type(self) -> str:
+        """Ayardaki tip GPU'da yoksa desteklenen en iyi tipe düşer."""
+        wanted = self._settings.compute_type
+        try:
+            supported = self._types_probe()
+        except Exception as exc:  # noqa: BLE001 - sorgu başarısızsa CT2 kendi hatasını versin
+            log.warning("desteklenen compute_type listesi alınamadı: %s", exc)
+            return wanted
+        if wanted in supported:
+            return wanted
+        for candidate in COMPUTE_TYPE_PREFERENCE:
+            if candidate in supported:
+                log.warning(
+                    "GPU '%s' compute_type'ını desteklemiyor; '%s' kullanılıyor",
+                    wanted,
+                    candidate,
+                )
+                self._downgraded = True
+                return candidate
+        raise SttError(
+            f"GPU hiçbir compute_type'ı desteklemiyor (istenen: {wanted}). "
+            "NVIDIA sürücüsünü ve CUDA kurulumunu kontrol edin."
+        )
 
     def load(self) -> None:
         with self._lock:
@@ -87,11 +134,12 @@ class FasterWhisperEngine:
                     "NVIDIA sürücüsünü (CUDA 12 uyumlu, ≥ 525) ve cuBLAS/cuDNN paketlerini "
                     'kontrol edin (uv pip install -e ".[cuda]").'
                 )
+            compute_type = self._compute_type = self._resolve_compute_type()
             try:
                 self._model = self._factory(
                     self._settings.model,
                     device=self._settings.device,
-                    compute_type=self._settings.compute_type,
+                    compute_type=compute_type,
                     download_root=str(paths.models_dir()),
                 )
             except Exception as exc:
@@ -100,7 +148,7 @@ class FasterWhisperEngine:
             "STT modeli yüklendi: %s (%s/%s)",
             self._settings.model,
             self._settings.device,
-            self._settings.compute_type,
+            self._compute_type,
         )
 
     def _use_batching(self, audio: np.ndarray) -> bool:

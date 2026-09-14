@@ -164,3 +164,57 @@ def test_real_batched_pipeline_handles_long_audio():
     eng = FasterWhisperEngine(SttSettings(batch_threshold_s=5.0, batch_size=4))
     res = eng.transcribe(np.zeros(16000 * 30, dtype=np.float32))
     assert isinstance(res.text, str)
+
+
+def make_engine_with_types(supported, settings=None):
+    created = {}
+
+    def factory(*a, **kw):
+        created["kwargs"] = kw
+        return FakeModel(*a, **kw)
+
+    eng = FasterWhisperEngine(
+        settings or SttSettings(),
+        model_factory=factory,
+        cuda_probe=lambda: 1,
+        supported_types_probe=lambda: set(supported),
+    )
+    return eng, created
+
+
+def test_configured_compute_type_is_used_when_supported():
+    eng, created = make_engine_with_types({"float16", "float32"})
+    eng.load()
+    assert created["kwargs"]["compute_type"] == "float16"
+
+
+def test_unsupported_compute_type_falls_back_to_supported_one():
+    eng, created = make_engine_with_types({"float32"})  # Maxwell/Pascal: fp16 yok
+    eng.load()
+    assert created["kwargs"]["compute_type"] == "float32"
+
+
+def test_fallback_prefers_int8_float16_over_float32():
+    eng, created = make_engine_with_types({"int8_float16", "float32"})
+    eng.load()
+    assert created["kwargs"]["compute_type"] == "int8_float16"
+
+
+def test_no_supported_type_raises():
+    eng, _ = make_engine_with_types(set())
+    with pytest.raises(SttError, match="compute_type"):
+        eng.load()
+
+
+def test_probe_failure_does_not_block_load():
+    def boom():
+        raise RuntimeError("sorgulanamadı")
+
+    eng = FasterWhisperEngine(
+        SttSettings(),
+        model_factory=lambda *a, **kw: FakeModel(*a, **kw),
+        cuda_probe=lambda: 1,
+        supported_types_probe=boom,
+    )
+    eng.load()
+    assert eng.is_loaded
