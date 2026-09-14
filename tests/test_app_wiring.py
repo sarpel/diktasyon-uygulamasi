@@ -305,3 +305,45 @@ def test_result_ready_respects_auto_copy_off(ctx, monkeypatch):
     monkeypatch.setattr(app_mod, "paste_active_window", lambda *a, **k: True)
     ctx.controller.result_ready.emit("yeni")
     assert QApplication.clipboard().text() == "eski"
+
+
+def test_history_panel_refreshes_on_result(ctx):
+    ctx.controller._update_session(raw_text="a", corrected_text="A.")
+    ctx.controller.state_changed.emit(DictationState.RESULT)
+    assert ctx.window.history_panel.list_widget.count() == 1
+
+
+def test_history_delete_flows_to_storage(ctx):
+    ctx.controller._update_session(corrected_text="A.")
+    ctx.controller.state_changed.emit(DictationState.RESULT)
+    sid = ctx.history.load()[0].id
+    ctx.window.history_panel.delete_requested.emit(sid)
+    assert ctx.history.load() == ()
+    assert ctx.window.history_panel.list_widget.count() == 0
+
+
+def test_history_clear_flows_to_storage(ctx):
+    ctx.controller._update_session(corrected_text="A.")
+    ctx.controller.state_changed.emit(DictationState.RESULT)
+    ctx.window.history_panel.clear_requested.emit()
+    assert ctx.history.load() == ()
+
+
+def test_history_selection_loads_into_window(ctx):
+    from dikte.core.state import Session
+
+    ctx.window.history_panel.session_selected.emit(Session(corrected_text="Eski metin"))
+    assert ctx.window.corrected_pane.text() == "Eski metin"
+
+
+def test_status_info_set_when_ready(ctx):
+    ctx.stt._compute_type = "float16"
+    ctx.controller.ready_changed.emit(True)
+    assert "float16" in ctx.window.status_info.text()
+
+
+def test_window_toolbar_reaches_controller(ctx):
+    ctx.window.record_action.trigger()
+    assert ctx.controller.state is DictationState.RECORDING
+    ctx.window.cancel_action.trigger()
+    assert ctx.controller.state is DictationState.IDLE

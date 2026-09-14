@@ -104,7 +104,7 @@ def _wire(ctx: AppContext) -> None:
     c.ready_changed.connect(ctx.tray.set_ready)
     c.ready_changed.connect(lambda ready: ready and _warn_if_downgraded(ctx))
     c.error.connect(lambda m: ctx.tray.notify(APP_NAME, m, critical=True))
-    c.state_changed.connect(lambda s: s is DictationState.RESULT and ctx.history.append(c.session))
+    c.state_changed.connect(lambda s: s is DictationState.RESULT and _store_session(ctx))
     ctx.hotkey.activated.connect(c.toggle)
     ctx.tray.toggle_requested.connect(c.toggle)
     ctx.tray.show_requested.connect(
@@ -118,6 +118,37 @@ def _wire(ctx: AppContext) -> None:
     ctx.cancel_hotkey.activated.connect(c.cancel)
     c.state_changed.connect(lambda s: _sync_cancel_hotkey(ctx, s))
     c.result_ready.connect(lambda text: _on_result_ready(ctx, text))
+    ctx.window.history_panel.delete_requested.connect(lambda sid: _delete_session(ctx, sid))
+    ctx.window.history_panel.clear_requested.connect(lambda: _clear_history(ctx))
+    ctx.window.record_requested.connect(c.toggle)
+    ctx.window.cancel_requested.connect(c.cancel)
+    ctx.window.settings_requested.connect(lambda: _open_settings(ctx))
+    c.ready_changed.connect(lambda ready: ready and _refresh_status_info(ctx))
+    _refresh_history(ctx)
+
+
+def _store_session(ctx: AppContext) -> None:
+    ctx.history.append(ctx.controller.session)
+    _refresh_history(ctx)
+
+
+def _refresh_history(ctx: AppContext) -> None:
+    ctx.window.history_panel.set_sessions(ctx.history.load())
+
+
+def _delete_session(ctx: AppContext, session_id: str) -> None:
+    ctx.history.delete(session_id)
+    _refresh_history(ctx)
+
+
+def _clear_history(ctx: AppContext) -> None:
+    ctx.history.clear()
+    _refresh_history(ctx)
+
+
+def _refresh_status_info(ctx: AppContext) -> None:
+    llm = ctx.settings.llm.model if ctx.settings.llm.enabled else "kapalı"
+    ctx.window.set_status_info(ctx.settings.stt.model, ctx.stt.compute_type, llm)
 
 
 def _on_result_ready(ctx: AppContext, text: str) -> None:
@@ -194,6 +225,9 @@ def _open_settings(ctx: AppContext) -> None:
     ctx.window.set_llm_enabled(new.llm.enabled)
     ctx.window.close_after_copy = new.close_after_copy
     ctx.window.raise_on_result = new.raise_window_on_result
+    ctx.history = History(paths.history_path(), new.history_limit)
+    _refresh_history(ctx)
+    _refresh_status_info(ctx)
     _apply_hotkey(ctx)
     if needs_restart:
         QMessageBox.information(

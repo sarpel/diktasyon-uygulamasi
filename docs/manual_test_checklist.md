@@ -59,3 +59,14 @@
 - [ ] Tepsi menüsündeki "Vazgeç": yalnızca kayıt/çözümleme/düzeltme sırasında etkin, boştayken soluk.
 - [ ] Linux'ta global Esc kaydedilemez; overlay düğmesi, pencere odaktayken `Esc` ve tepsi menüsü ile iptal çalışır.
 - [ ] İptalden sonra kısayola basınca yeni kayıt sorunsuz başlar (önceki oturum metni temizlenmiş olur).
+
+## Geçmiş paneli
+
+- [ ] Araç çubuğundaki "Geçmiş" düğmesi sağdaki paneli açar/kapatır; panel kapatılınca düğme de kalkar.
+- [ ] Yeni bir dikte bitince kayıt listenin **en üstüne** düşer.
+- [ ] Arama kutusu: "toplanti" yazınca "Toplantısı" geçen kayıt görünür (aksan ve büyük/küçük harf duyarsız).
+- [ ] Bir kayda tıklayınca ham/düzeltilmiş/çıktı panelleri o kayıtla dolar.
+- [ ] "Sil" seçili kaydı, "Tümünü temizle" onaydan sonra tüm geçmişi siler; dosya (`history.jsonl`) da güncellenir.
+- [ ] Ayarlardaki "Geçmiş kayıt sayısı" 200 iken 201. kayıt eklenince en eski düşer.
+- [ ] Durum çubuğu: sol tarafta "12 sn · 34 kelime", sağda "large-v3-turbo · float16 · LLM: …".
+- [ ] Değişiklik listesinde `x → x` biçiminde özdeş satır görünmez.
