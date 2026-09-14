@@ -1,0 +1,127 @@
+from __future__ import annotations
+
+import logging
+
+from PySide6.QtWidgets import (
+    QCheckBox,
+    QComboBox,
+    QDialog,
+    QDialogButtonBox,
+    QFormLayout,
+    QLabel,
+    QLineEdit,
+    QSpinBox,
+    QVBoxLayout,
+)
+
+from dikte.config import Settings
+from dikte.platform.hotkey_parse import HotkeyParseError, parse_hotkey
+
+log = logging.getLogger(__name__)
+
+
+def list_input_devices() -> tuple[tuple[int, str], ...]:
+    try:
+        import sounddevice as sd
+
+        return tuple(
+            (i, d["name"])
+            for i, d in enumerate(sd.query_devices())
+            if d.get("max_input_channels", 0) > 0
+        )
+    except Exception:
+        log.exception("ses cihazları listelenemedi")
+        return ()
+
+
+class SettingsDialog(QDialog):
+    def __init__(self, settings: Settings, devices: tuple[tuple[int, str], ...], parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("Dikte Ayarları")
+        self._settings = settings
+        form = QFormLayout()
+
+        self.hotkey_edit = QLineEdit(settings.hotkey)
+        self.hotkey_edit.setPlaceholderText("ör. ctrl+alt+space")
+        self.device_combo = QComboBox()
+        self.device_combo.addItem("Sistem varsayılanı", None)
+        for idx, name in devices:
+            self.device_combo.addItem(name, idx)
+        if settings.audio.device_index is not None:
+            pos = self.device_combo.findData(settings.audio.device_index)
+            self.device_combo.setCurrentIndex(max(pos, 0))
+        self.stt_model_edit = QLineEdit(settings.stt.model)
+        self.compute_combo = QComboBox()
+        self.compute_combo.addItems(["float16", "int8_float16", "int8"])
+        self.compute_combo.setCurrentText(settings.stt.compute_type)
+        self.provider_combo = QComboBox()
+        self.provider_combo.addItems(["ollama", "anthropic"])
+        self.provider_combo.setCurrentText(settings.llm.provider)
+        self.llm_model_edit = QLineEdit(settings.llm.model)
+        self.ollama_host_edit = QLineEdit(settings.llm.ollama_host)
+        self.autostart_check = QCheckBox("Windows ile başlat")
+        self.autostart_check.setChecked(settings.autostart)
+        self.close_after_copy_check = QCheckBox("Kopyaladıktan sonra pencereyi gizle")
+        self.close_after_copy_check.setChecked(settings.close_after_copy)
+        self.history_spin = QSpinBox()
+        self.history_spin.setRange(0, 5000)
+        self.history_spin.setValue(settings.history_limit)
+        self.error_label = QLabel("")
+        self.error_label.setStyleSheet("color:#E53935;")
+
+        form.addRow("Kısayol (toggle)", self.hotkey_edit)
+        form.addRow("Mikrofon", self.device_combo)
+        form.addRow("STT modeli", self.stt_model_edit)
+        form.addRow("STT compute_type", self.compute_combo)
+        form.addRow("LLM sağlayıcı", self.provider_combo)
+        form.addRow("LLM modeli", self.llm_model_edit)
+        form.addRow("Ollama host", self.ollama_host_edit)
+        form.addRow("Geçmiş kayıt sayısı", self.history_spin)
+        form.addRow(self.autostart_check)
+        form.addRow(self.close_after_copy_check)
+
+        buttons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
+        buttons.accepted.connect(self.accept)
+        buttons.rejected.connect(self.reject)
+        lay = QVBoxLayout(self)
+        lay.addLayout(form)
+        lay.addWidget(self.error_label)
+        lay.addWidget(buttons)
+
+    def accept(self) -> None:
+        try:
+            parse_hotkey(self.hotkey_edit.text())
+        except HotkeyParseError as exc:
+            self.error_label.setText(str(exc))
+            return
+        if not self.llm_model_edit.text().strip() or not self.stt_model_edit.text().strip():
+            self.error_label.setText("Model adları boş olamaz")
+            return
+        super().accept()
+
+    def result_settings(self) -> Settings:
+        s = self._settings
+        return s.model_copy(
+            update={
+                "hotkey": self.hotkey_edit.text().strip().lower(),
+                "autostart": self.autostart_check.isChecked(),
+                "close_after_copy": self.close_after_copy_check.isChecked(),
+                "history_limit": self.history_spin.value(),
+                "stt": s.stt.model_copy(
+                    update={
+                        "model": self.stt_model_edit.text().strip(),
+                        "compute_type": self.compute_combo.currentText(),
+                    }
+                ),
+                "llm": s.llm.model_copy(
+                    update={
+                        "provider": self.provider_combo.currentText(),
+                        "model": self.llm_model_edit.text().strip(),
+                        "ollama_host": self.ollama_host_edit.text().strip(),
+                    }
+                ),
+                "audio": s.audio.model_copy(
+                    update={"device_index": self.device_combo.currentData()}
+                ),
+            }
+        )
