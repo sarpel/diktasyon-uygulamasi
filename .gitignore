@@ -1,11 +1,53 @@
-.venv/
+# Python
 __pycache__/
-*.pyc
-dist/
-build/
-*.spec.bak
-.pytest_cache/
-.coverage
-htmlcov/
-.remember/
+*.py[cod]
 *.egg-info/
+.eggs/
+build/
+dist/
+*.manifest
+
+# Sanal ortamlar
+.venv/
+venv/
+env/
+
+# Test ve araç önbellekleri
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+.coverage.*
+coverage.xml
+htmlcov/
+
+# PyInstaller ara çıktıları
+packaging/build/
+*.spec.bak
+
+# Üretilen ikonlar dışındaki paketleme çıktıları
+dist/Dikte-Setup-*.exe
+
+# Uygulama verileri (yanlışlıkla repo içine düşerse)
+*.log
+history.jsonl
+config.json
+
+# Modeller ve ses örnekleri (büyük dosyalar)
+models/
+*.ct2
+*.bin
+*.wav
+*.mp3
+
+# Editör / işletim sistemi
+.vscode/
+.idea/
+*.swp
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Yerel oturum notları
+.remember/
+.claude/

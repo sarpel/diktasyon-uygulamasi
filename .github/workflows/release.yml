@@ -1,0 +1,56 @@
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  windows-installer:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Bağımlılıklar
+        run: pip install -e ".[dev]"
+
+      - name: Testler
+        env:
+          QT_QPA_PLATFORM: offscreen
+        run: pytest -q
+
+      - name: İkonu üret
+        env:
+          QT_QPA_PLATFORM: offscreen
+        run: python scripts/make_icon.py
+
+      - name: PyInstaller paketi
+        run: pyinstaller --noconfirm --clean packaging/dikte.spec
+
+      - name: Inno Setup kurulumu
+        run: choco install innosetup --no-progress -y
+
+      - name: Kurulum paketi
+        run: '& "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" packaging\installer.iss'
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Dikte-windows
+          path: |
+            dist/Dikte/
+            dist/Dikte-Setup-*.exe
+          retention-days: 30
+
+      - name: GitHub Release'e ekle
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/Dikte-Setup-*.exe
+          generate_release_notes: true

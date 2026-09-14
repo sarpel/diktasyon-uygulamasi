@@ -18,7 +18,9 @@ echo "2/3 Masaüstü kaydı yazılıyor…"
 mkdir -p "$APPS" "$ICONS"
 install -m 644 "$ROOT/packaging/linux/dikte.desktop" "$APPS/dikte.desktop"
 install -m 644 "$ROOT/packaging/linux/dikte.png" "$ICONS/dikte.png"
-command -v update-desktop-database >/dev/null 2>&1 && update-desktop-database "$APPS" || true
+if command -v update-desktop-database >/dev/null 2>&1; then
+  update-desktop-database "$APPS"
+fi
 
 echo "3/3 Modeller indiriliyor…"
 "$(pipx environment --value PIPX_LOCAL_VENVS)/dikte/bin/python" "$ROOT/scripts/download_models.py"
