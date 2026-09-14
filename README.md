@@ -55,3 +55,13 @@ ruff check src tests
 - Ayrıntılı plan: [`implementation_plan.md`](implementation_plan.md)
 - Windows manuel test listesi: [`docs/manual_test_checklist.md`](docs/manual_test_checklist.md)
 - LLM model karşılaştırması: `python scripts/eval_llm.py` (Ollama çalışır durumda olmalı)
+
+## Paketleme (Windows)
+
+```powershell
+python scripts\make_icon.py                 # packaging\dikte.ico üretir
+powershell -ExecutionPolicy Bypass -File packaging\build.ps1
+```
+
+Çıktı: `dist\Dikte\Dikte.exe` (onedir) ve `dist\Dikte-Setup-0.1.0.exe`
+(Inno Setup 6 kurulu olmalı).
