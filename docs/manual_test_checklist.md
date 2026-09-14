@@ -51,3 +51,11 @@
       ipucu metni "LLM kapalı" yazar.
 - [ ] LLM tekrar açıldığında uygulama yeniden başlatılmadan çalışır (yeniden başlatma uyarısı çıkmaz).
 - [ ] `keep_alive` = 0 iken istek bittikten sonra `ollama ps` modeli listeden düşürür (VRAM boşalır).
+
+## İptal
+
+- [ ] Kayıt sürerken `Esc` (Windows'ta global): overlay kapanır, durum boşa döner, tepside "İptal edildi" bildirimi çıkar.
+- [ ] Çözümleme sürerken overlay'deki "Vazgeç": durum boşa döner ve **geç gelen sonuç pencereye düşmez**.
+- [ ] Tepsi menüsündeki "Vazgeç": yalnızca kayıt/çözümleme/düzeltme sırasında etkin, boştayken soluk.
+- [ ] Linux'ta global Esc kaydedilemez; overlay düğmesi, pencere odaktayken `Esc` ve tepsi menüsü ile iptal çalışır.
+- [ ] İptalden sonra kısayola basınca yeni kayıt sorunsuz başlar (önceki oturum metni temizlenmiş olur).

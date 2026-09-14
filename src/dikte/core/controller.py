@@ -23,6 +23,7 @@ class DictationController(QObject):
     level_changed = Signal(float)
     buckets_changed = Signal(object)
     ready_changed = Signal(bool)
+    cancelled = Signal()
 
     def __init__(
         self,
@@ -41,6 +42,7 @@ class DictationController(QObject):
         self._state = DictationState.IDLE
         self._session = Session()
         self._jobs: list = []  # canlı sinyal nesneleri
+        self._gen = 0  # iptal sonrası gelen sonuçları ayırt etmek için
         recorder.level_changed.connect(self.level_changed)
         recorder.buckets_changed.connect(self.buckets_changed)
         recorder.error.connect(self._on_recorder_error)
@@ -69,11 +71,28 @@ class DictationController(QObject):
     # ---- kamu slotları
     @Slot()
     def warm_up(self) -> None:
-        self._spawn(
-            self._stt.load,
-            lambda _: self.ready_changed.emit(True),
-            lambda e: self.error.emit(f"STT modeli yüklenemedi: {e}"),
+        # Isınma iptal kuşağının dışındadır: kullanıcı iptali modeli yüklemeyi bozmamalı.
+        self._track(
+            run_in_pool(
+                self._stt.load,
+                lambda _: self.ready_changed.emit(True),
+                lambda e: self.error.emit(f"STT modeli yüklenemedi: {e}"),
+                self._pool,
+            )
         )
+
+    @Slot()
+    def cancel(self) -> None:
+        """Kaydı ya da süren çözümleme/düzeltmeyi iptal eder; boşta ise hiçbir şey yapmaz."""
+        if self._state in (DictationState.IDLE, DictationState.RESULT):
+            return
+        self._gen += 1  # bu kuşaktan önceki işlerin sonuçları yok sayılacak
+        if self._state is DictationState.RECORDING:
+            self._recorder.stop()  # ses atılır
+        self._session = Session()
+        self.session_updated.emit(self._session)
+        self._set_state(DictationState.IDLE)
+        self.cancelled.emit()
 
     @Slot()
     def toggle(self) -> None:
@@ -176,6 +195,23 @@ class DictationController(QObject):
         self.session_updated.emit(self._session)
 
     def _spawn(self, fn, on_result, on_error) -> None:
-        sig = run_in_pool(fn, on_result, on_error, self._pool)
-        self._jobs.append(sig)
+        """İşi havuzda çalıştırır; iptal edilmiş kuşağın sonuçları yok sayılır."""
+        gen = self._gen
+
+        def guarded_result(result) -> None:
+            if gen == self._gen:
+                on_result(result)
+            else:
+                log.debug("iptal edilmiş işin sonucu yok sayıldı")
+
+        def guarded_error(message: str) -> None:
+            if gen == self._gen:
+                on_error(message)
+            else:
+                log.debug("iptal edilmiş işin hatası yok sayıldı: %s", message)
+
+        self._track(run_in_pool(fn, guarded_result, guarded_error, self._pool))
+
+    def _track(self, signals) -> None:
+        self._jobs.append(signals)
         self._jobs = self._jobs[-16:]

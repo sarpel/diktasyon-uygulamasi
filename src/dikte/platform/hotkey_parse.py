@@ -47,9 +47,14 @@ class HotkeySpec:
     label: str
 
 
-def parse_hotkey(spec: str) -> HotkeySpec:
+def parse_hotkey(spec: str, *, allow_bare: bool = False) -> HotkeySpec:
+    """Kısayol metnini VK + değiştirici bileşimine çevirir.
+
+    allow_bare=True yalnızca uygulamanın kendi ürettiği tek tuşluk kısayollar (ör. iptal için
+    'escape') içindir; kullanıcı girdisi her zaman en az bir değiştirici istemelidir.
+    """
     parts = [p.strip().lower() for p in spec.split("+") if p.strip()]
-    if len(parts) < 2:
+    if len(parts) < 2 and not (allow_bare and len(parts) == 1 and parts[0] not in _MODS):
         raise HotkeyParseError(
             "Kısayol en az bir değiştirici (Ctrl/Alt/Shift/Win) ve bir tuş içermeli"
         )

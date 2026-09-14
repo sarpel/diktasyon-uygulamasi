@@ -13,11 +13,11 @@ from dikte.audio.recorder import AudioRecorder
 from dikte.config import Settings, load_settings, save_settings
 from dikte.core.controller import DictationController
 from dikte.core.history import History
-from dikte.core.state import DictationState
+from dikte.core.state import BUSY_STATES, DictationState
 from dikte.llm import LlmError, make_provider
 from dikte.logging_setup import setup_logging
 from dikte.platform.autostart import set_autostart
-from dikte.platform.hotkey import GlobalHotkey
+from dikte.platform.hotkey import HOTKEY_ID, GlobalHotkey
 from dikte.platform.hotkey_parse import parse_hotkey
 from dikte.platform.single_instance import (
     DEFAULT_NAME,
@@ -44,6 +44,7 @@ class AppContext:
     overlay: RecordingOverlay
     window: ResultWindow
     hotkey: GlobalHotkey
+    cancel_hotkey: GlobalHotkey
     history: History
     stt: FasterWhisperEngine
 
@@ -77,11 +78,14 @@ def build_app(settings: Settings) -> AppContext:
         pool=QThreadPool.globalInstance(),
     )
     hotkey = GlobalHotkey()
+    cancel_hotkey = GlobalHotkey(hotkey_id=HOTKEY_ID + 1)  # iptal için ikinci kayıt
     tray = TrayIcon(parse_hotkey(settings.hotkey).label)
     overlay = RecordingOverlay()
     window = ResultWindow()
     history = History(paths.history_path(), settings.history_limit)
-    ctx = AppContext(settings, controller, tray, overlay, window, hotkey, history, stt)
+    ctx = AppContext(
+        settings, controller, tray, overlay, window, hotkey, cancel_hotkey, history, stt
+    )
     _wire(ctx)
     return ctx
 
@@ -103,6 +107,20 @@ def _wire(ctx: AppContext) -> None:
     )
     ctx.tray.settings_requested.connect(lambda: _open_settings(ctx))
     ctx.tray.quit_requested.connect(lambda: _quit(ctx))
+    c.cancelled.connect(lambda: ctx.tray.notify(APP_NAME, "İptal edildi"))
+    ctx.overlay.cancel_requested.connect(c.cancel)
+    ctx.tray.cancel_requested.connect(c.cancel)
+    ctx.cancel_hotkey.activated.connect(c.cancel)
+    c.state_changed.connect(lambda s: _sync_cancel_hotkey(ctx, s))
+
+
+def _sync_cancel_hotkey(ctx: AppContext, state: DictationState) -> None:
+    """İptal için global Esc yalnızca iş sürerken kayıtlı kalır; boştayken serbest bırakılır."""
+    if state in BUSY_STATES:
+        if not ctx.cancel_hotkey.register("escape"):
+            log.info("global Esc kaydedilemedi; pencere, overlay veya tepsiden iptal edilebilir")
+    else:
+        ctx.cancel_hotkey.unregister()
 
 
 def _warn_if_downgraded(ctx: AppContext) -> None:
@@ -167,6 +185,7 @@ def _open_settings(ctx: AppContext) -> None:
 
 def _quit(ctx: AppContext) -> None:
     ctx.hotkey.unregister()
+    ctx.cancel_hotkey.unregister()
     ctx.tray.hide()
     QApplication.instance().quit()
 

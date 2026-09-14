@@ -40,3 +40,18 @@ def test_unknown_key_raises():
 def test_shift_modifier_bit_present():
     assert parse_hotkey("ctrl+shift+d").modifiers & MOD_SHIFT
     assert parse_hotkey("alt+f4").modifiers & MOD_ALT
+
+
+def test_bare_key_rejected_by_default():
+    with pytest.raises(HotkeyParseError):
+        parse_hotkey("escape")
+
+
+def test_bare_key_allowed_when_requested():
+    spec = parse_hotkey("escape", allow_bare=True)
+    assert spec.vk == 0x1B and spec.label == "Escape"
+
+
+def test_bare_modifier_still_rejected():
+    with pytest.raises(HotkeyParseError):
+        parse_hotkey("ctrl", allow_bare=True)

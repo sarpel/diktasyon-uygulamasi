@@ -1,4 +1,5 @@
 import json
+import threading
 
 import numpy as np
 import pytest
@@ -214,3 +215,69 @@ def test_limit_reached_ignored_when_not_recording(ctl):
     c, rec, *_ = ctl
     rec.limit_reached.emit()
     assert c.state is DictationState.IDLE
+
+
+class BlockingStt(FakeStt):
+    """transcribe() serbest bırakılana kadar bekler; geç gelen sonucu test etmek için."""
+
+    def __init__(self, text="merhaba dünya"):
+        super().__init__(text)
+        self.gate = threading.Event()
+
+    def transcribe(self, audio, language=None):
+        self.gate.wait(timeout=5)
+        return TranscriptResult(self.text, "tr", 1.0, ())
+
+    def release(self):
+        self.gate.set()
+
+
+def test_cancel_while_recording_discards_audio_and_goes_idle(ctl):
+    c, rec, *_ = ctl
+    c.toggle()
+    c.cancel()
+    assert c.state is DictationState.IDLE
+    assert rec.stopped
+    assert c.session.raw_text == ""
+
+
+def test_cancel_while_transcribing_ignores_late_result(qtbot):
+    stt = BlockingStt()
+    c = DictationController(
+        Settings(), recorder=FakeRecorder(), stt=stt, llm=FakeLlm(), pool=QThreadPool()
+    )
+    c.toggle()
+    c.toggle()
+    assert c.state is DictationState.TRANSCRIBING
+    c.cancel()
+    assert c.state is DictationState.IDLE
+    stt.release()
+    qtbot.wait(200)
+    assert c.state is DictationState.IDLE
+    assert c.session.raw_text == ""
+
+
+def test_cancel_in_idle_is_noop(ctl):
+    c, *_ = ctl
+    fired = []
+    c.cancelled.connect(lambda: fired.append(1))
+    c.cancel()
+    assert fired == [] and c.state is DictationState.IDLE
+
+
+def test_cancel_emits_cancelled_signal(ctl):
+    c, *_ = ctl
+    fired = []
+    c.cancelled.connect(lambda: fired.append(1))
+    c.toggle()
+    c.cancel()
+    assert fired == [1]
+
+
+def test_cancel_in_result_state_is_noop(ctl, qtbot):
+    c, *_ = ctl
+    c.toggle()
+    c.toggle()
+    qtbot.waitUntil(lambda: c.state is DictationState.RESULT, timeout=5000)
+    c.cancel()
+    assert c.state is DictationState.RESULT

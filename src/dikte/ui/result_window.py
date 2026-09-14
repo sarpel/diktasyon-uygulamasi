@@ -13,7 +13,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from dikte.core.state import DictationState, Session
+from dikte.core.state import BUSY_STATES, DictationState, Session
 from dikte.ui.text_pane import TextPane
 from dikte.ui.toast import Toast
 
@@ -72,6 +72,7 @@ class ResultWindow(QMainWindow):
         for pane in (self.raw_pane, self.corrected_pane, self.output_pane):
             pane.copied.connect(lambda _t, p=pane: self._on_copied(p))
         QShortcut(QKeySequence("Ctrl+Shift+C"), self, activated=self.corrected_pane._copy)
+        QShortcut(QKeySequence(Qt.Key_Escape), self, activated=self._on_escape)
 
     # ---- bağlama
     def set_llm_enabled(self, enabled: bool) -> None:
@@ -149,6 +150,14 @@ class ResultWindow(QMainWindow):
         Toast.show_message(self, "Kopyalandı")
         if self.close_after_copy and pane is not self.raw_pane:
             self.hide()
+
+    def _on_escape(self) -> None:
+        """Esc: iş sürüyorsa iptal eder, boştaysa pencereyi gizler."""
+        state = getattr(self._controller, "state", None)
+        if self._controller is not None and state in BUSY_STATES:
+            self._controller.cancel()
+            return
+        self.hide()
 
     def _on_error(self, msg: str) -> None:
         self._finish_pending()

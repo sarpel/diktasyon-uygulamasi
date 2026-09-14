@@ -16,6 +16,14 @@ class DictationState(Enum):
     RESULT = auto()
 
 
+# Kullanıcının bekleme yaşadığı, dolayısıyla iptal edilebilir durumlar.
+BUSY_STATES = (
+    DictationState.RECORDING,
+    DictationState.TRANSCRIBING,
+    DictationState.CORRECTING,
+)
+
+
 @dataclass(frozen=True)
 class Session:
     id: str = field(default_factory=lambda: uuid.uuid4().hex[:12])

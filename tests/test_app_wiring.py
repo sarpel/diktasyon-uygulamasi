@@ -2,6 +2,7 @@ import logging
 import sys
 
 import pytest
+from PySide6.QtCore import Qt
 
 from dikte import app as app_mod
 from dikte.config import LlmSettings, Settings
@@ -230,3 +231,49 @@ def test_open_settings_rebuilds_llm_without_restart(ctx, monkeypatch):
     assert ctx.controller._llm.name == "none"
     assert restarts == []  # LLM değişikliği yeniden başlatma istemez
     assert not ctx.window.translate_btn.isEnabled()
+
+
+def _escape_shortcut(window):
+    from PySide6.QtGui import QKeySequence, QShortcut
+
+    for sc in window.findChildren(QShortcut):
+        if sc.key() == QKeySequence(Qt.Key_Escape):
+            return sc
+    raise AssertionError("Esc kısayolu bulunamadı")
+
+
+def test_escape_shortcut_cancels(ctx, qtbot):
+    ctx.controller.toggle()
+    ctx.window.show()
+    _escape_shortcut(ctx.window).activated.emit()
+    assert ctx.controller.state is DictationState.IDLE
+
+
+def test_escape_hides_window_when_idle(ctx, qtbot):
+    ctx.window.show()
+    _escape_shortcut(ctx.window).activated.emit()
+    assert not ctx.window.isVisible()
+
+
+def test_cancel_hotkey_registered_only_while_busy(ctx):
+    calls = []
+    ctx.cancel_hotkey.register = lambda spec: calls.append(("reg", spec)) or True
+    ctx.cancel_hotkey.unregister = lambda: calls.append(("unreg", None))
+    ctx.controller.state_changed.emit(DictationState.RECORDING)
+    ctx.controller.state_changed.emit(DictationState.IDLE)
+    assert calls == [("reg", "escape"), ("unreg", None)]
+
+
+def test_overlay_and_tray_cancel_reach_controller(ctx):
+    ctx.controller.toggle()
+    ctx.overlay.cancel_requested.emit()
+    assert ctx.controller.state is DictationState.IDLE
+    ctx.controller.toggle()
+    ctx.tray.cancel_requested.emit()
+    assert ctx.controller.state is DictationState.IDLE
+
+
+def test_cancel_hotkey_uses_separate_id(ctx):
+    from dikte.platform.hotkey import HOTKEY_ID
+
+    assert ctx.hotkey._id == HOTKEY_ID and ctx.cancel_hotkey._id != HOTKEY_ID
