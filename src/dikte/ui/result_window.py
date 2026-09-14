@@ -73,8 +73,9 @@ class ResultWindow(QMainWindow):
         QShortcut(QKeySequence("Ctrl+Shift+C"), self, activated=self.corrected_pane._copy)
 
     # ---- bağlama
-    def bind(self, controller) -> None:
+    def bind(self, controller, close_after_copy: bool = False) -> None:
         self._controller = controller
+        self.close_after_copy = close_after_copy
         controller.session_updated.connect(self.on_session)
         controller.state_changed.connect(self.on_state)
         controller.error.connect(self._on_error)

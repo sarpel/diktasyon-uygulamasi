@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import logging
-from typing import Callable
+from collections.abc import Callable
 
 from dikte.config import LlmSettings
 from dikte.llm.provider import LlmError

@@ -27,5 +27,5 @@ class Session:
     enhanced_prompt: str = ""
     duration_s: float = 0.0
 
-    def with_(self, **kwargs) -> "Session":
+    def with_(self, **kwargs) -> Session:
         return replace(self, **kwargs)

@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 import logging
 import os
-from typing import Callable
+from collections.abc import Callable
 
 from dikte.config import LlmSettings
 from dikte.llm.provider import LlmError
