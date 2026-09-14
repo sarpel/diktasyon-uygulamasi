@@ -1,0 +1,23 @@
+Metadata-Version: 2.4
+Name: dikte
+Version: 0.1.0
+Summary: Türkçe odaklı, GPU destekli yerel diktasyon uygulaması (Windows 11)
+Requires-Python: <3.13,>=3.11
+Requires-Dist: PySide6>=6.7
+Requires-Dist: sounddevice>=0.5
+Requires-Dist: numpy>=1.26
+Requires-Dist: faster-whisper>=1.1.0
+Requires-Dist: ctranslate2>=4.5
+Requires-Dist: ollama>=0.4
+Requires-Dist: pydantic>=2.7
+Provides-Extra: cuda
+Requires-Dist: nvidia-cublas-cu12; extra == "cuda"
+Requires-Dist: nvidia-cudnn-cu12>=9; extra == "cuda"
+Provides-Extra: anthropic
+Requires-Dist: anthropic>=0.40; extra == "anthropic"
+Provides-Extra: dev
+Requires-Dist: pytest>=8; extra == "dev"
+Requires-Dist: pytest-qt>=4.4; extra == "dev"
+Requires-Dist: pytest-cov>=5; extra == "dev"
+Requires-Dist: ruff>=0.5; extra == "dev"
+Requires-Dist: pyinstaller>=6.6; extra == "dev"
