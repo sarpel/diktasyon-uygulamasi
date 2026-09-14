@@ -64,8 +64,9 @@ def test_enhance_button_sends_text_and_result_fills_output(qtbot):
     assert w.enhance_btn.isEnabled()
 
 
-def test_result_state_shows_window(qtbot):
+def test_result_state_shows_window_when_raise_enabled(qtbot):
     w, c = make(qtbot)
+    w.raise_on_result = True
     c.state_changed.emit(DictationState.RESULT)
     assert w.isVisible()
 
@@ -94,3 +95,18 @@ def test_pending_cycle_keeps_buttons_disabled_when_llm_off(qtbot):
     w._start_pending("translation", "x")
     w._finish_pending()
     assert not w.translate_btn.isEnabled()
+
+
+def test_window_not_raised_on_result_by_default(qtbot):
+    w, c = make(qtbot)
+    w.hide()
+    c.state_changed.emit(DictationState.RESULT)
+    assert not w.isVisible()
+
+
+def test_window_raised_when_setting_enabled(qtbot):
+    w, c = make(qtbot)
+    w.raise_on_result = True
+    w.hide()
+    c.state_changed.emit(DictationState.RESULT)
+    assert w.isVisible()

@@ -19,6 +19,7 @@ from dikte.logging_setup import setup_logging
 from dikte.platform.autostart import set_autostart
 from dikte.platform.hotkey import HOTKEY_ID, GlobalHotkey
 from dikte.platform.hotkey_parse import parse_hotkey
+from dikte.platform.paste import paste_active_window
 from dikte.platform.single_instance import (
     DEFAULT_NAME,
     TOGGLE_MESSAGE,
@@ -92,7 +93,11 @@ def build_app(settings: Settings) -> AppContext:
 
 def _wire(ctx: AppContext) -> None:
     c = ctx.controller
-    ctx.window.bind(c, close_after_copy=ctx.settings.close_after_copy)
+    ctx.window.bind(
+        c,
+        close_after_copy=ctx.settings.close_after_copy,
+        raise_on_result=ctx.settings.raise_window_on_result,
+    )
     c.state_changed.connect(ctx.overlay.on_state)
     c.buckets_changed.connect(ctx.overlay.on_buckets)
     c.state_changed.connect(ctx.tray.set_state)
@@ -112,6 +117,19 @@ def _wire(ctx: AppContext) -> None:
     ctx.tray.cancel_requested.connect(c.cancel)
     ctx.cancel_hotkey.activated.connect(c.cancel)
     c.state_changed.connect(lambda s: _sync_cancel_hotkey(ctx, s))
+    c.result_ready.connect(lambda text: _on_result_ready(ctx, text))
+
+
+def _on_result_ready(ctx: AppContext, text: str) -> None:
+    """Sonucu panoya yazar ve (ayar açıksa) ön plandaki uygulamaya yapıştırır."""
+    if not text or not ctx.settings.auto_copy:
+        return
+    QApplication.clipboard().setText(text)
+    if not ctx.settings.auto_paste or ctx.window.isActiveWindow():
+        return
+    own_ids = {int(ctx.window.winId()), int(ctx.overlay.winId())}
+    if not paste_active_window(own_ids):
+        log.info("yapıştırma atlandı; metin panoda")
 
 
 def _sync_cancel_hotkey(ctx: AppContext, state: DictationState) -> None:
@@ -175,6 +193,7 @@ def _open_settings(ctx: AppContext) -> None:
         ctx.controller.prewarm_llm()
     ctx.window.set_llm_enabled(new.llm.enabled)
     ctx.window.close_after_copy = new.close_after_copy
+    ctx.window.raise_on_result = new.raise_window_on_result
     _apply_hotkey(ctx)
     if needs_restart:
         QMessageBox.information(

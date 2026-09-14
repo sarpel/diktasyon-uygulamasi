@@ -43,6 +43,8 @@ kısayol ayarına `dikte --toggle` komutunu bağlarsınız (Wayland'da da çalı
 
 ```bash
 sudo apt install python3.11 python3.11-venv libportaudio2   # Debian/Ubuntu
+sudo apt install xdotool                                    # X11'de otomatik yapıştırma
+# Wayland kullanıyorsanız xdotool yerine: sudo apt install wtype
 curl -fsSL https://ollama.com/install.sh | sh
 ollama pull qwen3.5:4b
 
@@ -82,6 +84,19 @@ Kullanıcı verileri: `~/.config/Dikte/`, model önbelleği: `~/.cache/Dikte/mod
 | Agent prompt'u | Alt araç çubuğu → "Agent Prompt'a Dönüştür" |
 | Pencereyi gizle | `X` (uygulama tray'de kalır) |
 | Çıkış | Tray menüsü → "Çıkış" |
+
+### Sonuç nasıl teslim edilir
+
+Kayıt bitip metin hazır olduğunda üç şey birden olur:
+
+1. Düzeltilmiş metin **panoya** yazılır (Ayarlar → "Sonucu panoya kopyala").
+2. Ön plandaki uygulama Dikte değilse metin oraya **Ctrl+V** ile yapıştırılır
+   (Ayarlar → "Sonucu aktif pencereye yapıştır"). Windows'ta yerleşik; Linux'ta
+   `xdotool` (X11) veya `wtype` (Wayland) kurulu olmalıdır, yoksa metin yalnızca panoda kalır.
+3. Oturum **geçmişe** yazılır.
+
+Sonuç penceresi varsayılan olarak öne gelmez; odağınız çalıştığınız uygulamada kalır.
+İsterseniz Ayarlar → "Sonuçta pencereyi öne getir" ile açabilirsiniz.
 
 Kayıt süresi varsayılan olarak **sınırsızdır** (Ayarlar → "Kayıt süresi sınırı" = 0). Bellek
 kullanımı 16 kHz float32 ham ses için yaklaşık **230 MB/saat**'tir. Bir sınır girilirse süre

@@ -323,3 +323,41 @@ def test_prewarm_llm_runs_after_provider_change(qtbot):
     c.set_llm(new)
     c.prewarm_llm()
     qtbot.waitUntil(lambda: new.warmed, timeout=3000)
+
+
+def test_result_ready_emitted_after_result_state(qtbot):
+    settings, _ = _disabled_llm_settings()
+    c = DictationController(
+        settings, recorder=FakeRecorder(), stt=FakeStt(), llm=FakeLlm(), pool=QThreadPool()
+    )
+    order = []
+    c.state_changed.connect(lambda s: order.append(("state", s)))
+    c.result_ready.connect(lambda t: order.append(("text", t)))
+    c.toggle()
+    c.toggle()
+    qtbot.waitUntil(lambda: ("text", "merhaba dünya") in order, timeout=5000)
+    assert order.index(("state", DictationState.RESULT)) < order.index(("text", "merhaba dünya"))
+
+
+def test_result_ready_emits_corrected_text(ctl, qtbot):
+    c, *_ = ctl
+    texts = []
+    c.result_ready.connect(texts.append)
+    c.toggle()
+    c.toggle()
+    qtbot.waitUntil(lambda: texts == ["Merhaba dünya."], timeout=5000)
+
+
+def test_result_ready_emits_raw_text_when_llm_fails(qtbot):
+    class BadLlm(FakeLlm):
+        def complete(self, *a, **k):
+            raise RuntimeError("down")
+
+    c = DictationController(
+        Settings(), recorder=FakeRecorder(), stt=FakeStt(), llm=BadLlm(), pool=QThreadPool()
+    )
+    texts = []
+    c.result_ready.connect(texts.append)
+    c.toggle()
+    c.toggle()
+    qtbot.waitUntil(lambda: texts == ["merhaba dünya"], timeout=5000)

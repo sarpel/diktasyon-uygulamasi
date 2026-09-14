@@ -52,3 +52,8 @@ def test_negative_max_seconds_rejected():
 
     with pytest.raises(ValidationError):
         AudioSettings(max_seconds=-1)
+
+
+def test_result_delivery_defaults():
+    s = Settings()
+    assert s.auto_copy is True and s.auto_paste is True and s.raise_window_on_result is False

@@ -29,6 +29,7 @@ class ResultWindow(QMainWindow):
         self._controller = None
         self._pending: str | None = None  # "translation" | "enhanced_prompt"
         self.close_after_copy = False
+        self.raise_on_result = False
 
         self.raw_pane = TextPane("Ham")
         self.corrected_pane = TextPane("Düzeltilmiş")
@@ -83,9 +84,12 @@ class ResultWindow(QMainWindow):
             btn.setEnabled(enabled)
             btn.setToolTip(hint)
 
-    def bind(self, controller, close_after_copy: bool = False) -> None:
+    def bind(
+        self, controller, close_after_copy: bool = False, raise_on_result: bool = False
+    ) -> None:
         self._controller = controller
         self.close_after_copy = close_after_copy
+        self.raise_on_result = raise_on_result
         self.set_llm_enabled(getattr(controller, "llm_enabled", True))
         controller.session_updated.connect(self.on_session)
         controller.state_changed.connect(self.on_state)
@@ -107,10 +111,11 @@ class ResultWindow(QMainWindow):
 
     def on_state(self, state: DictationState) -> None:
         if state is DictationState.RESULT:
-            self.showNormal()
-            self.raise_()
-            self.activateWindow()
-            self.corrected_pane.editor.setFocus()
+            if self.raise_on_result:
+                self.showNormal()
+                self.raise_()
+                self.activateWindow()
+                self.corrected_pane.editor.setFocus()
         elif state is DictationState.RECORDING:
             self.output_pane.set_text("")
             self._finish_pending()

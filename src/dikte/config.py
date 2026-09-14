@@ -60,6 +60,10 @@ class Settings(BaseModel):
     autostart: bool = True
     close_after_copy: bool = False
     history_limit: int = Field(default=200, ge=0)
+    # Sonuç teslimi: pano her zaman yedektir, yapıştırma aktif pencereye Ctrl+V gönderir.
+    auto_copy: bool = True
+    auto_paste: bool = True
+    raise_window_on_result: bool = False  # dikte akışını bozmamak için varsayılan kapalı
     stt: SttSettings = SttSettings()
     llm: LlmSettings = LlmSettings()
     audio: AudioSettings = AudioSettings()

@@ -24,6 +24,7 @@ class DictationController(QObject):
     buckets_changed = Signal(object)
     ready_changed = Signal(bool)
     cancelled = Signal()
+    result_ready = Signal(str)
 
     def __init__(
         self,
@@ -169,7 +170,7 @@ class DictationController(QObject):
         self._update_session(raw_text=result.text, duration_s=result.duration_s)
         if not self._settings.llm.enabled:  # LLM kapalı: ham metin sonuç olarak gösterilir
             self._update_session(corrected_text=result.text)
-            self._set_state(DictationState.RESULT)
+            self._finish_result()
             return
         self._set_state(DictationState.CORRECTING)
         raw = result.text
@@ -179,12 +180,18 @@ class DictationController(QObject):
         self._update_session(
             corrected_text=res.corrected_text or self._session.raw_text, changes=res.changes
         )
-        self._set_state(DictationState.RESULT)
+        self._finish_result()
 
     def _on_llm_error(self, msg: str) -> None:
         self.error.emit(f"LLM düzeltmesi başarısız, ham metin gösteriliyor: {msg}")
         self._update_session(corrected_text=self._session.raw_text)
+        self._finish_result()
+
+    def _finish_result(self) -> None:
+        """RESULT durumuna geçer, ardından metni teslim için yayınlar (sıra önemlidir:
+        geçmişe yazma ve pencere güncellemesi yapıştırmadan önce tamamlanmalı)."""
         self._set_state(DictationState.RESULT)
+        self.result_ready.emit(self._session.corrected_text)
 
     def _on_stt_error(self, msg: str) -> None:
         self.error.emit(f"Transkripsiyon başarısız: {msg}")

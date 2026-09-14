@@ -277,3 +277,31 @@ def test_cancel_hotkey_uses_separate_id(ctx):
     from dikte.platform.hotkey import HOTKEY_ID
 
     assert ctx.hotkey._id == HOTKEY_ID and ctx.cancel_hotkey._id != HOTKEY_ID
+
+
+def test_result_ready_copies_to_clipboard_and_pastes(ctx, monkeypatch):
+    from PySide6.QtWidgets import QApplication
+
+    pasted = []
+    monkeypatch.setattr(app_mod, "paste_active_window", lambda ids, **k: pasted.append(ids) or True)
+    ctx.controller.result_ready.emit("Merhaba.")
+    assert QApplication.clipboard().text() == "Merhaba."
+    assert len(pasted) == 1
+
+
+def test_result_ready_respects_auto_paste_off(ctx, monkeypatch):
+    ctx.settings = ctx.settings.model_copy(update={"auto_paste": False})
+    pasted = []
+    monkeypatch.setattr(app_mod, "paste_active_window", lambda *a, **k: pasted.append(1))
+    ctx.controller.result_ready.emit("x")
+    assert pasted == []
+
+
+def test_result_ready_respects_auto_copy_off(ctx, monkeypatch):
+    from PySide6.QtWidgets import QApplication
+
+    QApplication.clipboard().setText("eski")
+    ctx.settings = ctx.settings.model_copy(update={"auto_copy": False})
+    monkeypatch.setattr(app_mod, "paste_active_window", lambda *a, **k: True)
+    ctx.controller.result_ready.emit("yeni")
+    assert QApplication.clipboard().text() == "eski"
