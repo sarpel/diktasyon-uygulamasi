@@ -1,0 +1,20 @@
+# Manuel Test Kontrol Listesi (Windows 11)
+
+- [ ] Uygulama açılınca tray ikonu görünür, tooltip "Model yükleniyor…" → ~10 s içinde "Hazır".
+- [ ] Ctrl+Alt+Space → ekran alt-ortasında overlay; konuşunca dalga çubukları hareket eder; kırmızı nokta 0,5 s aralıkla yanıp söner; süre sayar.
+- [ ] Ctrl+Alt+Space (ikinci) → overlay "Yazıya dökülüyor…" sonra "Düzeltiliyor…", ardından sonuç penceresi öne gelir.
+- [ ] 20 s'lik Türkçe kayıt için STT + düzeltme toplam < 8 s.
+- [ ] Ham ve Düzeltilmiş pane'ler dolu; değişiklik listesi mantıklı ("çuk → çok").
+- [ ] Düzeltilmiş pane elle düzenlenebilir; sağ üst kopyala → "Kopyalandı" toast'ı; Notepad'e yapıştırınca aynı metin.
+- [ ] "İngilizce'ye Çevir" → üçüncü pane başlığı "İngilizce Çeviri", içerik İngilizce; butonlar işlem sırasında kilitli.
+- [ ] "Agent Prompt'a Dönüştür" → "# Goal" ile başlayan İngilizce Markdown prompt; kopyalanabilir.
+- [ ] Sonuç penceresi açıkken Ctrl+Alt+Space → yeni kayıt başlar, pane'ler temizlenir.
+- [ ] Transkripsiyon sırasında kısayol yok sayılır.
+- [ ] Pencereyi X ile kapat → tray'de kalır; tray çift tık → pencere geri gelir.
+- [ ] İkinci kez `python -m dikte` → yeni örnek açılmaz, mevcut pencere öne gelir.
+- [ ] Ollama kapalıyken kayıt → tray'de kırmızı bildirim, ham metin yine de gösterilir (düzeltilmiş = ham).
+- [ ] Mikrofon yokken kayıt → hata bildirimi, IDLE'a döner.
+- [ ] Ayarlar → kısayolu ctrl+shift+d yap → yeni kısayol anında çalışır; regedit HKCU\...\Run altında "Dikte" değeri var/yok toggle'a göre.
+- [ ] Oturumu kapat/aç → uygulama tray'de otomatik başlar (`--minimized`).
+- [ ] %APPDATA%\Dikte\history.jsonl her sonuçtan sonra bir satır büyür.
+- [ ] `nvidia-smi`: boşta VRAM ≈ 1,6 GB (Whisper) + Ollama ≈ 3,5–4,5 GB (4B model); toplam < 7,5 GB, CPU offload yok (`ollama ps` → "100% GPU").
