@@ -347,3 +347,20 @@ def test_window_toolbar_reaches_controller(ctx):
     assert ctx.controller.state is DictationState.RECORDING
     ctx.window.cancel_action.trigger()
     assert ctx.controller.state is DictationState.IDLE
+
+
+def test_invalid_hotkey_in_config_falls_back(monkeypatch, qtbot, tmp_path):
+    from dikte.config import Settings as S
+
+    monkeypatch.setattr(app_mod.paths, "history_path", lambda: tmp_path / "h.jsonl")
+    ctx = app_mod.build_app(S(hotkey="ctrl+"))
+    for w in (ctx.window, ctx.overlay):
+        qtbot.addWidget(w)
+    assert ctx.settings.hotkey == S().hotkey
+
+
+def test_valid_hotkey_is_left_alone():
+    from dikte.config import Settings as S
+
+    s = S(hotkey="ctrl+shift+d")
+    assert app_mod._safe_hotkey(s) is s

@@ -73,3 +73,27 @@ def parse_hotkey(spec: str, *, allow_bare: bool = False) -> HotkeySpec:
     labels = [_MOD_LABEL[b] for b in (MOD_CONTROL, MOD_ALT, MOD_SHIFT, MOD_WIN) if modifiers & b]
     label = "+".join(labels + [key.capitalize() if len(key) > 1 else key.upper()])
     return HotkeySpec(modifiers | MOD_NOREPEAT, vk, label)
+
+
+def to_key_sequence(spec: str):
+    """'ctrl+alt+space' → QKeySequence. Geçersiz kısayolda HotkeyParseError verir."""
+    from PySide6.QtGui import QKeySequence
+
+    parse_hotkey(spec)  # doğrula
+    parts = [p.strip() for p in spec.split("+") if p.strip()]
+    portable = "+".join(p.capitalize() if len(p) > 1 else p.upper() for p in parts)
+    seq = QKeySequence(portable)
+    if seq.isEmpty():
+        raise HotkeyParseError(f"Kısayol Qt tarafından tanınmadı: {spec}")
+    return seq
+
+
+def from_key_sequence(seq) -> str:
+    """QKeySequence → 'ctrl+shift+d'. Değiştiricisiz veya boş kısayolu reddeder."""
+    from PySide6.QtGui import QKeySequence
+
+    if seq.isEmpty():
+        raise HotkeyParseError("Kısayol boş olamaz")
+    text = seq.toString(QKeySequence.SequenceFormat.PortableText).lower()
+    parse_hotkey(text)  # geçersizse HotkeyParseError
+    return text

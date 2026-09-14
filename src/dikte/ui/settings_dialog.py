@@ -1,23 +1,66 @@
 from __future__ import annotations
 
 import logging
+from functools import reduce
 
 from PySide6.QtWidgets import (
-    QCheckBox,
-    QComboBox,
     QDialog,
     QDialogButtonBox,
-    QFormLayout,
     QLabel,
-    QLineEdit,
-    QSpinBox,
+    QTabWidget,
     QVBoxLayout,
 )
 
 from dikte.config import Settings
-from dikte.platform.hotkey_parse import HotkeyParseError, parse_hotkey
+from dikte.ui.settings import AboutTab, AdvancedTab, AudioTab, GeneralTab, LlmTab, SttTab
 
 log = logging.getLogger(__name__)
+
+# Sekmelerden diyaloğa yansıtılan alanlar: çağıran kod ve testler tek bir yüzey görür.
+_PROXIED = {
+    "general": (
+        "hotkey_edit",
+        "autostart_check",
+        "auto_copy_check",
+        "auto_paste_check",
+        "raise_window_check",
+        "close_after_copy_check",
+        "history_spin",
+    ),
+    "audio": ("device_combo", "max_seconds_spin", "level_bar", "test_btn"),
+    "stt": (
+        "stt_model_edit",
+        "compute_combo",
+        "language_edit",
+        "batch_check",
+        "batch_threshold_spin",
+        "batch_size_spin",
+        "warm_up_check",
+    ),
+    "llm": (
+        "llm_enabled_check",
+        "prewarm_check",
+        "provider_combo",
+        "llm_model_edit",
+        "ollama_host_edit",
+        "keep_alive_edit",
+        "anthropic_model_edit",
+        "ollama_group",
+        "anthropic_group",
+        "privacy_label",
+    ),
+    "advanced": (
+        "beam_spin",
+        "vad_check",
+        "initial_prompt_edit",
+        "num_ctx_spin",
+        "top_p_spin",
+        "top_k_spin",
+        "timeout_spin",
+        "think_check",
+    ),
+    "about": ("gpu_label", "open_log_btn", "open_config_btn"),
+}
 
 
 def list_input_devices() -> tuple[tuple[int, str], ...]:
@@ -35,162 +78,66 @@ def list_input_devices() -> tuple[tuple[int, str], ...]:
 
 
 class SettingsDialog(QDialog):
+    """Sekmeli ayarlar; her sekme kendi doğrulamasını ve `apply` dönüşümünü yapar."""
+
     def __init__(self, settings: Settings, devices: tuple[tuple[int, str], ...], parent=None):
         super().__init__(parent)
         self.setWindowTitle("Dikte Ayarları")
+        self.resize(560, 520)
         self._settings = settings
-        form = QFormLayout()
 
-        self.hotkey_edit = QLineEdit(settings.hotkey)
-        self.hotkey_edit.setPlaceholderText("ör. ctrl+alt+space")
-        self.device_combo = QComboBox()
-        self.device_combo.addItem("Sistem varsayılanı", None)
-        for idx, name in devices:
-            self.device_combo.addItem(name, idx)
-        if settings.audio.device_index is not None:
-            pos = self.device_combo.findData(settings.audio.device_index)
-            self.device_combo.setCurrentIndex(max(pos, 0))
-        self.stt_model_edit = QLineEdit(settings.stt.model)
-        self.compute_combo = QComboBox()
-        self.compute_combo.addItems(
-            ["float16", "int8_float16", "bfloat16", "int8_float32", "float32"]
+        self.general = GeneralTab(settings)
+        self.audio = AudioTab(settings, devices)
+        self.stt = SttTab(settings)
+        self.llm = LlmTab(settings)
+        self.advanced = AdvancedTab(settings)
+        self.about = AboutTab(settings)
+        self._tabs_in_order = (
+            self.general,
+            self.audio,
+            self.stt,
+            self.llm,
+            self.advanced,
+            self.about,
         )
-        self.compute_combo.setCurrentText(settings.stt.compute_type)
-        self.llm_enabled_check = QCheckBox("LLM ile metin düzeltme (kapalıyken VRAM kullanılmaz)")
-        self.llm_enabled_check.setChecked(settings.llm.enabled)
-        self.provider_combo = QComboBox()
-        self.provider_combo.addItems(["ollama", "anthropic"])
-        self.provider_combo.setCurrentText(settings.llm.provider)
-        self.llm_model_edit = QLineEdit(settings.llm.model)
-        self.ollama_host_edit = QLineEdit(settings.llm.ollama_host)
-        self.keep_alive_edit = QLineEdit(settings.llm.keep_alive)
-        self.keep_alive_edit.setToolTip(
-            "Ollama modelinin bellekte kalma süresi. Düşük VRAM'de '0' yazarak "
-            "her istekten sonra boşaltabilirsiniz (ör. 30m, 5m, 0)."
-        )
-        self._llm_widgets = (
-            self.provider_combo,
-            self.llm_model_edit,
-            self.ollama_host_edit,
-            self.keep_alive_edit,
-        )
-        self.llm_enabled_check.toggled.connect(self._set_llm_fields_enabled)
-        self._set_llm_fields_enabled(settings.llm.enabled)
-        self.batch_check = QCheckBox("Uzun kayıtlarda toplu çözümleme (daha hızlı, +VRAM)")
-        self.batch_check.setChecked(settings.stt.batch_enabled)
-        self.batch_threshold_spin = QSpinBox()
-        self.batch_threshold_spin.setRange(5, 600)
-        self.batch_threshold_spin.setSuffix(" sn")
-        self.batch_threshold_spin.setValue(int(settings.stt.batch_threshold_s))
-        self.batch_threshold_spin.setEnabled(settings.stt.batch_enabled)
-        self.batch_check.toggled.connect(self.batch_threshold_spin.setEnabled)
-        self.autostart_check = QCheckBox("Oturum açılışında başlat")
-        self.autostart_check.setChecked(settings.autostart)
-        self.close_after_copy_check = QCheckBox("Kopyaladıktan sonra pencereyi gizle")
-        self.close_after_copy_check.setChecked(settings.close_after_copy)
-        self.auto_copy_check = QCheckBox("Sonucu panoya kopyala")
-        self.auto_copy_check.setChecked(settings.auto_copy)
-        self.auto_paste_check = QCheckBox("Sonucu aktif pencereye yapıştır (Ctrl+V)")
-        self.auto_paste_check.setChecked(settings.auto_paste)
-        self.auto_paste_check.setToolTip(
-            "Linux'ta xdotool (X11) veya wtype (Wayland) gerekir; yoksa metin yalnızca panoya yazılır."
-        )
-        self.auto_copy_check.toggled.connect(self.auto_paste_check.setEnabled)
-        self.auto_paste_check.setEnabled(settings.auto_copy)
-        self.raise_window_check = QCheckBox("Sonuçta pencereyi öne getir")
-        self.raise_window_check.setChecked(settings.raise_window_on_result)
-        self.max_seconds_spin = QSpinBox()
-        self.max_seconds_spin.setRange(0, 36000)
-        self.max_seconds_spin.setSuffix(" sn")
-        self.max_seconds_spin.setSpecialValueText("Sınırsız")
-        self.max_seconds_spin.setValue(settings.audio.max_seconds)
-        self.max_seconds_spin.setToolTip(
-            "0 = sınırsız kayıt. Sınır konulursa süre dolunca kayıt otomatik durur ve çözümlenir."
-        )
-        self.history_spin = QSpinBox()
-        self.history_spin.setRange(0, 5000)
-        self.history_spin.setValue(settings.history_limit)
+
+        self.tabs = QTabWidget()
+        for tab in self._tabs_in_order:
+            self.tabs.addTab(tab, tab.title)
+
         self.error_label = QLabel("")
+        self.error_label.setWordWrap(True)
         self.error_label.setStyleSheet("color:#E53935;")
-
-        form.addRow("Kısayol (toggle)", self.hotkey_edit)
-        form.addRow("Mikrofon", self.device_combo)
-        form.addRow("STT modeli", self.stt_model_edit)
-        form.addRow("STT compute_type", self.compute_combo)
-        form.addRow(self.llm_enabled_check)
-        form.addRow("LLM sağlayıcı", self.provider_combo)
-        form.addRow("LLM modeli", self.llm_model_edit)
-        form.addRow("Ollama host", self.ollama_host_edit)
-        form.addRow("Model bellekte kalsın", self.keep_alive_edit)
-        form.addRow("Toplu çözümleme eşiği", self.batch_threshold_spin)
-        form.addRow(self.batch_check)
-        form.addRow("Kayıt süresi sınırı", self.max_seconds_spin)
-        form.addRow("Geçmiş kayıt sayısı", self.history_spin)
-        form.addRow(self.autostart_check)
-        form.addRow(self.close_after_copy_check)
-        form.addRow(self.auto_copy_check)
-        form.addRow(self.auto_paste_check)
-        form.addRow(self.raise_window_check)
-
         buttons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
         buttons.accepted.connect(self.accept)
         buttons.rejected.connect(self.reject)
+
         lay = QVBoxLayout(self)
-        lay.addLayout(form)
+        lay.addWidget(self.tabs, 1)
         lay.addWidget(self.error_label)
         lay.addWidget(buttons)
 
-    def _set_llm_fields_enabled(self, enabled: bool) -> None:
-        for w in self._llm_widgets:
-            w.setEnabled(enabled)
+    # ---- eski düz form arayüzüyle uyum
+    def __getattr__(self, name: str):
+        for tab_name, widgets in _PROXIED.items():
+            if name in widgets:
+                return getattr(object.__getattribute__(self, tab_name), name)
+        raise AttributeError(name)
 
     def accept(self) -> None:
-        try:
-            parse_hotkey(self.hotkey_edit.text())
-        except HotkeyParseError as exc:
-            self.error_label.setText(str(exc))
-            return
-        if not self.stt_model_edit.text().strip():
-            self.error_label.setText("STT model adı boş olamaz")
-            return
-        if self.llm_enabled_check.isChecked() and not self.llm_model_edit.text().strip():
-            self.error_label.setText("LLM model adı boş olamaz")
-            return
+        for tab in self._tabs_in_order:
+            problem = tab.validate()
+            if problem:
+                self.error_label.setText(problem)
+                self.tabs.setCurrentWidget(tab)
+                return
+        self.error_label.setText("")
+        self.audio.stop_test()
         super().accept()
 
+    def reject(self) -> None:
+        self.audio.stop_test()
+        super().reject()
+
     def result_settings(self) -> Settings:
-        s = self._settings
-        return s.model_copy(
-            update={
-                "hotkey": self.hotkey_edit.text().strip().lower(),
-                "autostart": self.autostart_check.isChecked(),
-                "close_after_copy": self.close_after_copy_check.isChecked(),
-                "history_limit": self.history_spin.value(),
-                "auto_copy": self.auto_copy_check.isChecked(),
-                "auto_paste": self.auto_paste_check.isChecked(),
-                "raise_window_on_result": self.raise_window_check.isChecked(),
-                "stt": s.stt.model_copy(
-                    update={
-                        "model": self.stt_model_edit.text().strip(),
-                        "compute_type": self.compute_combo.currentText(),
-                        "batch_enabled": self.batch_check.isChecked(),
-                        "batch_threshold_s": float(self.batch_threshold_spin.value()),
-                    }
-                ),
-                "llm": s.llm.model_copy(
-                    update={
-                        "enabled": self.llm_enabled_check.isChecked(),
-                        "provider": self.provider_combo.currentText(),
-                        "model": self.llm_model_edit.text().strip(),
-                        "ollama_host": self.ollama_host_edit.text().strip(),
-                        "keep_alive": self.keep_alive_edit.text().strip() or "0",
-                    }
-                ),
-                "audio": s.audio.model_copy(
-                    update={
-                        "device_index": self.device_combo.currentData(),
-                        "max_seconds": self.max_seconds_spin.value(),
-                    }
-                ),
-            }
-        )
+        return reduce(lambda s, tab: tab.apply(s), self._tabs_in_order, self._settings)

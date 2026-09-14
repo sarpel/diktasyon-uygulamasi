@@ -102,6 +102,22 @@ Kayıt süresi varsayılan olarak **sınırsızdır** (Ayarlar → "Kayıt süre
 kullanımı 16 kHz float32 ham ses için yaklaşık **230 MB/saat**'tir. Bir sınır girilirse süre
 dolunca kayıt sessizce kesilmez; otomatik durur ve o ana kadarki ses çözümlenir.
 
+### Ayarlar
+
+Ayarlar penceresi (tepsi menüsü veya araç çubuğu → "Ayarlar…") altı sekmeden oluşur:
+
+| Sekme | İçerik |
+|---|---|
+| Genel | Kısayol (tuşa basarak yakalanır), geçmiş kayıt sayısı, açılışta başlat, panoya kopyala / yapıştır / pencereyi öne getir |
+| Ses | Mikrofon, kayıt süresi sınırı (0 = sınırsız), canlı seviye testi |
+| Konuşma Tanıma | Whisper modeli, hassasiyet (compute_type), dil, toplu çözümleme, açılışta ısıtma |
+| Metin Düzeltme | LLM aç/kapa, sağlayıcı ve sağlayıcıya özel alanlar, bellekte tutma |
+| Gelişmiş | beam_size, VAD, başlangıç promptu, num_ctx, top_p, top_k, zaman aşımı, düşünme modu |
+| Hakkında | Sürümler, GPU ve desteklenen hassasiyetler, log / ayar klasörünü aç |
+
+Model ve ses ayarları uygulamayı yeniden başlatınca etkin olur; ipucu alanın üstüne gelince görünür.
+`config.json` içindeki kısayol bozuksa uygulama çökmez, varsayılana döner ve bunu bildirir.
+
 Kullanıcı verileri: `%APPDATA%\Dikte\` (config.json, history.jsonl, dikte.log).
 Model önbelleği: `%LOCALAPPDATA%\Dikte\models\`.
 

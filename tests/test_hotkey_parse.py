@@ -55,3 +55,44 @@ def test_bare_key_allowed_when_requested():
 def test_bare_modifier_still_rejected():
     with pytest.raises(HotkeyParseError):
         parse_hotkey("ctrl", allow_bare=True)
+
+
+def test_to_key_sequence_round_trips():
+    from dikte.platform.hotkey_parse import from_key_sequence, to_key_sequence
+
+    seq = to_key_sequence("ctrl+alt+space")
+    assert seq.toString() == "Ctrl+Alt+Space"
+    assert from_key_sequence(seq) == "ctrl+alt+space"
+
+
+def test_from_key_sequence_lowercases():
+    from PySide6.QtGui import QKeySequence
+
+    from dikte.platform.hotkey_parse import from_key_sequence
+
+    assert from_key_sequence(QKeySequence("Ctrl+Shift+D")) == "ctrl+shift+d"
+
+
+def test_from_key_sequence_rejects_bare_key():
+    from PySide6.QtGui import QKeySequence
+
+    from dikte.platform.hotkey_parse import from_key_sequence
+
+    with pytest.raises(HotkeyParseError):
+        from_key_sequence(QKeySequence("D"))
+
+
+def test_from_empty_sequence_raises():
+    from PySide6.QtGui import QKeySequence
+
+    from dikte.platform.hotkey_parse import from_key_sequence
+
+    with pytest.raises(HotkeyParseError):
+        from_key_sequence(QKeySequence())
+
+
+def test_to_key_sequence_rejects_invalid_spec():
+    from dikte.platform.hotkey_parse import to_key_sequence
+
+    with pytest.raises(HotkeyParseError):
+        to_key_sequence("ctrl+")

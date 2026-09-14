@@ -18,7 +18,7 @@ from dikte.llm import LlmError, make_provider
 from dikte.logging_setup import setup_logging
 from dikte.platform.autostart import set_autostart
 from dikte.platform.hotkey import HOTKEY_ID, GlobalHotkey
-from dikte.platform.hotkey_parse import parse_hotkey
+from dikte.platform.hotkey_parse import HotkeyParseError, parse_hotkey
 from dikte.platform.paste import paste_active_window
 from dikte.platform.single_instance import (
     DEFAULT_NAME,
@@ -68,7 +68,24 @@ def _make_llm(settings: Settings):
         return _NullLlm()
 
 
+def _safe_hotkey(settings: Settings) -> Settings:
+    """config.json'daki kısayol bozuksa açılışta çökmek yerine varsayılana döner."""
+    try:
+        parse_hotkey(settings.hotkey)
+    except HotkeyParseError as exc:
+        fallback = Settings().hotkey
+        log.error(
+            "config'teki kısayol geçersiz (%s): %s; '%s' kullanılıyor",
+            settings.hotkey,
+            exc,
+            fallback,
+        )
+        return settings.model_copy(update={"hotkey": fallback})
+    return settings
+
+
 def build_app(settings: Settings) -> AppContext:
+    settings = _safe_hotkey(settings)
     recorder = AudioRecorder(settings.audio)
     stt = FasterWhisperEngine(settings.stt)
     controller = DictationController(
@@ -272,9 +289,16 @@ def main(argv: list[str] | None = None) -> int:
 
     settings = load_settings()
     ctx = build_app(settings)
+    if ctx.settings.hotkey != settings.hotkey:  # bozuk kısayol düzeltildi, kalıcı hâle getir
+        save_settings(ctx.settings)
     single.activated.connect(ctx.tray.show_requested)
     single.toggle_requested.connect(ctx.controller.toggle)
     ctx.tray.show()
+    if ctx.settings.hotkey != settings.hotkey:
+        ctx.tray.notify(
+            APP_NAME,
+            f"Ayarlardaki kısayol geçersizdi; '{ctx.settings.hotkey}' kullanılıyor.",
+        )
     _apply_hotkey(ctx)
     set_autostart(settings.autostart)
     ctx.controller.warm_up()
