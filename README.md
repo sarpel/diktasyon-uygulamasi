@@ -102,6 +102,28 @@ Kayıt süresi varsayılan olarak **sınırsızdır** (Ayarlar → "Kayıt süre
 kullanımı 16 kHz float32 ham ses için yaklaşık **230 MB/saat**'tir. Bir sınır girilirse süre
 dolunca kayıt sessizce kesilmez; otomatik durur ve o ana kadarki ses çözümlenir.
 
+### Halüsinasyon ve sessizlik
+
+Whisper, sessiz veya çok gürültülü parçalarda eğitim verisindeki altyazı kalıplarını tekrar
+edebilir ("Altyazı M.K.", "İzlediğiniz için teşekkürler"). Dikte bunu üç katmanda engeller:
+
+1. **Ön kontrol:** Kayıtta hiç konuşma yoksa (Silero VAD) model **hiç çağrılmaz**;
+   "Konuşma algılanmadı" uyarısı verilir.
+2. **Eşikler:** Çözümlemeye `no_speech_threshold`, `log_prob_threshold` ve
+   `hallucination_silence_threshold` geçilir; düşük güvenli segmentler elenir.
+3. **Kara liste:** Bilinen uydurma kalıpları yalnızca tek başına bir segmenti kapladığında atılır;
+   gerçek bir cümlenin içinde geçtiğinde korunur.
+
+Eşik önerileri (Ayarlar → Konuşma Tanıma → "Sessizlik ve halüsinasyon"):
+
+| Ortam | VAD eşiği |
+|---|---|
+| Gürültülü (açık ofis, fan) | 0,60 |
+| Normal | 0,50 (varsayılan) |
+| Kısık / yumuşak ses | 0,35 |
+
+VAD kapatılırsa toplu çözümleme de devre dışı kalır (boru hattı konuşma aralıklarını VAD'den alır).
+
 ### Uzak LLM sağlayıcıları
 
 Metin düzeltme varsayılan olarak yereldeki Ollama ile yapılır. İsterseniz uzak bir sağlayıcı seçebilirsiniz:

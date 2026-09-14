@@ -36,6 +36,11 @@ _PROXIED = {
         "batch_threshold_spin",
         "batch_size_spin",
         "warm_up_check",
+        "vad_check",
+        "vad_threshold_spin",
+        "vad_min_silence_spin",
+        "no_speech_spin",
+        "hallucination_filter_check",
     ),
     "llm": (
         "llm_enabled_check",
@@ -64,7 +69,6 @@ _PROXIED = {
     ),
     "advanced": (
         "beam_spin",
-        "vad_check",
         "initial_prompt_edit",
         "num_ctx_spin",
         "top_p_spin",

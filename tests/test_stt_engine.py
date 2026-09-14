@@ -55,6 +55,7 @@ def make_engine(settings: SttSettings | None = None):
         model_factory=factory,
         pipeline_factory=pipeline_factory,
         cuda_probe=lambda: 1,
+        speech_probe=lambda audio, s: True,  # gerçek VAD yerine: sessizlik testleri ayrı
     )
     return eng, created
 
@@ -151,17 +152,28 @@ def test_pipeline_is_created_once():
 
 
 @pytest.mark.gpu
-def test_real_model_transcribes_silence_without_crash():
+def test_real_silence_is_rejected_before_the_model_runs():
+    """Sessiz kayıt Whisper'a hiç gitmez; aksi hâlde uydurma altyazı metni üretirdi."""
     eng = FasterWhisperEngine(SttSettings())
     eng.load()
-    res = eng.transcribe(np.zeros(16000, dtype=np.float32))
-    assert isinstance(res.text, str)
+    with pytest.raises(SttError, match="Konuşma algılanmadı"):
+        eng.transcribe(np.zeros(16000, dtype=np.float32))
+
+
+@pytest.mark.gpu
+def test_real_silero_probe_rejects_silence():
+    from dikte.stt.engine import _default_speech_probe
+
+    assert _default_speech_probe(np.zeros(32_000, dtype=np.float32), SttSettings()) is False
 
 
 @pytest.mark.gpu
 def test_real_batched_pipeline_handles_long_audio():
     """Toplu boru hattının gerçek API'siyle uyumu (kwargs kabulü) doğrulanır."""
-    eng = FasterWhisperEngine(SttSettings(batch_threshold_s=5.0, batch_size=4))
+    eng = FasterWhisperEngine(
+        SttSettings(batch_threshold_s=5.0, batch_size=4),
+        speech_probe=lambda audio, s: True,  # sessizlik ön-kontrolünü atla, kwargs'ı sına
+    )
     res = eng.transcribe(np.zeros(16000 * 30, dtype=np.float32))
     assert isinstance(res.text, str)
 
@@ -178,6 +190,7 @@ def make_engine_with_types(supported, settings=None):
         model_factory=factory,
         cuda_probe=lambda: 1,
         supported_types_probe=lambda: set(supported),
+        speech_probe=lambda audio, s: True,
     )
     return eng, created
 
@@ -246,3 +259,83 @@ def test_warm_up_skipped_when_disabled():
     eng, created = make_engine(SttSettings(warm_up=False))
     eng.warm_up()
     assert eng.is_loaded and created["model"].calls == []
+
+
+def test_silent_audio_raises_without_calling_model():
+    eng, created = make_engine()
+    eng._speech_probe = lambda audio, s: False
+    with pytest.raises(SttError, match="Konuşma algılanmadı"):
+        eng.transcribe(np.zeros(16000, dtype=np.float32))
+    assert "model" not in created
+
+
+def test_silence_check_skipped_when_vad_disabled():
+    eng, _ = make_engine(SttSettings(vad_filter=False))
+    eng._speech_probe = lambda audio, s: pytest.fail("VAD kapalıyken sorgulanmamalı")
+    assert eng.transcribe(np.zeros(16000, dtype=np.float32)).text == "merhaba dünya"
+
+
+def test_transcribe_passes_vad_and_hallucination_kwargs():
+    eng, created = make_engine()
+    eng.transcribe(np.ones(16000, dtype=np.float32) * 0.1)
+    kw = created["model"].calls[0]
+    assert kw["vad_parameters"] == {
+        "threshold": 0.5,
+        "min_silence_duration_ms": 1000,
+        "speech_pad_ms": 300,
+    }
+    assert kw["no_speech_threshold"] == 0.6 and kw["log_prob_threshold"] == -1.0
+    assert kw["hallucination_silence_threshold"] == 2.0 and kw["without_timestamps"] is True
+
+
+def test_zero_hallucination_threshold_becomes_none():
+    eng, created = make_engine(SttSettings(hallucination_silence_threshold_s=0))
+    eng.transcribe(np.ones(16000, dtype=np.float32) * 0.1)
+    assert created["model"].calls[0]["hallucination_silence_threshold"] is None
+
+
+class HallucinatingModel(FakeModel):
+    def transcribe(self, audio, **kwargs):
+        self.calls.append(kwargs)
+        self.audios.append(audio)
+        segs = [
+            SimpleNamespace(
+                start=0.0, end=1.0, text="Merhaba dünya", no_speech_prob=0.05, avg_logprob=-0.3
+            ),
+            SimpleNamespace(
+                start=1.0, end=2.0, text="Altyazı M.K.", no_speech_prob=0.3, avg_logprob=-0.9
+            ),
+        ]
+        return iter(segs), SimpleNamespace(language="tr", duration=2.0)
+
+
+def _hallucinating_engine(settings=None):
+    return FasterWhisperEngine(
+        settings or SttSettings(),
+        model_factory=lambda *a, **kw: HallucinatingModel(*a, **kw),
+        cuda_probe=lambda: 1,
+        speech_probe=lambda audio, s: True,
+    )
+
+
+def test_hallucinated_segments_removed():
+    eng = _hallucinating_engine()
+    assert eng.transcribe(np.ones(16000, dtype=np.float32) * 0.1).text == "Merhaba dünya"
+
+
+def test_hallucination_filter_can_be_disabled():
+    eng = _hallucinating_engine(SttSettings(hallucination_filter=False))
+    assert "Altyazı M.K." in eng.transcribe(np.ones(16000, dtype=np.float32) * 0.1).text
+
+
+def test_segment_confidences_are_recorded():
+    eng = _hallucinating_engine(SttSettings(hallucination_filter=False))
+    segments = eng.transcribe(np.ones(16000, dtype=np.float32) * 0.1).segments
+    assert segments[0].no_speech_prob == 0.05 and segments[0].avg_logprob == -0.3
+
+
+def test_batching_is_skipped_when_vad_disabled():
+    """BatchedInferencePipeline clip_timestamps için VAD ister; kapalıyken düz model kullanılır."""
+    eng, created = make_engine(SttSettings(vad_filter=False, batch_threshold_s=1.0))
+    eng.transcribe(long_audio(30))
+    assert "pipeline" not in created

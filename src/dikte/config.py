@@ -20,6 +20,15 @@ class SttSettings(BaseModel):
     language: str = "tr"
     beam_size: int = Field(default=5, ge=1, le=10)
     vad_filter: bool = True
+    # Silero VAD eşikleri (faster-whisper içinde gömülü). Gürültülü ortamda 0.6, yumuşak seste 0.35.
+    vad_threshold: float = Field(default=0.5, ge=0.0, le=1.0)
+    vad_min_silence_ms: int = Field(default=1000, ge=0)
+    vad_speech_pad_ms: int = Field(default=300, ge=0)
+    # Halüsinasyon önlemleri: sessizlikte "Altyazı M.K." gibi uydurma metinleri engeller.
+    no_speech_threshold: float = Field(default=0.6, ge=0.0, le=1.0)
+    log_prob_threshold: float = -1.0
+    hallucination_silence_threshold_s: float = Field(default=2.0, ge=0)
+    hallucination_filter: bool = True
     initial_prompt: str = "Türkçe konuşma. Noktalama işaretleri kullanılır."
     # Uzun kayıtlarda BatchedInferencePipeline; kısa diktede kazanç yok, VRAM'i artırır.
     batch_enabled: bool = True

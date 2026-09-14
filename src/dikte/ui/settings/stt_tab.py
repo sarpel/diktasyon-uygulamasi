@@ -3,7 +3,9 @@ from __future__ import annotations
 from PySide6.QtWidgets import (
     QCheckBox,
     QComboBox,
+    QDoubleSpinBox,
     QFormLayout,
+    QGroupBox,
     QLineEdit,
     QSpinBox,
     QVBoxLayout,
@@ -51,6 +53,42 @@ class SttTab(QWidget):
         self.warm_up_check = QCheckBox("Açılışta modeli ısıt (ilk diktedeki gecikmeyi alır)")
         self.warm_up_check.setChecked(settings.stt.warm_up)
 
+        self.vad_check = QCheckBox("Sessizlik algılama (VAD) açık")
+        self.vad_check.setChecked(settings.stt.vad_filter)
+        self.vad_check.setToolTip(
+            "Kapatılırsa sessiz kayıtlar da modele gider ve 'Altyazı M.K.' gibi uydurma "
+            "metinler çıkabilir. Toplu çözümleme de VAD'e ihtiyaç duyar."
+        )
+        self.vad_threshold_spin = QDoubleSpinBox()
+        self.vad_threshold_spin.setRange(0.0, 1.0)
+        self.vad_threshold_spin.setSingleStep(0.05)
+        self.vad_threshold_spin.setValue(settings.stt.vad_threshold)
+        self.vad_threshold_spin.setToolTip("Gürültülü ortamda 0,60; yumuşak/kısık seste 0,35")
+        self.vad_min_silence_spin = QSpinBox()
+        self.vad_min_silence_spin.setRange(0, 10000)
+        self.vad_min_silence_spin.setSingleStep(100)
+        self.vad_min_silence_spin.setSuffix(" ms")
+        self.vad_min_silence_spin.setValue(settings.stt.vad_min_silence_ms)
+        self.no_speech_spin = QDoubleSpinBox()
+        self.no_speech_spin.setRange(0.0, 1.0)
+        self.no_speech_spin.setSingleStep(0.05)
+        self.no_speech_spin.setValue(settings.stt.no_speech_threshold)
+        self.no_speech_spin.setToolTip(
+            "Segmentin 'konuşma değil' olasılığı bu değeri aşarsa atılır."
+        )
+        self.hallucination_filter_check = QCheckBox(
+            'Bilinen uydurma metinleri ele ("Altyazı M.K.", "İzlediğiniz için teşekkürler")'
+        )
+        self.hallucination_filter_check.setChecked(settings.stt.hallucination_filter)
+
+        vad_group = QGroupBox("Sessizlik ve halüsinasyon")
+        vad_form = QFormLayout(vad_group)
+        vad_form.addRow(self.vad_check)
+        vad_form.addRow("VAD eşiği", self.vad_threshold_spin)
+        vad_form.addRow("En kısa sessizlik", self.vad_min_silence_spin)
+        vad_form.addRow("Konuşma yok eşiği", self.no_speech_spin)
+        vad_form.addRow(self.hallucination_filter_check)
+
         form = QFormLayout()
         form.addRow("Model", self.stt_model_edit)
         form.addRow("Hassasiyet (compute_type)", self.compute_combo)
@@ -62,6 +100,7 @@ class SttTab(QWidget):
 
         lay = QVBoxLayout(self)
         lay.addLayout(form)
+        lay.addWidget(vad_group)
         lay.addStretch(1)
 
     def validate(self) -> str | None:
@@ -83,6 +122,11 @@ class SttTab(QWidget):
                         "batch_threshold_s": float(self.batch_threshold_spin.value()),
                         "batch_size": self.batch_size_spin.value(),
                         "warm_up": self.warm_up_check.isChecked(),
+                        "vad_filter": self.vad_check.isChecked(),
+                        "vad_threshold": self.vad_threshold_spin.value(),
+                        "vad_min_silence_ms": self.vad_min_silence_spin.value(),
+                        "no_speech_threshold": self.no_speech_spin.value(),
+                        "hallucination_filter": self.hallucination_filter_check.isChecked(),
                     }
                 )
             }

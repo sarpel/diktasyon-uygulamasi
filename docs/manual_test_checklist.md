@@ -83,3 +83,12 @@
 - [ ] Anahtar tanımlı değilken sağlayıcı seçilirse uygulama çökmüyor; tepside açıklayıcı hata çıkıyor
       ve ham metin gösteriliyor.
 - [ ] Ayar dosyasında (`config.json`) hiçbir anahtar **değeri** yok, yalnızca ortam değişkeni adları var.
+
+## Sessizlik ve halüsinasyon
+
+- [ ] Kısayola basıp hiç konuşmadan durdur: "Konuşma algılanmadı" uyarısı çıkıyor, uydurma metin yok.
+- [ ] Normal dikte: metin eksiksiz; cümle başları/sonları VAD tarafından kırpılmıyor.
+- [ ] VAD eşiği 0,35'e çekilince fısıltıyla konuşma da yakalanıyor.
+- [ ] "Bilinen uydurma metinleri ele" kapalıyken sessizlikten gelen metin görünüyor (karşılaştırma).
+- [ ] "Bugün toplantıda altyazı ekleme özelliğini konuştuk" cümlesi **elenmiyor** (yanlış pozitif yok).
+- [ ] VAD kapalıyken uzun kayıt hata vermiyor (toplu çözümleme otomatik devre dışı kalıyor).

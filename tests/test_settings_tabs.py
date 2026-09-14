@@ -168,3 +168,21 @@ def test_remote_provider_models_round_trip(dlg):
     dlg.gemini_key_env_edit.setText("MY_GEMINI")
     s = dlg.result_settings()
     assert s.llm.gemini_model == "gemini-3.5-pro" and s.llm.gemini_api_key_env == "MY_GEMINI"
+
+
+def test_vad_group_fields_round_trip(dlg):
+    dlg.vad_threshold_spin.setValue(0.65)
+    dlg.vad_min_silence_spin.setValue(1500)
+    dlg.no_speech_spin.setValue(0.8)
+    dlg.hallucination_filter_check.setChecked(False)
+    s = dlg.result_settings()
+    assert s.stt.vad_threshold == 0.65 and s.stt.vad_min_silence_ms == 1500
+    assert s.stt.no_speech_threshold == 0.8 and s.stt.hallucination_filter is False
+
+
+def test_vad_checkbox_lives_only_on_the_stt_tab(dlg):
+    """Tek kaynak: VAD kutusu yalnızca Konuşma Tanıma sekmesinde."""
+    assert dlg.vad_check is dlg.stt.vad_check
+    assert not hasattr(dlg.advanced, "vad_check")
+    dlg.vad_check.setChecked(False)
+    assert dlg.result_settings().stt.vad_filter is False

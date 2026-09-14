@@ -9,6 +9,7 @@ import numpy as np
 
 from dikte import paths
 from dikte.config import SttSettings
+from dikte.stt.hallucinations import filter_segments
 from dikte.stt.result import Segment, TranscriptResult
 
 log = logging.getLogger(__name__)
@@ -41,6 +42,22 @@ def _default_model_factory(*args, **kwargs):
     from faster_whisper import WhisperModel
 
     return WhisperModel(*args, **kwargs)
+
+
+def _vad_options(settings: SttSettings) -> dict:
+    return {
+        "threshold": settings.vad_threshold,
+        "min_silence_duration_ms": settings.vad_min_silence_ms,
+        "speech_pad_ms": settings.vad_speech_pad_ms,
+    }
+
+
+def _default_speech_probe(audio: np.ndarray, settings: SttSettings) -> bool:
+    """Kayıtta hiç konuşma var mı? Silero VAD (faster-whisper içinde gömülü) ile bakılır."""
+    from faster_whisper.vad import VadOptions, get_speech_timestamps
+
+    options = VadOptions(**_vad_options(settings))
+    return bool(get_speech_timestamps(audio.astype(np.float32, copy=False), options))
 
 
 def _default_pipeline_factory(model):
@@ -77,12 +94,14 @@ class FasterWhisperEngine:
         pipeline_factory: Callable | None = None,
         cuda_probe: Callable[[], int] | None = None,
         supported_types_probe: Callable[[], set[str]] | None = None,
+        speech_probe: Callable[[np.ndarray, SttSettings], bool] | None = None,
     ):
         self._settings = settings
         self._factory = model_factory or _default_model_factory
         self._pipeline_factory = pipeline_factory or _default_pipeline_factory
         self._cuda_probe = cuda_probe or _default_cuda_probe
         self._types_probe = supported_types_probe or _default_supported_types_probe
+        self._speech_probe = speech_probe or _default_speech_probe
         self._model = None
         self._pipeline = None
         self._compute_type = settings.compute_type
@@ -176,6 +195,9 @@ class FasterWhisperEngine:
     def _use_batching(self, audio: np.ndarray) -> bool:
         if not self._settings.batch_enabled:
             return False
+        if not self._settings.vad_filter:
+            # Toplu boru hattı konuşma aralıklarını VAD'den alır; VAD kapalıyken çalışmaz.
+            return False
         return audio.size / SAMPLE_RATE >= self._settings.batch_threshold_s
 
     def _get_pipeline(self):
@@ -187,29 +209,49 @@ class FasterWhisperEngine:
     def transcribe(self, audio: np.ndarray, language: str | None = None) -> TranscriptResult:
         if audio.size == 0:
             raise SttError("Ses kaydı boş")
+        s = self._settings
+        # Tamamen sessiz kayıtta Whisper çağrılmaz: uydurma altyazı metni üretmesini engeller.
+        if s.vad_filter and not self._speech_probe(audio, s):
+            raise SttError("Konuşma algılanmadı; mikrofon ve VAD eşiğini kontrol edin")
         if not self.is_loaded:
             self.load()
-        lang = language or self._settings.language
+        lang = language or s.language
         kwargs = {
             "language": lang,
             "task": "transcribe",
-            "beam_size": self._settings.beam_size,
-            "vad_filter": self._settings.vad_filter,
-            "initial_prompt": self._settings.initial_prompt or None,
+            "beam_size": s.beam_size,
+            "vad_filter": s.vad_filter,
+            "vad_parameters": _vad_options(s),
+            "no_speech_threshold": s.no_speech_threshold,
+            "log_prob_threshold": s.log_prob_threshold,
+            "hallucination_silence_threshold": s.hallucination_silence_threshold_s or None,
+            "without_timestamps": True,  # kelime zamanları kullanılmıyor
+            "initial_prompt": s.initial_prompt or None,
         }
         try:
             with self._lock:
                 if self._use_batching(audio):
                     target = self._get_pipeline()
-                    kwargs["batch_size"] = self._settings.batch_size
+                    kwargs["batch_size"] = s.batch_size
                 else:
                     target = self._model
                     kwargs["condition_on_previous_text"] = True
                 seg_iter, info = target.transcribe(audio.astype(np.float32, copy=False), **kwargs)
-                segments = tuple(Segment(s.start, s.end, s.text.strip()) for s in seg_iter)
+                segments = tuple(
+                    Segment(
+                        seg.start,
+                        seg.end,
+                        seg.text.strip(),
+                        no_speech_prob=float(getattr(seg, "no_speech_prob", 0.0)),
+                        avg_logprob=float(getattr(seg, "avg_logprob", 0.0)),
+                    )
+                    for seg in seg_iter
+                )
         except Exception as exc:
             raise SttError(f"Transkripsiyon hatası: {exc}") from exc
-        text = " ".join(s.text for s in segments if s.text).strip()
+        if s.hallucination_filter:
+            segments = filter_segments(segments, no_speech_threshold=s.no_speech_threshold)
+        text = " ".join(seg.text for seg in segments if seg.text).strip()
         return TranscriptResult(
             text=text,
             language=info.language,

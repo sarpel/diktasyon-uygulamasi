@@ -27,8 +27,6 @@ class AdvancedTab(QWidget):
         self.beam_spin.setRange(1, 10)
         self.beam_spin.setValue(stt.beam_size)
         self.beam_spin.setToolTip("turbo modelde 1–2 genellikle yeterli; büyük değer yavaşlatır")
-        self.vad_check = QCheckBox("Sessizlik algılama (VAD) açık")
-        self.vad_check.setChecked(stt.vad_filter)
         self.initial_prompt_edit = QPlainTextEdit(stt.initial_prompt)
         self.initial_prompt_edit.setMaximumHeight(70)
         self.initial_prompt_edit.setToolTip("Modele verilen bağlam cümlesi; boş bırakılabilir")
@@ -36,7 +34,6 @@ class AdvancedTab(QWidget):
         stt_group = QGroupBox("Çözümleme")
         stt_form = QFormLayout(stt_group)
         stt_form.addRow("beam_size", self.beam_spin)
-        stt_form.addRow(self.vad_check)
         stt_form.addRow("Başlangıç promptu", self.initial_prompt_edit)
 
         self.num_ctx_spin = QSpinBox()
@@ -80,7 +77,6 @@ class AdvancedTab(QWidget):
                 "stt": s.stt.model_copy(
                     update={
                         "beam_size": self.beam_spin.value(),
-                        "vad_filter": self.vad_check.isChecked(),
                         "initial_prompt": self.initial_prompt_edit.toPlainText().strip(),
                     }
                 ),
