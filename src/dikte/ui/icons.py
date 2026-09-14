@@ -1,0 +1,32 @@
+from PySide6.QtCore import QRectF, Qt
+from PySide6.QtGui import QColor, QIcon, QPainter, QPen, QPixmap
+
+_COLORS = {"idle": QColor("#4A90E2"), "recording": QColor("#E53935"), "busy": QColor("#F5A623")}
+
+
+def make_tray_icon(state: str = "idle", size: int = 64) -> QIcon:
+    pm = QPixmap(size, size)
+    pm.fill(Qt.transparent)
+    p = QPainter(pm)
+    p.setRenderHint(QPainter.Antialiasing)
+    p.setBrush(_COLORS.get(state, _COLORS["idle"]))
+    p.setPen(Qt.NoPen)
+    p.drawEllipse(QRectF(size * 0.1, size * 0.1, size * 0.8, size * 0.8))
+    p.setPen(QPen(QColor("white"), size * 0.12, Qt.SolidLine, Qt.RoundCap))
+    for i, h in enumerate((0.25, 0.5, 0.35)):
+        x = size * (0.35 + i * 0.15)
+        p.drawLine(int(x), int(size * (0.5 - h / 2)), int(x), int(size * (0.5 + h / 2)))
+    p.end()
+    return QIcon(pm)
+
+
+def copy_icon(size: int = 32) -> QIcon:
+    pm = QPixmap(size, size)
+    pm.fill(Qt.transparent)
+    p = QPainter(pm)
+    p.setRenderHint(QPainter.Antialiasing)
+    p.setPen(QPen(QColor("#666"), 2))
+    p.drawRoundedRect(QRectF(size * 0.35, size * 0.35, size * 0.45, size * 0.5), 3, 3)
+    p.drawRoundedRect(QRectF(size * 0.2, size * 0.15, size * 0.45, size * 0.5), 3, 3)
+    p.end()
+    return QIcon(pm)
