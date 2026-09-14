@@ -5,7 +5,7 @@ import logging
 import sys
 from dataclasses import dataclass
 
-from PySide6.QtCore import QThreadPool
+from PySide6.QtCore import QCoreApplication, QThreadPool
 from PySide6.QtWidgets import QApplication, QDialog, QMessageBox, QSystemTrayIcon
 
 from dikte import APP_NAME, __version__, paths
@@ -19,7 +19,12 @@ from dikte.logging_setup import setup_logging
 from dikte.platform.autostart import set_autostart
 from dikte.platform.hotkey import GlobalHotkey
 from dikte.platform.hotkey_parse import parse_hotkey
-from dikte.platform.single_instance import SingleInstance
+from dikte.platform.single_instance import (
+    DEFAULT_NAME,
+    TOGGLE_MESSAGE,
+    SingleInstance,
+    send_command,
+)
 from dikte.stt.engine import FasterWhisperEngine
 from dikte.ui.overlay import RecordingOverlay
 from dikte.ui.result_window import ResultWindow
@@ -27,6 +32,8 @@ from dikte.ui.settings_dialog import SettingsDialog, list_input_devices
 from dikte.ui.tray import TrayIcon
 
 log = logging.getLogger(__name__)
+# Windows dışında global kısayol yoktur; masaüstü ortamı bu komuta bir tuş bağlar.
+CLI_TOGGLE_HINT = "dikte --toggle"
 
 
 @dataclass
@@ -94,14 +101,29 @@ def _wire(ctx: AppContext) -> None:
 
 
 def _apply_hotkey(ctx: AppContext) -> None:
-    if not ctx.hotkey.register(ctx.settings.hotkey):
+    if ctx.hotkey.register(ctx.settings.hotkey):
+        ctx.tray.set_hotkey_label(ctx.hotkey.label or ctx.settings.hotkey)
+        return
+    if sys.platform == "win32":
         ctx.tray.notify(
             APP_NAME,
             f"Kısayol kaydedilemedi: {ctx.settings.hotkey}. "
             "Başka bir uygulama kullanıyor olabilir.",
             critical=True,
         )
-    ctx.tray.set_hotkey_label(ctx.hotkey.label or ctx.settings.hotkey)
+        ctx.tray.set_hotkey_label(ctx.settings.hotkey)
+        return
+    log.info("global kısayol bu platformda yok; '%s' komutuna tuş bağlayın", CLI_TOGGLE_HINT)
+    ctx.tray.set_hotkey_label(CLI_TOGGLE_HINT)
+
+
+def _run_toggle() -> int:
+    """Çalışan örneğe kayıt başlat/durdur komutu gönderir."""
+    _app = QCoreApplication.instance() or QCoreApplication(sys.argv)
+    if not send_command(DEFAULT_NAME, TOGGLE_MESSAGE):
+        print(f"{APP_NAME} çalışmıyor; önce uygulamayı başlatın.", file=sys.stderr)
+        return 1
+    return 0
 
 
 def _open_settings(ctx: AppContext) -> None:
@@ -137,8 +159,15 @@ def _quit(ctx: AppContext) -> None:
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="dikte")
     parser.add_argument("--minimized", action="store_true", help="pencere açmadan tray'de başla")
+    parser.add_argument(
+        "--toggle",
+        action="store_true",
+        help="çalışan örnekte kaydı başlat/durdur (Linux kısayolu için)",
+    )
     parser.add_argument("--version", action="version", version=f"{APP_NAME} {__version__}")
     args = parser.parse_args(argv)
+    if args.toggle:
+        return _run_toggle()
 
     setup_logging()
     app = QApplication(sys.argv)
@@ -156,6 +185,7 @@ def main(argv: list[str] | None = None) -> int:
     settings = load_settings()
     ctx = build_app(settings)
     single.activated.connect(ctx.tray.show_requested)
+    single.toggle_requested.connect(ctx.controller.toggle)
     ctx.tray.show()
     _apply_hotkey(ctx)
     set_autostart(settings.autostart)

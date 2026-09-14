@@ -1,4 +1,5 @@
 import logging
+import sys
 
 import pytest
 
@@ -118,7 +119,8 @@ def test_open_settings_applies_new_settings(ctx, monkeypatch, tmp_path):
     app_mod._open_settings(ctx)
     assert ctx.settings.hotkey == "ctrl+shift+d" and saved["hotkey"] == "ctrl+shift+d"
     assert ctx.window.close_after_copy is True
-    assert "ctrl+shift+d" in ctx.tray.toolTip().lower()
+    expected = "ctrl+shift+d" if sys.platform == "win32" else app_mod.CLI_TOGGLE_HINT
+    assert expected in ctx.tray.toolTip().lower()
 
 
 def test_open_settings_cancelled_changes_nothing(ctx, monkeypatch):
@@ -142,3 +144,39 @@ def test_quit_hides_tray_and_unregisters_hotkey(ctx):
     ctx.hotkey.unregister = lambda: unregistered.append(True)
     app_mod._quit(ctx)
     assert unregistered == [True] and not ctx.tray.isVisible()
+
+
+def test_run_toggle_returns_error_when_not_running(monkeypatch):
+    monkeypatch.setattr(app_mod, "send_command", lambda *a, **k: False)
+    assert app_mod._run_toggle() == 1
+
+
+def test_run_toggle_sends_toggle_message(monkeypatch):
+    sent = {}
+
+    def fake_send(name, message):
+        sent.update(name=name, message=message)
+        return True
+
+    monkeypatch.setattr(app_mod, "send_command", fake_send)
+    assert app_mod._run_toggle() == 0
+    assert sent["message"] == app_mod.TOGGLE_MESSAGE
+    assert sent["name"] == app_mod.DEFAULT_NAME
+
+
+def test_apply_hotkey_falls_back_to_cli_label_off_windows(ctx, monkeypatch):
+    monkeypatch.setattr(app_mod.sys, "platform", "linux")
+    notifications = []
+    ctx.tray.notify = lambda *a, **k: notifications.append(a)
+    app_mod._apply_hotkey(ctx)
+    assert notifications == []  # Linux'ta hata bildirimi gösterilmez
+    assert "dikte --toggle" in ctx.tray.toolTip()
+
+
+def test_apply_hotkey_notifies_on_windows_failure(ctx, monkeypatch):
+    monkeypatch.setattr(app_mod.sys, "platform", "win32")
+    ctx.hotkey.register = lambda _spec: False
+    notifications = []
+    ctx.tray.notify = lambda *a, **k: notifications.append(a)
+    app_mod._apply_hotkey(ctx)
+    assert len(notifications) == 1
