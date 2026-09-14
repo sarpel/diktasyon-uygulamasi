@@ -22,9 +22,7 @@ def test_correct_parses_json_reply():
         json.dumps(
             {
                 "corrected_text": "Bugün hava çok güzel.",
-                "changes": [
-                    {"original": "hava çuk", "replacement": "hava çok", "reason": "yazım"}
-                ],
+                "changes": [{"original": "hava çuk", "replacement": "hava çok", "reason": "yazım"}],
             }
         )
     )

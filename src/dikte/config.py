@@ -47,7 +47,7 @@ class AudioSettings(BaseModel):
     model_config = ConfigDict(frozen=True)
     device_index: int | None = None  # None = sistem varsayılanı
     sample_rate: int = 16000
-    max_seconds: int = Field(default=600, ge=5)
+    max_seconds: int = Field(default=0, ge=0)  # 0 = sınırsız
 
 
 class Settings(BaseModel):

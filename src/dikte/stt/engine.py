@@ -183,9 +183,7 @@ class FasterWhisperEngine:
                 else:
                     target = self._model
                     kwargs["condition_on_previous_text"] = True
-                seg_iter, info = target.transcribe(
-                    audio.astype(np.float32, copy=False), **kwargs
-                )
+                seg_iter, info = target.transcribe(audio.astype(np.float32, copy=False), **kwargs)
                 segments = tuple(Segment(s.start, s.end, s.text.strip()) for s in seg_iter)
         except Exception as exc:
             raise SttError(f"Transkripsiyon hatası: {exc}") from exc

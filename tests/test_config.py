@@ -37,3 +37,18 @@ def test_load_corrupt_file_returns_defaults_and_backs_up(tmp_path: Path):
     p.write_text("{not json", encoding="utf-8")
     assert load_settings(p) == Settings()
     assert (tmp_path / "config.json.bak").exists()
+
+
+def test_default_recording_is_unlimited():
+    from dikte.config import AudioSettings
+
+    assert AudioSettings().max_seconds == 0
+
+
+def test_negative_max_seconds_rejected():
+    from pydantic import ValidationError
+
+    from dikte.config import AudioSettings
+
+    with pytest.raises(ValidationError):
+        AudioSettings(max_seconds=-1)

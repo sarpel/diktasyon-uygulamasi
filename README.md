@@ -83,6 +83,10 @@ Kullanıcı verileri: `~/.config/Dikte/`, model önbelleği: `~/.cache/Dikte/mod
 | Pencereyi gizle | `X` (uygulama tray'de kalır) |
 | Çıkış | Tray menüsü → "Çıkış" |
 
+Kayıt süresi varsayılan olarak **sınırsızdır** (Ayarlar → "Kayıt süresi sınırı" = 0). Bellek
+kullanımı 16 kHz float32 ham ses için yaklaşık **230 MB/saat**'tir. Bir sınır girilirse süre
+dolunca kayıt sessizce kesilmez; otomatik durur ve o ana kadarki ses çözümlenir.
+
 Kullanıcı verileri: `%APPDATA%\Dikte\` (config.json, history.jsonl, dikte.log).
 Model önbelleği: `%LOCALAPPDATA%\Dikte\models\`.
 

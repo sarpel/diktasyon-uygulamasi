@@ -88,6 +88,14 @@ class SettingsDialog(QDialog):
         self.autostart_check.setChecked(settings.autostart)
         self.close_after_copy_check = QCheckBox("Kopyaladıktan sonra pencereyi gizle")
         self.close_after_copy_check.setChecked(settings.close_after_copy)
+        self.max_seconds_spin = QSpinBox()
+        self.max_seconds_spin.setRange(0, 36000)
+        self.max_seconds_spin.setSuffix(" sn")
+        self.max_seconds_spin.setSpecialValueText("Sınırsız")
+        self.max_seconds_spin.setValue(settings.audio.max_seconds)
+        self.max_seconds_spin.setToolTip(
+            "0 = sınırsız kayıt. Sınır konulursa süre dolunca kayıt otomatik durur ve çözümlenir."
+        )
         self.history_spin = QSpinBox()
         self.history_spin.setRange(0, 5000)
         self.history_spin.setValue(settings.history_limit)
@@ -105,6 +113,7 @@ class SettingsDialog(QDialog):
         form.addRow("Model bellekte kalsın", self.keep_alive_edit)
         form.addRow("Toplu çözümleme eşiği", self.batch_threshold_spin)
         form.addRow(self.batch_check)
+        form.addRow("Kayıt süresi sınırı", self.max_seconds_spin)
         form.addRow("Geçmiş kayıt sayısı", self.history_spin)
         form.addRow(self.autostart_check)
         form.addRow(self.close_after_copy_check)
@@ -161,7 +170,10 @@ class SettingsDialog(QDialog):
                     }
                 ),
                 "audio": s.audio.model_copy(
-                    update={"device_index": self.device_combo.currentData()}
+                    update={
+                        "device_index": self.device_combo.currentData(),
+                        "max_seconds": self.max_seconds_spin.value(),
+                    }
                 ),
             }
         )

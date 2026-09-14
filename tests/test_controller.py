@@ -13,6 +13,7 @@ from dikte.stt.result import TranscriptResult
 class FakeRecorder(QObject):
     level_changed = Signal(float)
     buckets_changed = Signal(object)
+    limit_reached = Signal()
     error = Signal(str)
 
     def __init__(self):
@@ -199,3 +200,17 @@ def test_set_llm_replaces_provider(qtbot):
     c.set_llm(new)
     c.request_translation("merhaba")
     qtbot.waitUntil(lambda: bool(new.calls), timeout=3000)
+
+
+def test_limit_reached_stops_and_transcribes(ctl):
+    c, rec, *_ = ctl
+    c.toggle()
+    assert c.state is DictationState.RECORDING
+    rec.limit_reached.emit()
+    assert c.state is DictationState.TRANSCRIBING and rec.stopped
+
+
+def test_limit_reached_ignored_when_not_recording(ctl):
+    c, rec, *_ = ctl
+    rec.limit_reached.emit()
+    assert c.state is DictationState.IDLE

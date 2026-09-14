@@ -97,9 +97,7 @@ def test_load_failure_wraps_error():
     def bad_factory(*a, **kw):
         raise RuntimeError("CUDA yok")
 
-    eng = FasterWhisperEngine(
-        SttSettings(), model_factory=bad_factory, cuda_probe=lambda: 1
-    )
+    eng = FasterWhisperEngine(SttSettings(), model_factory=bad_factory, cuda_probe=lambda: 1)
     with pytest.raises(SttError, match="CUDA yok"):
         eng.load()
 
