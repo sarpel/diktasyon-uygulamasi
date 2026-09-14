@@ -18,3 +18,15 @@
 - [ ] Oturumu kapat/aç → uygulama tray'de otomatik başlar (`--minimized`).
 - [ ] %APPDATA%\Dikte\history.jsonl her sonuçtan sonra bir satır büyür.
 - [ ] `nvidia-smi`: boşta VRAM ≈ 1,6 GB (Whisper) + Ollama ≈ 3,5–4,5 GB (4B model); toplam < 7,5 GB, CPU offload yok (`ollama ps` → "100% GPU").
+
+## Linux (ikincil ortam)
+
+- [ ] `./packaging/linux/install.sh` hatasız tamamlanır; uygulama menüsünde "Dikte" görünür.
+- [ ] `dikte --minimized` → tray ikonu belirir, pencere açılmaz.
+- [ ] Uygulama kapalıyken `dikte --toggle` → "çalışmıyor" mesajı, çıkış kodu 1.
+- [ ] Uygulama açıkken `dikte --toggle` → kayıt başlar; ikinci kez → durur ve metin gelir.
+- [ ] Masaüstü kısayolu (GNOME/KDE/sway) `dikte --toggle` komutuna bağlanır ve çalışır.
+- [ ] Ayarlar → otomatik başlatma açık → `~/.config/autostart/dikte.desktop` oluşur; kapalı → silinir.
+- [ ] Tray ipucu global kısayol yerine `dikte --toggle` yazar, hata bildirimi çıkmaz.
+- [ ] Veriler `~/.config/Dikte/`, modeller `~/.cache/Dikte/models/` altına yazılır.
+- [ ] Mikrofon PulseAudio/PipeWire üzerinden seçilebilir (`libportaudio2` kurulu).

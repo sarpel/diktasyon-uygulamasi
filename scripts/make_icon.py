@@ -1,4 +1,4 @@
-"""packaging/dikte.ico dosyasını ui.icons.make_tray_icon'dan üretir."""
+"""packaging/dikte.ico ve packaging/linux/dikte.png dosyalarını üretir."""
 
 import sys
 from pathlib import Path
@@ -7,7 +7,9 @@ from PySide6.QtGui import QGuiApplication
 
 from dikte.ui.icons import make_tray_icon
 
-OUT = Path(__file__).resolve().parent.parent / "packaging" / "dikte.ico"
+PACKAGING = Path(__file__).resolve().parent.parent / "packaging"
+OUT = PACKAGING / "dikte.ico"
+OUT_PNG = PACKAGING / "linux" / "dikte.png"
 SIZES = (16, 24, 32, 48, 64, 128, 256)
 
 
@@ -18,7 +20,11 @@ def main() -> int:
     if not pm.save(str(OUT), "ICO"):
         print("ICO yazılamadı:", OUT, file=sys.stderr)
         return 1
-    print("OK:", OUT, pm.size())
+    OUT_PNG.parent.mkdir(parents=True, exist_ok=True)
+    if not pm.save(str(OUT_PNG), "PNG"):
+        print("PNG yazılamadı:", OUT_PNG, file=sys.stderr)
+        return 1
+    print("OK:", OUT, OUT_PNG, pm.size())
     del app
     return 0
 

@@ -1,0 +1,12 @@
+[Desktop Entry]
+Type=Application
+Version=1.0
+Name=Dikte
+GenericName=Sesli Dikte
+Comment=Türkçe sesli dikte — yerel GPU STT ve LLM düzeltmesi
+Exec=dikte
+Icon=dikte
+Terminal=false
+Categories=Utility;
+Keywords=dikte;dictation;speech;whisper;stt;
+StartupNotify=false

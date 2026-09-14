@@ -1,6 +1,7 @@
 # Dikte
 
-Windows 11 için Türkçe odaklı, tamamen yerel çalışan diktasyon uygulaması.
+Windows 11 (birincil) ve Linux için Türkçe odaklı, tamamen yerel çalışan
+diktasyon uygulaması.
 Tray'de sürekli açık durur, tek bir global kısayolla kaydı başlatır/durdurur,
 sesi GPU'da metne çevirir, yerel bir LLM ile yanlış tanınan kelimeleri düzeltir
 ve metni isteğe bağlı olarak İngilizce'ye ya da bir AI agent prompt'una dönüştürür.
@@ -28,11 +29,47 @@ NVIDIA sürücüsü CUDA 12 uyumlu olmalıdır (≥ 525). Ayrı CUDA Toolkit kur
 gerekmez; cuBLAS/cuDNN pip wheel'leri `dikte.cuda_dlls` tarafından DLL arama
 yoluna eklenir.
 
+## Kurulum (Linux)
+
+Windows'a özgü olan tek şey global kısayoldur; onun yerine masaüstü ortamınızın
+kısayol ayarına `dikte --toggle` komutunu bağlarsınız (Wayland'da da çalışır).
+
+```bash
+sudo apt install python3.11 python3.11-venv libportaudio2   # Debian/Ubuntu
+curl -fsSL https://ollama.com/install.sh | sh
+ollama pull qwen3.5:4b
+
+./packaging/linux/install.sh      # pipx ile kurar, .desktop + ikon yazar, modeli indirir
+```
+
+Elle kurulum yapmak isterseniz:
+
+```bash
+uv venv --python 3.11 .venv && source .venv/bin/activate
+uv pip install -e ".[dev,cuda]"
+python scripts/download_models.py
+python -m dikte
+```
+
+Global kısayol tanımı:
+
+| Ortam | Yol |
+|---|---|
+| GNOME | Ayarlar → Klavye → Özel Kısayollar → Komut: `dikte --toggle` |
+| KDE | Sistem Ayarları → Kısayollar → Özel → Komut: `dikte --toggle` |
+| i3/sway | `bindsym $mod+space exec dikte --toggle` |
+
+`dikte --toggle` çalışan örneğe yerel soket üzerinden komut yollar; uygulama
+açık değilse hata verip 1 döner. Otomatik başlatma ayarı Linux'ta
+`~/.config/autostart/dikte.desktop` dosyasını yazar.
+
+Kullanıcı verileri: `~/.config/Dikte/`, model önbelleği: `~/.cache/Dikte/models/`.
+
 ## Kullanım
 
 | Eylem | Kısayol / yer |
 |---|---|
-| Kaydı başlat / durdur | `Ctrl+Alt+Space` (ayarlardan değiştirilebilir) |
+| Kaydı başlat / durdur | Windows: `Ctrl+Alt+Space` (ayarlardan değiştirilebilir) · Linux: `dikte --toggle`'a bağladığınız tuş |
 | Düzeltilmiş metni kopyala | Pane'in sağ üstündeki kopyala ikonu veya `Ctrl+Shift+C` |
 | İngilizce çeviri | Alt araç çubuğu → "İngilizce'ye Çevir" |
 | Agent prompt'u | Alt araç çubuğu → "Agent Prompt'a Dönüştür" |
@@ -65,3 +102,13 @@ powershell -ExecutionPolicy Bypass -File packaging\build.ps1
 
 Çıktı: `dist\Dikte\Dikte.exe` (onedir) ve `dist\Dikte-Setup-0.1.0.exe`
 (Inno Setup 6 kurulu olmalı).
+
+## Paketleme (Linux)
+
+```bash
+python scripts/make_icon.py       # packaging/dikte.ico + packaging/linux/dikte.png
+./packaging/linux/install.sh      # pipx tabanlı kullanıcı kurulumu
+```
+
+Kaldırmak için: `pipx uninstall dikte` ve
+`rm ~/.local/share/applications/dikte.desktop ~/.config/autostart/dikte.desktop`.
