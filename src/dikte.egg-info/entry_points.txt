@@ -1,2 +1,0 @@
-[console_scripts]
-dikte = dikte.app:main

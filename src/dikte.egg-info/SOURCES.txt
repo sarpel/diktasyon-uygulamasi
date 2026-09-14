@@ -1,7 +1,0 @@
-pyproject.toml
-src/dikte.egg-info/PKG-INFO
-src/dikte.egg-info/SOURCES.txt
-src/dikte.egg-info/dependency_links.txt
-src/dikte.egg-info/entry_points.txt
-src/dikte.egg-info/requires.txt
-src/dikte.egg-info/top_level.txt
