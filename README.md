@@ -12,7 +12,10 @@ ve metni isteğe bağlı olarak İngilizce'ye ya da bir AI agent prompt'una dön
   `float16` için Compute Capability ≥ 7.0 (RTX 20xx ve üzeri) gerekir; daha eski kartlarda
   (ör. GTX 970 = CC 5.2) motor otomatik olarak `float32`'ye düşer ve tray'de uyarı gösterir.
 - **Düzeltme / çeviri / prompt:** Ollama üzerinde yerel LLM (varsayılan `qwen3.5:4b`,
-  alternatif `gemma4:e4b-it-qat`), isteğe bağlı Anthropic API
+  alternatif `gemma4:e4b-it-qat`), isteğe bağlı Anthropic API.
+  **Tamamen kapatılabilir** (Ayarlar → "LLM ile metin düzeltme"): kapalıyken ham metin
+  doğrudan sonuç olarak gösterilir, Ollama hiç çağrılmaz ve ek VRAM kullanılmaz.
+  Düşük VRAM'de `keep_alive` değerini `0` yaparak modeli her istekten sonra boşaltabilirsiniz.
 - **UI:** PySide6 tray uygulaması + kayıt overlay'i + üç panelli sonuç penceresi
 
 ## Kurulum (Windows 11)

@@ -57,3 +57,24 @@ def test_autostart_label_is_platform_neutral(qtbot):
     d = SettingsDialog(Settings(), (), None)
     qtbot.addWidget(d)
     assert "Windows" not in d.autostart_check.text()
+
+
+def test_llm_enable_and_keep_alive_round_trip(qtbot):
+    from dikte.config import Settings
+
+    d = SettingsDialog(Settings(), (), None)
+    qtbot.addWidget(d)
+    assert d.llm_enabled_check.isChecked() is True
+    d.llm_enabled_check.setChecked(False)
+    d.keep_alive_edit.setText("0")
+    out = d.result_settings()
+    assert out.llm.enabled is False and out.llm.keep_alive == "0"
+
+
+def test_llm_fields_disabled_when_llm_off(qtbot):
+    from dikte.config import Settings
+
+    d = SettingsDialog(Settings(), (), None)
+    qtbot.addWidget(d)
+    d.llm_enabled_check.setChecked(False)
+    assert not d.llm_model_edit.isEnabled() and not d.provider_combo.isEnabled()

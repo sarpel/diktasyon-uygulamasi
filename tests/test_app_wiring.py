@@ -196,3 +196,37 @@ def test_no_notice_when_compute_type_is_honoured(ctx):
     ctx.tray.notify = lambda *a, **k: notifications.append(a)
     ctx.controller.ready_changed.emit(True)
     assert notifications == []
+
+
+def test_make_llm_skips_provider_when_disabled():
+    s = Settings()
+    disabled = s.model_copy(update={"llm": s.llm.model_copy(update={"enabled": False})})
+    assert app_mod._make_llm(disabled).name == "none"
+
+
+def test_open_settings_rebuilds_llm_without_restart(ctx, monkeypatch):
+    monkeypatch.setattr(app_mod, "save_settings", lambda s: None)
+    monkeypatch.setattr(app_mod, "set_autostart", lambda *a, **k: None)
+    monkeypatch.setattr(app_mod, "list_input_devices", lambda: ())
+    restarts = []
+    monkeypatch.setattr(
+        app_mod.QMessageBox, "information", staticmethod(lambda *a, **k: restarts.append(a))
+    )
+
+    class FakeDialog:
+        def __init__(self, settings, devices, parent=None):
+            self._settings = settings
+
+        def exec(self):
+            return 1
+
+        def result_settings(self):
+            s = self._settings
+            return s.model_copy(update={"llm": s.llm.model_copy(update={"enabled": False})})
+
+    monkeypatch.setattr(app_mod, "SettingsDialog", FakeDialog)
+    app_mod._open_settings(ctx)
+    assert ctx.controller.llm_enabled is False
+    assert ctx.controller._llm.name == "none"
+    assert restarts == []  # LLM değişikliği yeniden başlatma istemez
+    assert not ctx.window.translate_btn.isEnabled()

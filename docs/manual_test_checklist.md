@@ -41,3 +41,13 @@
 - [ ] Ayarlar → "Uzun kayıtlarda toplu çözümleme" kapatıldığında uzun kayıt da tek geçişte çözülür.
 - [ ] CC < 7.0 GPU'da (ör. GTX 970) uygulama açılır, `float32`'ye düşer ve tray'de
       "GPU ... desteklemiyor" bildirimi çıkar; transkripsiyon çalışır.
+
+## LLM'in isteğe bağlı olması
+
+- [ ] Ayarlar → "LLM ile metin düzeltme" kapatıldığında sağlayıcı/model/host alanları pasifleşir.
+- [ ] LLM kapalıyken dikte: CORRECTING durumu hiç görünmez, sonuç penceresinde
+      "Düzeltilmiş" paneli ham metnin aynısını gösterir, `ollama ps` boş kalır.
+- [ ] LLM kapalıyken "İngilizce'ye Çevir" ve "Agent Prompt'a Dönüştür" düğmeleri pasif,
+      ipucu metni "LLM kapalı" yazar.
+- [ ] LLM tekrar açıldığında uygulama yeniden başlatılmadan çalışır (yeniden başlatma uyarısı çıkmaz).
+- [ ] `keep_alive` = 0 iken istek bittikten sonra `ollama ps` modeli listeden düşürür (VRAM boşalır).

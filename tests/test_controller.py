@@ -154,3 +154,48 @@ def test_request_enhanced_prompt_updates_session(ctl, qtbot):
     ):
         c.request_enhanced_prompt("merhaba de")
     assert c.session.enhanced_prompt.startswith("# Goal")
+
+
+def _disabled_llm_settings():
+    from dikte.config import LlmSettings
+
+    s = Settings()
+    return s.model_copy(update={"llm": s.llm.model_copy(update={"enabled": False})}), LlmSettings
+
+
+def test_llm_disabled_skips_correction(qtbot):
+    settings, _ = _disabled_llm_settings()
+    rec, stt, llm = FakeRecorder(), FakeStt(), FakeLlm()
+    c = DictationController(settings, recorder=rec, stt=stt, llm=llm, pool=QThreadPool())
+    states = []
+    c.state_changed.connect(states.append)
+    c.toggle()
+    c.toggle()
+    qtbot.waitUntil(lambda: c.state is DictationState.RESULT, timeout=3000)
+    assert DictationState.CORRECTING not in states
+    assert c.session.corrected_text == "merhaba dünya"
+    assert llm.calls == []  # LLM hiç çağrılmadı
+
+
+def test_llm_disabled_rejects_translation(qtbot):
+    settings, _ = _disabled_llm_settings()
+    llm = FakeLlm()
+    c = DictationController(
+        settings, recorder=FakeRecorder(), stt=FakeStt(), llm=llm, pool=QThreadPool()
+    )
+    errors = []
+    c.error.connect(errors.append)
+    c.request_translation("merhaba")
+    c.request_enhanced_prompt("merhaba")
+    assert len(errors) == 2 and all("LLM" in e for e in errors)
+    assert llm.calls == []
+
+
+def test_set_llm_replaces_provider(qtbot):
+    c = DictationController(
+        Settings(), recorder=FakeRecorder(), stt=FakeStt(), llm=FakeLlm(), pool=QThreadPool()
+    )
+    new = FakeLlm()
+    c.set_llm(new)
+    c.request_translation("merhaba")
+    qtbot.waitUntil(lambda: bool(new.calls), timeout=3000)

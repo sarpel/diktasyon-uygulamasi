@@ -29,6 +29,8 @@ class SttSettings(BaseModel):
 
 class LlmSettings(BaseModel):
     model_config = ConfigDict(frozen=True)
+    # VRAM'i STT ile paylaşmak istemeyen makinelerde düzeltme tamamen kapatılabilir.
+    enabled: bool = True
     provider: Literal["ollama", "anthropic"] = "ollama"
     model: str = "qwen3.5:4b"
     ollama_host: str = "http://127.0.0.1:11434"

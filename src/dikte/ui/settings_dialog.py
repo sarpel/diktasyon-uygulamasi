@@ -56,11 +56,26 @@ class SettingsDialog(QDialog):
             ["float16", "int8_float16", "bfloat16", "int8_float32", "float32"]
         )
         self.compute_combo.setCurrentText(settings.stt.compute_type)
+        self.llm_enabled_check = QCheckBox("LLM ile metin düzeltme (kapalıyken VRAM kullanılmaz)")
+        self.llm_enabled_check.setChecked(settings.llm.enabled)
         self.provider_combo = QComboBox()
         self.provider_combo.addItems(["ollama", "anthropic"])
         self.provider_combo.setCurrentText(settings.llm.provider)
         self.llm_model_edit = QLineEdit(settings.llm.model)
         self.ollama_host_edit = QLineEdit(settings.llm.ollama_host)
+        self.keep_alive_edit = QLineEdit(settings.llm.keep_alive)
+        self.keep_alive_edit.setToolTip(
+            "Ollama modelinin bellekte kalma süresi. Düşük VRAM'de '0' yazarak "
+            "her istekten sonra boşaltabilirsiniz (ör. 30m, 5m, 0)."
+        )
+        self._llm_widgets = (
+            self.provider_combo,
+            self.llm_model_edit,
+            self.ollama_host_edit,
+            self.keep_alive_edit,
+        )
+        self.llm_enabled_check.toggled.connect(self._set_llm_fields_enabled)
+        self._set_llm_fields_enabled(settings.llm.enabled)
         self.batch_check = QCheckBox("Uzun kayıtlarda toplu çözümleme (daha hızlı, +VRAM)")
         self.batch_check.setChecked(settings.stt.batch_enabled)
         self.batch_threshold_spin = QSpinBox()
@@ -83,9 +98,11 @@ class SettingsDialog(QDialog):
         form.addRow("Mikrofon", self.device_combo)
         form.addRow("STT modeli", self.stt_model_edit)
         form.addRow("STT compute_type", self.compute_combo)
+        form.addRow(self.llm_enabled_check)
         form.addRow("LLM sağlayıcı", self.provider_combo)
         form.addRow("LLM modeli", self.llm_model_edit)
         form.addRow("Ollama host", self.ollama_host_edit)
+        form.addRow("Model bellekte kalsın", self.keep_alive_edit)
         form.addRow("Toplu çözümleme eşiği", self.batch_threshold_spin)
         form.addRow(self.batch_check)
         form.addRow("Geçmiş kayıt sayısı", self.history_spin)
@@ -100,14 +117,21 @@ class SettingsDialog(QDialog):
         lay.addWidget(self.error_label)
         lay.addWidget(buttons)
 
+    def _set_llm_fields_enabled(self, enabled: bool) -> None:
+        for w in self._llm_widgets:
+            w.setEnabled(enabled)
+
     def accept(self) -> None:
         try:
             parse_hotkey(self.hotkey_edit.text())
         except HotkeyParseError as exc:
             self.error_label.setText(str(exc))
             return
-        if not self.llm_model_edit.text().strip() or not self.stt_model_edit.text().strip():
-            self.error_label.setText("Model adları boş olamaz")
+        if not self.stt_model_edit.text().strip():
+            self.error_label.setText("STT model adı boş olamaz")
+            return
+        if self.llm_enabled_check.isChecked() and not self.llm_model_edit.text().strip():
+            self.error_label.setText("LLM model adı boş olamaz")
             return
         super().accept()
 
@@ -129,9 +153,11 @@ class SettingsDialog(QDialog):
                 ),
                 "llm": s.llm.model_copy(
                     update={
+                        "enabled": self.llm_enabled_check.isChecked(),
                         "provider": self.provider_combo.currentText(),
                         "model": self.llm_model_edit.text().strip(),
                         "ollama_host": self.ollama_host_edit.text().strip(),
+                        "keep_alive": self.keep_alive_edit.text().strip() or "0",
                     }
                 ),
                 "audio": s.audio.model_copy(

@@ -39,6 +39,7 @@ class ResultWindow(QMainWindow):
 
         self.translate_btn = QPushButton("İngilizce'ye Çevir")
         self.enhance_btn = QPushButton("Agent Prompt'a Dönüştür")
+        self._llm_enabled = True
         self.translate_btn.clicked.connect(self._on_translate)
         self.enhance_btn.clicked.connect(self._on_enhance)
 
@@ -73,9 +74,18 @@ class ResultWindow(QMainWindow):
         QShortcut(QKeySequence("Ctrl+Shift+C"), self, activated=self.corrected_pane._copy)
 
     # ---- bağlama
+    def set_llm_enabled(self, enabled: bool) -> None:
+        """LLM kapalıyken çeviri / prompt düğmeleri kullanılamaz."""
+        self._llm_enabled = enabled
+        hint = "" if enabled else "LLM kapalı; Ayarlar'dan açabilirsiniz."
+        for btn in (self.translate_btn, self.enhance_btn):
+            btn.setEnabled(enabled)
+            btn.setToolTip(hint)
+
     def bind(self, controller, close_after_copy: bool = False) -> None:
         self._controller = controller
         self.close_after_copy = close_after_copy
+        self.set_llm_enabled(getattr(controller, "llm_enabled", True))
         controller.session_updated.connect(self.on_session)
         controller.state_changed.connect(self.on_state)
         controller.error.connect(self._on_error)
@@ -131,8 +141,8 @@ class ResultWindow(QMainWindow):
     def _finish_pending(self) -> None:
         self._pending = None
         self.output_pane.set_busy(False)
-        self.translate_btn.setEnabled(True)
-        self.enhance_btn.setEnabled(True)
+        self.translate_btn.setEnabled(self._llm_enabled)
+        self.enhance_btn.setEnabled(self._llm_enabled)
         self.statusBar().clearMessage()
 
     def _on_copied(self, pane: TextPane) -> None:

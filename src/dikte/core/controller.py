@@ -57,6 +57,14 @@ class DictationController(QObject):
     def update_settings(self, settings: Settings) -> None:
         self._settings = settings
 
+    def set_llm(self, llm: LlmProvider) -> None:
+        """Ayar değişince sağlayıcıyı yeniden başlatmadan değiştirir."""
+        self._llm = llm
+
+    @property
+    def llm_enabled(self) -> bool:
+        return self._settings.llm.enabled
+
     # ---- kamu slotları
     @Slot()
     def warm_up(self) -> None:
@@ -77,6 +85,8 @@ class DictationController(QObject):
 
     @Slot(str)
     def request_translation(self, text: str) -> None:
+        if not self._require_llm():
+            return
         self._spawn(
             lambda: tasks.translate(self._llm, text),
             lambda out: self._update_session(translation=out),
@@ -85,6 +95,8 @@ class DictationController(QObject):
 
     @Slot(str)
     def request_enhanced_prompt(self, text: str) -> None:
+        if not self._require_llm():
+            return
         self._spawn(
             lambda: tasks.enhance_prompt(self._llm, text),
             lambda out: self._update_session(enhanced_prompt=out),
@@ -92,6 +104,12 @@ class DictationController(QObject):
         )
 
     # ---- iç akış
+    def _require_llm(self) -> bool:
+        if self._settings.llm.enabled:
+            return True
+        self.error.emit("LLM kapalı; Ayarlar'dan metin düzeltmeyi açın.")
+        return False
+
     def _start_recording(self) -> None:
         self._session = Session()
         self.session_updated.emit(self._session)
@@ -113,6 +131,10 @@ class DictationController(QObject):
             self._set_state(DictationState.IDLE)
             return
         self._update_session(raw_text=result.text, duration_s=result.duration_s)
+        if not self._settings.llm.enabled:  # LLM kapalı: ham metin sonuç olarak gösterilir
+            self._update_session(corrected_text=result.text)
+            self._set_state(DictationState.RESULT)
+            return
         self._set_state(DictationState.CORRECTING)
         raw = result.text
         self._spawn(lambda: tasks.correct(self._llm, raw), self._on_corrected, self._on_llm_error)

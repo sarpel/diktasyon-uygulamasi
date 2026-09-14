@@ -56,6 +56,9 @@ class _NullLlm:
 
 
 def _make_llm(settings: Settings):
+    if not settings.llm.enabled:
+        log.info("LLM düzeltmesi kapalı; sağlayıcı oluşturulmadı")
+        return _NullLlm()
     try:
         return make_provider(settings.llm)
     except LlmError as exc:
@@ -144,21 +147,21 @@ def _open_settings(ctx: AppContext) -> None:
         return
     new = dlg.result_settings()
     save_settings(new)
-    needs_restart = (
-        new.stt != ctx.settings.stt
-        or new.audio != ctx.settings.audio
-        or new.llm != ctx.settings.llm
-    )
+    needs_restart = new.stt != ctx.settings.stt or new.audio != ctx.settings.audio
+    llm_changed = new.llm != ctx.settings.llm
     ctx.settings = new
     set_autostart(new.autostart)
     ctx.controller.update_settings(new)
+    if llm_changed:  # sağlayıcı yeniden kurulur, yeniden başlatma gerekmez
+        ctx.controller.set_llm(_make_llm(new))
+    ctx.window.set_llm_enabled(new.llm.enabled)
     ctx.window.close_after_copy = new.close_after_copy
     _apply_hotkey(ctx)
     if needs_restart:
         QMessageBox.information(
             ctx.window,
             APP_NAME,
-            "Model / ses / LLM ayarları uygulamayı yeniden başlatınca etkin olur.",
+            "Model / ses ayarları uygulamayı yeniden başlatınca etkin olur.",
         )
 
 

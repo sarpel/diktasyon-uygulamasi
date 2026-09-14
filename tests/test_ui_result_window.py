@@ -75,3 +75,22 @@ def test_close_hides_instead_of_quitting(qtbot):
     w.show()
     w.close()
     assert not w.isVisible() and w.isEnabled()
+
+
+def test_llm_buttons_disabled_when_llm_off(qtbot):
+    w = ResultWindow()
+    qtbot.addWidget(w)
+    w.set_llm_enabled(False)
+    assert not w.translate_btn.isEnabled() and not w.enhance_btn.isEnabled()
+    assert "LLM" in w.translate_btn.toolTip()
+    w.set_llm_enabled(True)
+    assert w.translate_btn.isEnabled() and w.enhance_btn.isEnabled()
+
+
+def test_pending_cycle_keeps_buttons_disabled_when_llm_off(qtbot):
+    w = ResultWindow()
+    qtbot.addWidget(w)
+    w.set_llm_enabled(False)
+    w._start_pending("translation", "x")
+    w._finish_pending()
+    assert not w.translate_btn.isEnabled()
