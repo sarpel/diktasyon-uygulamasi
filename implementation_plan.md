@@ -168,7 +168,7 @@ dictation-app/
 **Interfaces:**
 - Produces: `paths.app_data_dir() -> Path`, `paths.models_dir() -> Path`, `config.Settings` (pydantic BaseModel, frozen), `config.load_settings(path: Path | None = None) -> Settings`, `config.save_settings(settings: Settings, path: Path | None = None) -> None`, `logging_setup.setup_logging(level: str = "INFO") -> None`.
 
-- [ ] **Step 1: pyproject.toml yaz**
+- [x] **Step 1: pyproject.toml yaz**
 
 ```toml
 [project]
@@ -212,7 +212,7 @@ line-length = 100
 target-version = "py311"
 ```
 
-- [ ] **Step 2: Ortamı kur**
+- [x] **Step 2: Ortamı kur**
 
 ```bash
 uv venv --python 3.11 .venv && source .venv/bin/activate   # Windows: .venv\Scripts\activate
@@ -220,7 +220,7 @@ uv pip install -e ".[dev]"
 ```
 Windows'ta ek olarak: `uv pip install -e ".[dev,cuda]"`.
 
-- [ ] **Step 3: `.gitignore` ve git init**
+- [x] **Step 3: `.gitignore` ve git init**
 
 ```
 .venv/
@@ -238,7 +238,7 @@ htmlcov/
 git init && git add -A && git commit -m "chore: project skeleton"
 ```
 
-- [ ] **Step 4: Başarısız config testini yaz** — `tests/test_config.py`
+- [x] **Step 4: Başarısız config testini yaz** — `tests/test_config.py`
 
 ```python
 from pathlib import Path
@@ -280,12 +280,12 @@ def test_load_corrupt_file_returns_defaults_and_backs_up(tmp_path: Path):
     assert (tmp_path / "config.json.bak").exists()
 ```
 
-- [ ] **Step 5: Testi çalıştır, başarısız olduğunu gör**
+- [x] **Step 5: Testi çalıştır, başarısız olduğunu gör**
 
 Run: `pytest tests/test_config.py -v`
 Expected: FAIL — `ModuleNotFoundError: dikte.config`
 
-- [ ] **Step 6: `src/dikte/__init__.py`, `paths.py`, `config.py`, `logging_setup.py` yaz**
+- [x] **Step 6: `src/dikte/__init__.py`, `paths.py`, `config.py`, `logging_setup.py` yaz**
 
 `src/dikte/__init__.py`:
 ```python
@@ -473,12 +473,12 @@ def pytest_runtest_setup(item):
         pytest.skip("yalnızca Windows")
 ```
 
-- [ ] **Step 7: Testleri çalıştır, geçtiğini gör**
+- [x] **Step 7: Testleri çalıştır, geçtiğini gör**
 
 Run: `pytest tests/test_config.py -v`
 Expected: 5 PASS
 
-- [ ] **Step 8: Commit**
+- [x] **Step 8: Commit**
 
 ```bash
 git add -A && git commit -m "feat: settings model, paths and logging"
@@ -496,7 +496,7 @@ git add -A && git commit -m "feat: settings model, paths and logging"
 - Consumes: `Settings.audio` (Task 1).
 - Produces: `levels.rms(frame: np.ndarray) -> float` (0..1), `levels.bucketize(frame: np.ndarray, buckets: int) -> tuple[float, ...]`, `AudioRecorder(QObject)` — sinyaller `level_changed(float)`, `buckets_changed(object)` (tuple[float,...]), `error(str)`; metotlar `start() -> None`, `stop() -> np.ndarray` (float32, mono, 16 kHz), `is_recording -> bool`. Yapıcı `AudioRecorder(settings: AudioSettings, stream_factory=None)`; `stream_factory` test için enjekte edilir.
 
-- [ ] **Step 1: Başarısız `levels` testini yaz** — `tests/test_levels.py`
+- [x] **Step 1: Başarısız `levels` testini yaz** — `tests/test_levels.py`
 
 ```python
 import numpy as np
@@ -526,9 +526,9 @@ def test_bucketize_empty_frame_returns_zeros():
     assert bucketize(np.zeros(0, dtype=np.float32), 8) == (0.0,) * 8
 ```
 
-- [ ] **Step 2: Çalıştır, FAIL gör** — `pytest tests/test_levels.py -v` → `ModuleNotFoundError`
+- [x] **Step 2: Çalıştır, FAIL gör** — `pytest tests/test_levels.py -v` → `ModuleNotFoundError`
 
-- [ ] **Step 3: `levels.py` yaz**
+- [x] **Step 3: `levels.py` yaz**
 
 ```python
 import numpy as np
@@ -548,9 +548,9 @@ def bucketize(frame: np.ndarray, buckets: int) -> tuple[float, ...]:
     return tuple(min(1.0, float(np.max(np.abs(c)))) if c.size else 0.0 for c in chunks)
 ```
 
-- [ ] **Step 4: Çalıştır, PASS gör** — `pytest tests/test_levels.py -v`
+- [x] **Step 4: Çalıştır, PASS gör** — `pytest tests/test_levels.py -v`
 
-- [ ] **Step 5: Başarısız recorder testini yaz** — `tests/test_recorder.py`
+- [x] **Step 5: Başarısız recorder testini yaz** — `tests/test_recorder.py`
 
 ```python
 import numpy as np
@@ -621,9 +621,9 @@ def test_max_seconds_truncates(rec):
     assert rec.stop().shape[0] == 5 * 16000
 ```
 
-- [ ] **Step 6: Çalıştır, FAIL gör** — `pytest tests/test_recorder.py -v`
+- [x] **Step 6: Çalıştır, FAIL gör** — `pytest tests/test_recorder.py -v`
 
-- [ ] **Step 7: `recorder.py` yaz**
+- [x] **Step 7: `recorder.py` yaz**
 
 ```python
 from __future__ import annotations
@@ -715,9 +715,9 @@ class AudioRecorder(QObject):
         self.buckets_changed.emit(bucketize(frame, BUCKETS))
 ```
 
-- [ ] **Step 8: Çalıştır, PASS gör** — `pytest tests/test_recorder.py tests/test_levels.py -v`
+- [x] **Step 8: Çalıştır, PASS gör** — `pytest tests/test_recorder.py tests/test_levels.py -v`
 
-- [ ] **Step 9: Commit** — `git add -A && git commit -m "feat: audio recorder with level signals"`
+- [x] **Step 9: Commit** — `git add -A && git commit -m "feat: audio recorder with level signals"`
 
 ---
 
@@ -731,7 +731,7 @@ class AudioRecorder(QObject):
 - Consumes: `SttSettings` (Task 1).
 - Produces: `TranscriptResult(text: str, language: str, duration_s: float, segments: tuple[Segment, ...])`, `Segment(start: float, end: float, text: str)`, `SttEngine` Protocol: `load() -> None`, `is_loaded -> bool`, `transcribe(audio: np.ndarray, language: str | None = None) -> TranscriptResult`. `FasterWhisperEngine(settings: SttSettings, model_factory=None)`. `SttError(Exception)`. `cuda_dlls.register_nvidia_dll_dirs() -> list[str]`.
 
-- [ ] **Step 1: Başarısız testi yaz** — `tests/test_stt_engine.py`
+- [x] **Step 1: Başarısız testi yaz** — `tests/test_stt_engine.py`
 
 ```python
 from types import SimpleNamespace
@@ -813,9 +813,9 @@ def test_real_model_transcribes_silence_without_crash():
     assert isinstance(res.text, str)
 ```
 
-- [ ] **Step 2: Çalıştır, FAIL gör** — `pytest tests/test_stt_engine.py -v`
+- [x] **Step 2: Çalıştır, FAIL gör** — `pytest tests/test_stt_engine.py -v`
 
-- [ ] **Step 3: `result.py`, `engine.py`, `cuda_dlls.py` yaz**
+- [x] **Step 3: `result.py`, `engine.py`, `cuda_dlls.py` yaz**
 
 `src/dikte/stt/result.py`:
 ```python
@@ -955,9 +955,9 @@ class FasterWhisperEngine:
                                 duration_s=float(info.duration), segments=segments)
 ```
 
-- [ ] **Step 4: Çalıştır, PASS gör** — `pytest tests/test_stt_engine.py -v` (gpu testi Linux'ta skip)
+- [x] **Step 4: Çalıştır, PASS gör** — `pytest tests/test_stt_engine.py -v` (gpu testi Linux'ta skip)
 
-- [ ] **Step 5: Commit** — `git add -A && git commit -m "feat: faster-whisper STT engine wrapper"`
+- [x] **Step 5: Commit** — `git add -A && git commit -m "feat: faster-whisper STT engine wrapper"`
 
 ---
 
@@ -971,7 +971,7 @@ class FasterWhisperEngine:
 - Consumes: `LlmSettings` (Task 1).
 - Produces: `LlmProvider` Protocol: `complete(system: str, user: str, *, json_schema: dict | None = None, temperature: float = 0.2) -> str`, `name -> str`. `LlmError(Exception)`. `OllamaProvider(settings, client_factory=None)`, `AnthropicProvider(settings, client_factory=None)`, `make_provider(settings: LlmSettings) -> LlmProvider`. `tasks.CorrectionResult(corrected_text: str, changes: tuple[Change, ...])`, `Change(original: str, replacement: str, reason: str)`, `tasks.correct(provider, raw: str) -> CorrectionResult`, `tasks.translate(provider, text: str) -> str`, `tasks.enhance_prompt(provider, text: str) -> str`.
 
-- [ ] **Step 1: Başarısız `tasks` testini yaz** — `tests/test_llm_tasks.py`
+- [x] **Step 1: Başarısız `tasks` testini yaz** — `tests/test_llm_tasks.py`
 
 ```python
 import json
@@ -1030,9 +1030,9 @@ def test_enhance_prompt_returns_text_and_uses_english_system_prompt():
     assert "AI agent" in p.calls[0]["system"]
 ```
 
-- [ ] **Step 2: Çalıştır, FAIL gör** — `pytest tests/test_llm_tasks.py -v`
+- [x] **Step 2: Çalıştır, FAIL gör** — `pytest tests/test_llm_tasks.py -v`
 
-- [ ] **Step 3: `provider.py`, `prompts.py`, `tasks.py` yaz**
+- [x] **Step 3: `provider.py`, `prompts.py`, `tasks.py` yaz**
 
 `src/dikte/llm/provider.py`:
 ```python
@@ -1178,9 +1178,9 @@ def enhance_prompt(provider: LlmProvider, text: str) -> str:
                              temperature=0.3).strip()
 ```
 
-- [ ] **Step 4: Çalıştır, PASS gör** — `pytest tests/test_llm_tasks.py -v`
+- [x] **Step 4: Çalıştır, PASS gör** — `pytest tests/test_llm_tasks.py -v`
 
-- [ ] **Step 5: Başarısız Ollama provider testini yaz** — `tests/test_ollama_provider.py`
+- [x] **Step 5: Başarısız Ollama provider testini yaz** — `tests/test_ollama_provider.py`
 
 ```python
 from types import SimpleNamespace
@@ -1237,9 +1237,9 @@ def test_make_provider_anthropic_requires_api_key(monkeypatch):
         make_provider(LlmSettings(provider="anthropic"))
 ```
 
-- [ ] **Step 6: Çalıştır, FAIL gör** — `pytest tests/test_ollama_provider.py -v`
+- [x] **Step 6: Çalıştır, FAIL gör** — `pytest tests/test_ollama_provider.py -v`
 
-- [ ] **Step 7: `ollama_provider.py`, `anthropic_provider.py`, `llm/__init__.py` yaz**
+- [x] **Step 7: `ollama_provider.py`, `anthropic_provider.py`, `llm/__init__.py` yaz**
 
 `src/dikte/llm/ollama_provider.py`:
 ```python
@@ -1360,9 +1360,9 @@ def make_provider(settings: LlmSettings) -> LlmProvider:
 __all__ = ["LlmError", "LlmProvider", "make_provider"]
 ```
 
-- [ ] **Step 8: Çalıştır, PASS gör** — `pytest tests/test_llm_tasks.py tests/test_ollama_provider.py -v`
+- [x] **Step 8: Çalıştır, PASS gör** — `pytest tests/test_llm_tasks.py tests/test_ollama_provider.py -v`
 
-- [ ] **Step 9: Commit** — `git add -A && git commit -m "feat: LLM providers and correction/translation/prompt tasks"`
+- [x] **Step 9: Commit** — `git add -A && git commit -m "feat: LLM providers and correction/translation/prompt tasks"`
 
 ---
 
@@ -1376,7 +1376,7 @@ __all__ = ["LlmError", "LlmProvider", "make_provider"]
 - Consumes: `AudioRecorder` (Task 2), `SttEngine` (Task 3), `LlmProvider` + `tasks` (Task 4), `Settings` (Task 1).
 - Produces: `DictationState` enum (`IDLE, RECORDING, TRANSCRIBING, CORRECTING, RESULT`); `Session(frozen dataclass: id: str, created_at: datetime, raw_text: str = "", corrected_text: str = "", changes: tuple[Change,...] = (), translation: str = "", enhanced_prompt: str = "", duration_s: float = 0.0)`; `DictationController(QObject)` — sinyaller `state_changed(object)` (DictationState), `session_updated(object)` (Session), `error(str)`, `level_changed(float)`, `buckets_changed(object)`; slotlar `toggle()`, `request_translation(text: str)`, `request_enhanced_prompt(text: str)`, `warm_up()`; özellikler `state`, `session`. `workers.run_in_pool(fn, on_result, on_error, pool=None)`.
 
-- [ ] **Step 1: Başarısız controller testini yaz** — `tests/test_controller.py`
+- [x] **Step 1: Başarısız controller testini yaz** — `tests/test_controller.py`
 
 ```python
 import json
@@ -1512,9 +1512,9 @@ def test_request_enhanced_prompt_updates_session(ctl, qtbot):
     assert c.session.enhanced_prompt.startswith("# Goal")
 ```
 
-- [ ] **Step 2: Çalıştır, FAIL gör** — `pytest tests/test_controller.py -v`
+- [x] **Step 2: Çalıştır, FAIL gör** — `pytest tests/test_controller.py -v`
 
-- [ ] **Step 3: `state.py`, `workers.py`, `controller.py` yaz**
+- [x] **Step 3: `state.py`, `workers.py`, `controller.py` yaz**
 
 `src/dikte/core/state.py`:
 ```python
@@ -1732,9 +1732,9 @@ class DictationController(QObject):
         self._jobs = self._jobs[-16:]
 ```
 
-- [ ] **Step 4: Çalıştır, PASS gör** — `pytest tests/test_controller.py -v`
+- [x] **Step 4: Çalıştır, PASS gör** — `pytest tests/test_controller.py -v`
 
-- [ ] **Step 5: Commit** — `git add -A && git commit -m "feat: dictation controller state machine"`
+- [x] **Step 5: Commit** — `git add -A && git commit -m "feat: dictation controller state machine"`
 
 ---
 
@@ -1747,7 +1747,7 @@ class DictationController(QObject):
 **Interfaces:**
 - Produces: `hotkey_parse.parse_hotkey(spec: str) -> HotkeySpec(modifiers: int, vk: int, label: str)`; `HotkeyParseError(ValueError)`; `GlobalHotkey(QObject)` — `activated` sinyali, `register(spec: str) -> bool`, `unregister() -> None`. Windows dışında `register` `False` döner ve log yazar.
 
-- [ ] **Step 1: Başarısız parse testini yaz** — `tests/test_hotkey_parse.py`
+- [x] **Step 1: Başarısız parse testini yaz** — `tests/test_hotkey_parse.py`
 
 ```python
 import pytest
@@ -1781,9 +1781,9 @@ def test_unknown_key_raises():
         parse_hotkey("ctrl+bogus")
 ```
 
-- [ ] **Step 2: Çalıştır, FAIL gör** — `pytest tests/test_hotkey_parse.py -v`
+- [x] **Step 2: Çalıştır, FAIL gör** — `pytest tests/test_hotkey_parse.py -v`
 
-- [ ] **Step 3: `hotkey_parse.py` ve `hotkey.py` yaz**
+- [x] **Step 3: `hotkey_parse.py` ve `hotkey.py` yaz**
 
 `src/dikte/platform/hotkey_parse.py`:
 ```python
@@ -1908,9 +1908,9 @@ class GlobalHotkey(QObject):
 
 Not: `RegisterHotKey(None, ...)` ile kayıt, mesajın çağıran thread'in mesaj kuyruğuna düşmesini sağlar; Qt ana thread'i bu kuyruğu işlediği için `nativeEventFilter` tetiklenir. Kayıt ana (GUI) thread'inde yapılmalıdır.
 
-- [ ] **Step 4: Çalıştır, PASS gör** — `pytest tests/test_hotkey_parse.py -v`
+- [x] **Step 4: Çalıştır, PASS gör** — `pytest tests/test_hotkey_parse.py -v`
 
-- [ ] **Step 5: Commit** — `git add -A && git commit -m "feat: global hotkey via Win32 RegisterHotKey"`
+- [x] **Step 5: Commit** — `git add -A && git commit -m "feat: global hotkey via Win32 RegisterHotKey"`
 
 ---
 
@@ -1924,7 +1924,7 @@ Not: `RegisterHotKey(None, ...)` ile kayıt, mesajın çağıran thread'in mesaj
 - Consumes: `DictationState`, controller sinyalleri `buckets_changed(object)`, `state_changed(object)` (Task 5).
 - Produces: `WaveformWidget(QWidget)`: `push_buckets(buckets: tuple[float, ...])`, `clear()`, `bars -> tuple[float, ...]`; `RecordingOverlay(QWidget)`: `show_recording()`, `show_status(text: str)`, `hide_overlay()`, `on_buckets(buckets)`, `on_state(state)`. `icons.make_tray_icon(state: str) -> QIcon` (`"idle" | "recording" | "busy"`), `icons.copy_icon() -> QIcon`.
 
-- [ ] **Step 1: Başarısız waveform testini yaz** — `tests/test_ui_waveform.py`
+- [x] **Step 1: Başarısız waveform testini yaz** — `tests/test_ui_waveform.py`
 
 ```python
 from dikte.ui.waveform import WaveformWidget, BAR_COUNT
@@ -1961,9 +1961,9 @@ def test_paint_does_not_crash(qtbot):
     w.grab()  # paintEvent tetikler
 ```
 
-- [ ] **Step 2: Çalıştır, FAIL gör** — `pytest tests/test_ui_waveform.py -v`
+- [x] **Step 2: Çalıştır, FAIL gör** — `pytest tests/test_ui_waveform.py -v`
 
-- [ ] **Step 3: `icons.py`, `waveform.py`, `overlay.py` yaz**
+- [x] **Step 3: `icons.py`, `waveform.py`, `overlay.py` yaz**
 
 `src/dikte/ui/icons.py`:
 ```python
@@ -2145,7 +2145,7 @@ class RecordingOverlay(QWidget):
         self.move(screen.center().x() - self.width() // 2, screen.bottom() - self.height() - 80)
 ```
 
-- [ ] **Step 4: Overlay için smoke test ekle** — `tests/test_ui_waveform.py` sonuna:
+- [x] **Step 4: Overlay için smoke test ekle** — `tests/test_ui_waveform.py` sonuna:
 
 ```python
 from dikte.core.state import DictationState
@@ -2163,9 +2163,9 @@ def test_overlay_state_transitions(qtbot):
     assert not o.isVisible()
 ```
 
-- [ ] **Step 5: Çalıştır, PASS gör** — `pytest tests/test_ui_waveform.py -v`
+- [x] **Step 5: Çalıştır, PASS gör** — `pytest tests/test_ui_waveform.py -v`
 
-- [ ] **Step 6: Commit** — `git add -A && git commit -m "feat: waveform widget and recording overlay"`
+- [x] **Step 6: Commit** — `git add -A && git commit -m "feat: waveform widget and recording overlay"`
 
 ---
 
@@ -2179,7 +2179,7 @@ def test_overlay_state_transitions(qtbot):
 - Consumes: `DictationController` sinyalleri/slotları (Task 5), `Session`, `Change`, `copy_icon` (Task 7).
 - Produces: `TextPane(QWidget)`: `set_text(str)`, `text() -> str`, `copied` sinyali (str), `set_busy(bool)`; `ResultWindow(QMainWindow)`: `bind(controller)`, `on_session(session)`, `on_state(state)`; butonlar `translate_btn`, `enhance_btn`; pane'ler `raw_pane`, `corrected_pane`, `output_pane`. `Toast.show_message(parent, text)`.
 
-- [ ] **Step 1: Başarısız TextPane testini yaz** — `tests/test_ui_text_pane.py`
+- [x] **Step 1: Başarısız TextPane testini yaz** — `tests/test_ui_text_pane.py`
 
 ```python
 from PySide6.QtWidgets import QApplication
@@ -2214,9 +2214,9 @@ def test_busy_disables_copy(qtbot):
     assert not p.copy_btn.isEnabled()
 ```
 
-- [ ] **Step 2: Çalıştır, FAIL gör** — `pytest tests/test_ui_text_pane.py -v`
+- [x] **Step 2: Çalıştır, FAIL gör** — `pytest tests/test_ui_text_pane.py -v`
 
-- [ ] **Step 3: `text_pane.py` ve `toast.py` yaz**
+- [x] **Step 3: `text_pane.py` ve `toast.py` yaz**
 
 `src/dikte/ui/text_pane.py`:
 ```python
@@ -2288,9 +2288,9 @@ class Toast(QLabel):
         return Toast(parent, text)
 ```
 
-- [ ] **Step 4: Çalıştır, PASS gör** — `pytest tests/test_ui_text_pane.py -v`
+- [x] **Step 4: Çalıştır, PASS gör** — `pytest tests/test_ui_text_pane.py -v`
 
-- [ ] **Step 5: Başarısız ResultWindow testini yaz** — `tests/test_ui_result_window.py`
+- [x] **Step 5: Başarısız ResultWindow testini yaz** — `tests/test_ui_result_window.py`
 
 ```python
 from PySide6.QtCore import QObject, Signal
@@ -2356,9 +2356,9 @@ def test_close_hides_instead_of_quitting(qtbot):
     assert not w.isVisible() and w.isEnabled()
 ```
 
-- [ ] **Step 6: Çalıştır, FAIL gör** — `pytest tests/test_ui_result_window.py -v`
+- [x] **Step 6: Çalıştır, FAIL gör** — `pytest tests/test_ui_result_window.py -v`
 
-- [ ] **Step 7: `result_window.py` yaz**
+- [x] **Step 7: `result_window.py` yaz**
 
 ```python
 from __future__ import annotations
@@ -2483,9 +2483,9 @@ class ResultWindow(QMainWindow):
         self.hide()
 ```
 
-- [ ] **Step 8: Çalıştır, PASS gör** — `pytest tests/test_ui_text_pane.py tests/test_ui_result_window.py -v`
+- [x] **Step 8: Çalıştır, PASS gör** — `pytest tests/test_ui_text_pane.py tests/test_ui_result_window.py -v`
 
-- [ ] **Step 9: Commit** — `git add -A && git commit -m "feat: result window with raw/corrected/output panes"`
+- [x] **Step 9: Commit** — `git add -A && git commit -m "feat: result window with raw/corrected/output panes"`
 
 ---
 
@@ -2499,7 +2499,7 @@ class ResultWindow(QMainWindow):
 - Consumes: `Session` (Task 5).
 - Produces: `History(path: Path, limit: int)`: `append(session: Session) -> None`, `load() -> tuple[Session, ...]` (en yeni en sonda).
 
-- [ ] **Step 1: Başarısız testi yaz** — `tests/test_history.py`
+- [x] **Step 1: Başarısız testi yaz** — `tests/test_history.py`
 
 ```python
 from pathlib import Path
@@ -2537,9 +2537,9 @@ def test_zero_limit_disables_history(tmp_path: Path):
     assert h.load() == ()
 ```
 
-- [ ] **Step 2: Çalıştır, FAIL gör** — `pytest tests/test_history.py -v`
+- [x] **Step 2: Çalıştır, FAIL gör** — `pytest tests/test_history.py -v`
 
-- [ ] **Step 3: `history.py` yaz**
+- [x] **Step 3: `history.py` yaz**
 
 ```python
 from __future__ import annotations
@@ -2594,9 +2594,9 @@ class History:
         tmp.replace(self._path)
 ```
 
-- [ ] **Step 4: Çalıştır, PASS gör** — `pytest tests/test_history.py -v`
+- [x] **Step 4: Çalıştır, PASS gör** — `pytest tests/test_history.py -v`
 
-- [ ] **Step 5: Commit** — `git add -A && git commit -m "feat: JSONL session history"`
+- [x] **Step 5: Commit** — `git add -A && git commit -m "feat: JSONL session history"`
 
 ---
 
@@ -2609,7 +2609,7 @@ class History:
 **Interfaces:**
 - Produces: `autostart.set_autostart(enabled: bool, exe_path: str | None = None, reg=None) -> None`, `autostart.is_autostart_enabled(reg=None) -> bool`, `autostart.launch_command() -> str`; `SingleInstance(name="dikte-single-instance")`: `try_acquire() -> bool`, `activated` sinyali (ikinci örnek başlatılınca ilk örneğe "show" mesajı gelir), `notify_existing() -> None`.
 
-- [ ] **Step 1: Başarısız autostart testini yaz** — `tests/test_autostart.py`
+- [x] **Step 1: Başarısız autostart testini yaz** — `tests/test_autostart.py`
 
 ```python
 from dikte.platform.autostart import RUN_KEY, VALUE_NAME, is_autostart_enabled, set_autostart
@@ -2643,9 +2643,9 @@ def test_disable_when_absent_is_noop():
     assert not is_autostart_enabled(reg=r)
 ```
 
-- [ ] **Step 2: Çalıştır, FAIL gör** — `pytest tests/test_autostart.py -v`
+- [x] **Step 2: Çalıştır, FAIL gör** — `pytest tests/test_autostart.py -v`
 
-- [ ] **Step 3: `autostart.py` ve `single_instance.py` yaz**
+- [x] **Step 3: `autostart.py` ve `single_instance.py` yaz**
 
 `src/dikte/platform/autostart.py`:
 ```python
@@ -2762,9 +2762,9 @@ class SingleInstance(QObject):
         conn.disconnectFromServer()
 ```
 
-- [ ] **Step 4: Çalıştır, PASS gör** — `pytest tests/test_autostart.py -v`
+- [x] **Step 4: Çalıştır, PASS gör** — `pytest tests/test_autostart.py -v`
 
-- [ ] **Step 5: Commit** — `git add -A && git commit -m "feat: autostart registry entry and single-instance lock"`
+- [x] **Step 5: Commit** — `git add -A && git commit -m "feat: autostart registry entry and single-instance lock"`
 
 ---
 
@@ -2778,7 +2778,7 @@ class SingleInstance(QObject):
 - Consumes: `Settings` (Task 1), `parse_hotkey` (Task 6).
 - Produces: `SettingsDialog(settings: Settings, devices: tuple[tuple[int, str], ...], parent=None)`; `result_settings() -> Settings` (yeni nesne); `list_input_devices() -> tuple[tuple[int, str], ...]`.
 
-- [ ] **Step 1: Başarısız testi yaz** — `tests/test_settings_dialog.py`
+- [x] **Step 1: Başarısız testi yaz** — `tests/test_settings_dialog.py`
 
 ```python
 from dikte.config import Settings
@@ -2814,9 +2814,9 @@ def test_invalid_hotkey_blocks_accept(qtbot):
     assert d.result() != d.Accepted and "değiştirici" in d.error_label.text()
 ```
 
-- [ ] **Step 2: Çalıştır, FAIL gör** — `pytest tests/test_settings_dialog.py -v`
+- [x] **Step 2: Çalıştır, FAIL gör** — `pytest tests/test_settings_dialog.py -v`
 
-- [ ] **Step 3: `settings_dialog.py` yaz**
+- [x] **Step 3: `settings_dialog.py` yaz**
 
 ```python
 from __future__ import annotations
@@ -2913,9 +2913,9 @@ class SettingsDialog(QDialog):
         })
 ```
 
-- [ ] **Step 4: Çalıştır, PASS gör** — `pytest tests/test_settings_dialog.py -v`
+- [x] **Step 4: Çalıştır, PASS gör** — `pytest tests/test_settings_dialog.py -v`
 
-- [ ] **Step 5: Commit** — `git add -A && git commit -m "feat: settings dialog"`
+- [x] **Step 5: Commit** — `git add -A && git commit -m "feat: settings dialog"`
 
 ---
 
@@ -2929,7 +2929,7 @@ class SettingsDialog(QDialog):
 - Consumes: her şey.
 - Produces: `TrayIcon(QSystemTrayIcon)`: `set_state(state: DictationState)`, `set_ready(bool)`, `notify(title, msg)`, sinyaller `show_requested`, `toggle_requested`, `settings_requested`, `quit_requested`; `app.main(argv=None) -> int`; `app.build_app(settings) -> AppContext`.
 
-- [ ] **Step 1: `tray.py` yaz**
+- [x] **Step 1: `tray.py` yaz**
 
 ```python
 from __future__ import annotations
@@ -3000,9 +3000,9 @@ class TrayIcon(QSystemTrayIcon):
             self.show_requested.emit()
 ```
 
-- [ ] **Step 2: `result_window.py` içindeki `bind` metodunu güncelle** — `close_after_copy` bayrağını controller'dan değil ayarlardan alması için imzayı `bind(controller, close_after_copy: bool = False)` yap ve gövdeye `self.close_after_copy = close_after_copy` ekle. `tests/test_ui_result_window.py` çalışmaya devam etmelidir (`pytest tests/test_ui_result_window.py -q`).
+- [x] **Step 2: `result_window.py` içindeki `bind` metodunu güncelle** — `close_after_copy` bayrağını controller'dan değil ayarlardan alması için imzayı `bind(controller, close_after_copy: bool = False)` yap ve gövdeye `self.close_after_copy = close_after_copy` ekle. `tests/test_ui_result_window.py` çalışmaya devam etmelidir (`pytest tests/test_ui_result_window.py -q`).
 
-- [ ] **Step 3: `app.py` yaz**
+- [x] **Step 3: `app.py` yaz**
 
 ```python
 from __future__ import annotations
@@ -3154,14 +3154,14 @@ def main(argv: list[str] | None = None) -> int:
     return app.exec()
 ```
 
-- [ ] **Step 4: Duman testi (Linux'ta offscreen)**
+- [x] **Step 4: Duman testi (Linux'ta offscreen)**
 
 Run: `QT_QPA_PLATFORM=offscreen python -c "from dikte.app import build_app; from dikte.config import Settings; from PySide6.QtWidgets import QApplication; a=QApplication([]); ctx=build_app(Settings()); print(type(ctx.controller).__name__)"`
 Expected: `DictationController` yazdırır, istisna yok (STT modeli yüklenmez; `warm_up` çağrılmadı).
 
-- [ ] **Step 5: Tüm testleri çalıştır** — `pytest -v` → tümü PASS (gpu/win skip)
+- [x] **Step 5: Tüm testleri çalıştır** — `pytest -v` → tümü PASS (gpu/win skip)
 
-- [ ] **Step 6: Commit** — `git add -A && git commit -m "feat: tray icon and application composition root"`
+- [x] **Step 6: Commit** — `git add -A && git commit -m "feat: tray icon and application composition root"`
 
 ---
 
@@ -3283,7 +3283,7 @@ Expected: iki model için de 10 çıktı; ilk istek model yüklemesi nedeniyle u
 
 **Interfaces:** Yok. Çıktı: `dist/Dikte/Dikte.exe` (onedir) ve `dist/Dikte-Setup-0.1.0.exe`.
 
-- [ ] **Step 1: `packaging/dikte.spec` yaz**
+- [x] **Step 1: `packaging/dikte.spec` yaz**
 
 ```python
 # -*- mode: python -*-
@@ -3311,7 +3311,7 @@ exe = EXE(pyz, a.scripts, [], exclude_binaries=True, name="Dikte", console=False
 coll = COLLECT(exe, a.binaries, a.datas, strip=False, upx=False, name="Dikte")
 ```
 
-- [ ] **Step 2: `packaging/installer.iss` yaz**
+- [x] **Step 2: `packaging/installer.iss` yaz**
 
 ```ini
 #define AppName "Dikte"
@@ -3343,7 +3343,7 @@ Filename: "{app}\Dikte.exe"; Description: "{#AppName} uygulamasını başlat"; F
 Filename: "reg.exe"; Parameters: "delete HKCU\Software\Microsoft\Windows\CurrentVersion\Run /v Dikte /f"; Flags: runhidden; RunOnceId: "RemoveAutostart"
 ```
 
-- [ ] **Step 3: `packaging/build.ps1` yaz**
+- [x] **Step 3: `packaging/build.ps1` yaz**
 
 ```powershell
 $ErrorActionPreference = "Stop"
@@ -3360,7 +3360,7 @@ Write-Host "Kurulum paketi: dist\Dikte-Setup-0.1.0.exe"
 Run: `powershell -ExecutionPolicy Bypass -File packaging\build.ps1`
 Expected: `dist\Dikte\Dikte.exe` çalışır; kısayol, overlay, STT (GPU), Ollama düzeltmesi çalışır; `dist\Dikte-Setup-0.1.0.exe` kurulumu sonrası `docs/manual_test_checklist.md` listesi tekrar geçilir. Model ilk açılışta `%LOCALAPPDATA%\Dikte\models` altına iner (ilk açılışta tooltip "Model yükleniyor…" birkaç dakika sürebilir).
 
-- [ ] **Step 5: Commit** — `git add -A && git commit -m "chore: PyInstaller spec and Inno Setup installer"`
+- [x] **Step 5: Commit** — `git add -A && git commit -m "chore: PyInstaller spec and Inno Setup installer"`
 
 ---
 
