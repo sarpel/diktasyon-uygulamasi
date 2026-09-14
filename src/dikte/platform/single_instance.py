@@ -2,26 +2,55 @@ from __future__ import annotations
 
 import logging
 
-from PySide6.QtCore import QObject, Signal
+from PySide6.QtCore import QEventLoop, QObject, QTimer, Signal
 from PySide6.QtNetwork import QLocalServer, QLocalSocket
 
 log = logging.getLogger(__name__)
 DEFAULT_NAME = "dikte-single-instance"
 SHOW_MESSAGE = b"show"
 TOGGLE_MESSAGE = b"toggle"
-_TIMEOUT_MS = 300
+ACK = b"ok"
+_TIMEOUT_MS = 2000
 
 
 def send_command(name: str, message: bytes, timeout_ms: int = _TIMEOUT_MS) -> bool:
-    """Çalışan örneğe komut yollar; dinleyen örnek yoksa False döner."""
+    """Çalışan örneğe komut yollar ve okunduğuna dair onay bekler.
+
+    Windows'ta named pipe, yazan taraf kapattığında okunmamış veriyi düşürebilir;
+    bu yüzden gönderim ancak sunucu ACK yolladığında başarılı sayılır. Bekleme
+    iç içe bir olay döngüsüyle yapılır, böylece sunucu aynı süreçte olsa bile
+    (testler) ilerleyebilir.
+    """
     sock = QLocalSocket()
+    loop = QEventLoop()
+    result = {"ok": False, "done": False}
+
+    def finish(ok: bool) -> None:
+        if result["done"]:
+            return
+        result["ok"], result["done"] = ok, True
+        loop.quit()
+
+    def on_connected() -> None:
+        sock.write(message)
+        sock.flush()
+
+    sock.connected.connect(on_connected)
+    sock.readyRead.connect(lambda: finish(sock.readAll().data().startswith(ACK)))
+    sock.errorOccurred.connect(lambda _err: finish(False))
+    sock.disconnected.connect(lambda: finish(False))
+
+    timer = QTimer()
+    timer.setSingleShot(True)
+    timer.timeout.connect(lambda: finish(False))
+    timer.start(timeout_ms)
+
     sock.connectToServer(name)
-    if not sock.waitForConnected(timeout_ms):
-        return False
-    sock.write(message)
-    sock.waitForBytesWritten(timeout_ms)
-    sock.disconnectFromServer()
-    return True
+    if not result["done"]:
+        loop.exec()
+    timer.stop()
+    sock.abort()
+    return result["ok"]
 
 
 class SingleInstance(QObject):
@@ -52,12 +81,20 @@ class SingleInstance(QObject):
         conn = self._server.nextPendingConnection()
         if conn is None:
             return
-        conn.waitForReadyRead(_TIMEOUT_MS)
+        conn.readyRead.connect(lambda: self._handle(conn))
+        if conn.bytesAvailable():  # veri bağlantıyla birlikte gelmiş olabilir
+            self._handle(conn)
+
+    def _handle(self, conn: QLocalSocket) -> None:
         payload = conn.readAll().data()
+        if not payload:
+            return
         if payload.startswith(TOGGLE_MESSAGE):
             self.toggle_requested.emit()
         elif payload.startswith(SHOW_MESSAGE):
             self.activated.emit()
         else:
             log.warning("bilinmeyen IPC komutu: %r", payload[:32])
+        conn.write(ACK)
+        conn.flush()
         conn.disconnectFromServer()
