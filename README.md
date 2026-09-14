@@ -176,7 +176,7 @@ ruff check src tests
 
 - Ayrıntılı plan: [`implementation_plan.md`](implementation_plan.md)
 - Windows manuel test listesi: [`docs/manual_test_checklist.md`](docs/manual_test_checklist.md)
-- LLM model karşılaştırması: `python scripts/eval_llm.py` (Ollama çalışır durumda olmalı)
+- LLM model karşılaştırması: `python scripts/eval_llm.py --models <model…>` (Ollama çalışır durumda olmalı) · yöntem ve puanlama: [`docs/llm_benchmark.md`](docs/llm_benchmark.md)
 
 ## Paketleme (Windows)
 
