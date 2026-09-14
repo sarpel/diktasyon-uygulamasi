@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Tarih:** 2026-09-14 · **Sürüm:** 0.1.0 (commit `1c6e3c7`) · **Durum:** plan onaylandı, kodlama başlamadı
+**Tarih:** 2026-09-14 · **Sürüm:** 0.1.0 (commit `1c6e3c7`) · **Durum (2026-09-15):** T1–T8 uygulandı ve commit edildi (`feat/improvement-plan` dalı, 313 test, %91 kapsam). T9'un kodu, veri seti ve testleri hazır; **ölçüm bekliyor** (bu ortamda Ollama erişilemiyor + aday model listesi kullanıcı onayı bekliyor).
 
 **Goal:** Dikte'yi "kısayola bas → konuş → metin imlecin olduğu yere düşsün" akışına getirmek; iptal, geçmiş, sınırsız kayıt, ısınma, çoklu uzak LLM sağlayıcı, halüsinasyona dayanıklı VAD ve ölçülmüş bir varsayılan LLM ile.
 
