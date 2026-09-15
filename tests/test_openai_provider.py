@@ -3,7 +3,7 @@ from types import SimpleNamespace
 import pytest
 
 from dikte.config import LlmSettings
-from dikte.llm.openai_provider import OpenAiCompatProvider
+from dikte.llm.openai_provider import OpenAiCompatProvider, _schema_unsupported_errors
 from dikte.llm.provider import LlmError
 
 
@@ -57,6 +57,11 @@ def test_falls_back_to_json_object_when_schema_rejected():
     assert fake.calls[-1]["response_format"] == {"type": "json_object"}
     assert "JSON object matching this schema" in fake.calls[-1]["messages"][0]["content"]
     assert out.startswith("{")
+
+
+def test_schema_fallback_covers_builtin_errors_regardless_of_sdk():
+    # openai SDK kurulu olsun olmasın yerleşik hatalar yakalanmalı (CI'de SDK kuruludur).
+    assert set(_schema_unsupported_errors()) >= {ValueError, TypeError}
 
 
 def test_plain_request_has_no_response_format():

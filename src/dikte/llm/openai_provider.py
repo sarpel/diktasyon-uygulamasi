@@ -24,13 +24,18 @@ def _default_client_factory(*, base_url: str, api_key: str | None, timeout: floa
     return OpenAI(base_url=base_url, api_key=api_key or PLACEHOLDER_KEY, timeout=timeout)
 
 
+# SDK kurulu olsun olmasın yakalanan sınıflar: yerel sunucular json_schema'yı 400 yerine
+# istemci tarafı doğrulamasıyla da reddedebilir.
+_BUILTIN_SCHEMA_ERRORS: tuple[type[BaseException], ...] = (ValueError, TypeError)
+
+
 def _schema_unsupported_errors() -> tuple[type[BaseException], ...]:
-    """json_schema'yı reddeden sunucuların hata sınıfı; SDK yoksa ValueError'a düşer."""
+    """json_schema'yı reddeden sunucuların hata sınıfları; SDK yoksa yalnızca yerleşikler."""
     try:
         from openai import BadRequestError
     except ImportError:
-        return (ValueError,)
-    return (BadRequestError,)
+        return _BUILTIN_SCHEMA_ERRORS
+    return (BadRequestError, *_BUILTIN_SCHEMA_ERRORS)
 
 
 class OpenAiCompatProvider:
