@@ -16,14 +16,14 @@ from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from difflib import SequenceMatcher
 from pathlib import Path
-from typing import Literal
+from typing import TYPE_CHECKING, Literal
+
+if TYPE_CHECKING:
+    from dikte.llm.tasks import CorrectionResult
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 if str(REPO_ROOT / "src") not in sys.path:  # kurulum yapılmadan da çalışsın
     sys.path.insert(0, str(REPO_ROOT / "src"))
-
-from dikte.config import LlmSettings  # noqa: E402
-from dikte.llm.tasks import CorrectionResult, correct  # noqa: E402
 
 DATA_PATH = REPO_ROOT / "scripts" / "eval_data" / "tr_corrections.json"
 DEFAULT_OUT = REPO_ROOT / "docs" / "llm_benchmark.md"
@@ -141,6 +141,8 @@ def aggregate(scores: Sequence[CaseScore]) -> dict:
 def run_model(
     model: str, cases: Sequence[Case], provider_factory: Callable[[str], object], runs: int = 1
 ) -> dict:
+    from dikte.llm.tasks import correct
+
     provider = provider_factory(model)
     scores: list[CaseScore] = []
     for _ in range(runs):
@@ -179,6 +181,7 @@ def render_markdown(results: dict[str, dict]) -> str:
 
 
 def _ollama_factory(host: str, keep_alive: str) -> Callable[[str], object]:
+    from dikte.config import LlmSettings
     from dikte.llm.ollama_provider import OllamaProvider
 
     def factory(model: str):
@@ -190,6 +193,8 @@ def _ollama_factory(host: str, keep_alive: str) -> Callable[[str], object]:
 
 
 def main(argv: list[str] | None = None) -> int:
+    from dikte.config import LlmSettings
+
     parser = argparse.ArgumentParser(prog="eval_llm")
     parser.add_argument("--models", nargs="+", required=True, help="Ollama model adları")
     parser.add_argument("--runs", type=int, default=1, help="her örneğin kaç kez sorulacağı")
