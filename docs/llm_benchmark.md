@@ -1,8 +1,12 @@
 # Türkçe LLM düzeltme benchmark'ı
 
+<!-- LAST-SYNCED: 2026-09-15 -->
+
 **Durum:** yöntem ve veri seti hazır, **ölçüm henüz yapılmadı.** Bu makinede (WSL) `ollama`
-komutu kurulu değil ve `127.0.0.1:11434` yanıt vermiyor. Ayrıca aday model listesi
-kullanıcı onayı almadan indirilmeyecektir.
+komutu kurulu değil; 11434 portunu LM Studio kullanıyor, dolayısıyla Ollama başka bir porta
+alınmalı ve adres `--host` ile verilmelidir. Betik şu an yalnızca Ollama üzerinden ölçer
+(`_ollama_factory`); LM Studio ile ölçüm istenirse OpenAI-uyumlu bir fabrika eklenmelidir.
+Ayrıca aday model listesi kullanıcı onayı almadan indirilmeyecektir.
 
 ## Neyi ölçüyor
 
@@ -38,6 +42,8 @@ score = 0,60 × (geçen must_contain / toplam)
 ```bash
 .venv/bin/python scripts/eval_llm.py --models qwen3.5:4b gemma4:e4b-it-qat --runs 2
 ```
+
+Ollama farklı bir porttaysa: `--host http://127.0.0.1:11500`.
 
 `--keep-alive 0` (varsayılan) her modelden sonra VRAM'i boşaltır; 8 GB'lık kartta modeller
 birbirini ezmez.
