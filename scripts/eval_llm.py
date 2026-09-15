@@ -22,8 +22,8 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 if str(REPO_ROOT / "src") not in sys.path:  # kurulum yapılmadan da çalışsın
     sys.path.insert(0, str(REPO_ROOT / "src"))
 
-from dikte.config import LlmSettings
-from dikte.llm.tasks import CorrectionResult, correct
+from dikte.config import LlmSettings  # noqa: E402
+from dikte.llm.tasks import CorrectionResult, correct  # noqa: E402
 
 DATA_PATH = REPO_ROOT / "scripts" / "eval_data" / "tr_corrections.json"
 DEFAULT_OUT = REPO_ROOT / "docs" / "llm_benchmark.md"
