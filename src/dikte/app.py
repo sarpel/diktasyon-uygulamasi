@@ -164,7 +164,7 @@ def _clear_history(ctx: AppContext) -> None:
 
 
 def _refresh_status_info(ctx: AppContext) -> None:
-    llm = ctx.settings.llm.model if ctx.settings.llm.enabled else "kapalı"
+    llm = ctx.settings.llm.active_model if ctx.settings.llm.enabled else "kapalı"
     ctx.window.set_status_info(ctx.settings.stt.model, ctx.stt.compute_type, llm)
 
 

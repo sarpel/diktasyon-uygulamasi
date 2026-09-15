@@ -124,18 +124,26 @@ Eşik önerileri (Ayarlar → Konuşma Tanıma → "Sessizlik ve halüsinasyon")
 
 VAD kapatılırsa toplu çözümleme de devre dışı kalır (boru hattı konuşma aralıklarını VAD'den alır).
 
-### Uzak LLM sağlayıcıları
+### LLM sağlayıcıları
 
-Metin düzeltme varsayılan olarak yereldeki Ollama ile yapılır. İsterseniz uzak bir sağlayıcı seçebilirsiniz:
+Metin düzeltme varsayılan olarak yereldeki Ollama ile yapılır. Yerel bir alternatif (LM Studio)
+veya uzak bir sağlayıcı da seçebilirsiniz:
 
 | Sağlayıcı | Ortam değişkeni (varsayılan ad) | Kurulum | Base URL |
 |---|---|---|---|
-| Ollama | — | çekirdek | `http://127.0.0.1:11434` |
+| Ollama (yerel) | — | çekirdek | `http://127.0.0.1:11434` |
+| LM Studio (yerel) | gerekmez (boş bırakın) | `uv pip install -e ".[openai]"` | `http://127.0.0.1:1234/v1` |
 | OpenAI | `OPENAI_API_KEY` | `uv pip install -e ".[openai]"` | `https://api.openai.com/v1` |
 | Anthropic | `ANTHROPIC_API_KEY` | `uv pip install -e ".[anthropic]"` | — |
 | Gemini | `GEMINI_API_KEY` | `uv pip install -e ".[gemini]"` | — |
 | Custom (OpenAI-uyumlu) | kendi belirlediğiniz ad (boş bırakılabilir) | `.[openai]` | ör. `http://localhost:1234/v1` |
 | Custom (Anthropic-uyumlu) | kendi belirlediğiniz ad (boş bırakılabilir) | `.[anthropic]` | proxy adresiniz |
+
+Tablodaki adresler ilgili uygulamaların **varsayılan portlarıdır**: Ollama 11434, LM Studio 1234.
+İki uygulamayı aynı makinede çalıştırıyorsanız veya portu başka bir şey kullanıyorsa, sunucuyu
+taşıyıp adresi Ayarlar → Metin Düzeltme altındaki "Host" / "Base URL" kutusundan değiştirin.
+LM Studio'da sunucuyu açmak için: Developer sekmesi → **Start Server**; "Model" kutusuna
+LM Studio'nun listelediği model kimliğini yazın.
 
 **Gizlilik:** Uzak sağlayıcı seçtiğinizde dikte edilen metin ilgili servise gönderilir.
 API anahtarları **yalnızca ortam değişkeninden** okunur; `config.json`'a yazılmaz, loglanmaz ve

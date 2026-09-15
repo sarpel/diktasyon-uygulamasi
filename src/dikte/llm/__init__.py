@@ -28,12 +28,30 @@ def _custom_provider(settings: LlmSettings) -> LlmProvider:
     )
 
 
+def _lmstudio_provider(settings: LlmSettings) -> LlmProvider:
+    """LM Studio yerel sunucusu OpenAI-uyumludur; anahtar istemez, model kimliği zorunludur."""
+    if not settings.lmstudio_model.strip():
+        raise LlmError("LM Studio için model adı gerekli (LM Studio'daki model kimliği)")
+    from dikte.llm.openai_provider import OpenAiCompatProvider
+
+    return OpenAiCompatProvider(
+        settings,
+        base_url=settings.lmstudio_base_url.strip(),
+        model=settings.lmstudio_model.strip(),
+        api_key_env=settings.lmstudio_api_key_env,
+        required_key=False,
+        name="lmstudio",
+    )
+
+
 def make_provider(settings: LlmSettings) -> LlmProvider:
     provider = settings.provider
     if provider == "ollama":
         from dikte.llm.ollama_provider import OllamaProvider
 
         return OllamaProvider(settings)
+    if provider == "lmstudio":
+        return _lmstudio_provider(settings)
     if provider == "openai":
         from dikte.llm.openai_provider import OpenAiCompatProvider
 

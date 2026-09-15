@@ -17,7 +17,9 @@ from dikte.config import Settings
 from dikte.llm.keys import key_status
 
 log = logging.getLogger(__name__)
-PROVIDERS = ("ollama", "openai", "anthropic", "gemini", "custom")
+PROVIDERS = ("ollama", "lmstudio", "openai", "anthropic", "gemini", "custom")
+# Dikte metninin makineden çıktığı sağlayıcılar; uyarı yalnızca bunlarda gösterilir.
+REMOTE_PROVIDERS = ("openai", "anthropic", "gemini", "custom")
 KEY_PRESENT, KEY_MISSING = "✓ tanımlı", "✗ yok"
 
 
@@ -39,6 +41,10 @@ class LlmTab(QWidget):
 
         self.llm_model_edit = QLineEdit(llm.model)
         self.ollama_host_edit = QLineEdit(llm.ollama_host)
+        self.ollama_host_edit.setToolTip(
+            "Ollama sunucusunun adresi. Varsayılan port 11434; başka bir uygulama "
+            "bu portu kullanıyorsa Ollama'yı taşıyıp adresi burada değiştirin."
+        )
         self.keep_alive_edit = QLineEdit(llm.keep_alive)
         self.keep_alive_edit.setToolTip(
             "Ollama modelinin bellekte kalma süresi. Düşük VRAM'de '0' yazarak "
@@ -49,6 +55,23 @@ class LlmTab(QWidget):
         ollama_form.addRow("Model", self.llm_model_edit)
         ollama_form.addRow("Host", self.ollama_host_edit)
         ollama_form.addRow("Model bellekte kalsın", self.keep_alive_edit)
+
+        self.lmstudio_base_url_edit = QLineEdit(llm.lmstudio_base_url)
+        self.lmstudio_base_url_edit.setToolTip(
+            "LM Studio'nun yerel sunucu adresi (Developer > Start Server). "
+            "Varsayılan port 1234 ve yol /v1 olmalıdır."
+        )
+        self.lmstudio_model_edit = QLineEdit(llm.lmstudio_model)
+        self.lmstudio_model_edit.setPlaceholderText("LM Studio'daki model kimliği")
+        self.lmstudio_key_env_edit = QLineEdit(llm.lmstudio_api_key_env)
+        self.lmstudio_key_env_edit.setPlaceholderText("boş = anahtar gönderilmez")
+        self.lmstudio_key_status = QLabel()
+        self.lmstudio_group = QGroupBox("LM Studio (yerel)")
+        lmstudio_form = QFormLayout(self.lmstudio_group)
+        lmstudio_form.addRow("Base URL", self.lmstudio_base_url_edit)
+        lmstudio_form.addRow("Model", self.lmstudio_model_edit)
+        lmstudio_form.addRow("Anahtar ortam değişkeni", self.lmstudio_key_env_edit)
+        lmstudio_form.addRow("Anahtar durumu", self.lmstudio_key_status)
 
         self.openai_model_edit = QLineEdit(llm.openai_model)
         self.openai_base_url_edit = QLineEdit(llm.openai_base_url)
@@ -101,6 +124,7 @@ class LlmTab(QWidget):
         custom_form.addRow("Anahtar durumu", self.custom_key_status)
 
         self._key_fields = (
+            (self.lmstudio_key_env_edit, self.lmstudio_key_status),
             (self.openai_key_env_edit, self.openai_key_status),
             (self.anthropic_key_env_edit, self.anthropic_key_status),
             (self.gemini_key_env_edit, self.gemini_key_status),
@@ -139,6 +163,7 @@ class LlmTab(QWidget):
     def _groups(self) -> tuple[QGroupBox, ...]:
         return (
             self.ollama_group,
+            self.lmstudio_group,
             self.openai_group,
             self.anthropic_group,
             self.gemini_group,
@@ -148,6 +173,7 @@ class LlmTab(QWidget):
     def _group_for(self, provider: str) -> QGroupBox:
         return {
             "ollama": self.ollama_group,
+            "lmstudio": self.lmstudio_group,
             "openai": self.openai_group,
             "anthropic": self.anthropic_group,
             "gemini": self.gemini_group,
@@ -163,7 +189,7 @@ class LlmTab(QWidget):
         wanted = self._group_for(provider)
         for group in self._groups():
             group.setVisible(group is wanted)
-        self.privacy_label.setVisible(provider != "ollama")
+        self.privacy_label.setVisible(provider in REMOTE_PROVIDERS)
 
     def _set_fields_enabled(self, enabled: bool) -> None:
         self.provider_combo.setEnabled(enabled)
@@ -176,8 +202,16 @@ class LlmTab(QWidget):
         if not self.llm_enabled_check.isChecked():
             return None
         provider = self.provider_combo.currentText()
-        if provider == "ollama" and not self.llm_model_edit.text().strip():
-            return "LLM model adı boş olamaz"
+        if provider == "ollama":
+            if not self.llm_model_edit.text().strip():
+                return "LLM model adı boş olamaz"
+            if not self.ollama_host_edit.text().strip():
+                return "Ollama host adresi boş olamaz (varsayılan http://127.0.0.1:11434)"
+        if provider == "lmstudio":
+            if not self.lmstudio_base_url_edit.text().strip():
+                return "LM Studio için base URL gerekli (varsayılan http://127.0.0.1:1234/v1)"
+            if not self.lmstudio_model_edit.text().strip():
+                return "LM Studio için model adı gerekli"
         if provider == "openai" and not self.openai_model_edit.text().strip():
             return "OpenAI model adı boş olamaz"
         if provider == "anthropic" and not self.anthropic_model_edit.text().strip():
@@ -202,6 +236,9 @@ class LlmTab(QWidget):
                         "model": self.llm_model_edit.text().strip(),
                         "ollama_host": self.ollama_host_edit.text().strip(),
                         "keep_alive": self.keep_alive_edit.text().strip() or "0",
+                        "lmstudio_base_url": self.lmstudio_base_url_edit.text().strip(),
+                        "lmstudio_model": self.lmstudio_model_edit.text().strip(),
+                        "lmstudio_api_key_env": self.lmstudio_key_env_edit.text().strip(),
                         "openai_model": self.openai_model_edit.text().strip(),
                         "openai_base_url": self.openai_base_url_edit.text().strip(),
                         "openai_api_key_env": self.openai_key_env_edit.text().strip(),

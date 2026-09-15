@@ -129,9 +129,9 @@ def test_reject_stops_microphone_test(dlg):
     assert stopped == [1]
 
 
-def test_provider_combo_lists_five_options(dlg):
+def test_provider_combo_lists_all_options(dlg):
     options = [dlg.provider_combo.itemText(i) for i in range(dlg.provider_combo.count())]
-    assert options == ["ollama", "openai", "anthropic", "gemini", "custom"]
+    assert options == ["ollama", "lmstudio", "openai", "anthropic", "gemini", "custom"]
 
 
 def test_custom_group_fields_round_trip(dlg):
@@ -186,3 +186,32 @@ def test_vad_checkbox_lives_only_on_the_stt_tab(dlg):
     assert not hasattr(dlg.advanced, "vad_check")
     dlg.vad_check.setChecked(False)
     assert dlg.result_settings().stt.vad_filter is False
+
+
+def test_lmstudio_group_round_trip(dlg):
+    dlg.provider_combo.setCurrentText("lmstudio")
+    assert dlg.lmstudio_group.isVisibleTo(dlg.llm)
+    assert dlg.lmstudio_base_url_edit.text() == "http://127.0.0.1:1234/v1"
+    dlg.lmstudio_model_edit.setText("qwen3.5-4b")
+    dlg.lmstudio_base_url_edit.setText("http://127.0.0.1:1235/v1")
+    s = dlg.result_settings()
+    assert s.llm.provider == "lmstudio" and s.llm.lmstudio_model == "qwen3.5-4b"
+    assert s.llm.lmstudio_base_url == "http://127.0.0.1:1235/v1"
+
+
+def test_lmstudio_is_local_so_no_privacy_warning(dlg):
+    dlg.provider_combo.setCurrentText("lmstudio")
+    assert not dlg.privacy_label.isVisibleTo(dlg.llm)
+
+
+def test_empty_lmstudio_model_blocks_accept(dlg):
+    dlg.provider_combo.setCurrentText("lmstudio")
+    dlg.lmstudio_model_edit.setText("")
+    dlg.accept()
+    assert "model adı" in dlg.error_label.text() and dlg.tabs.currentWidget() is dlg.llm
+
+
+def test_empty_ollama_host_blocks_accept(dlg):
+    dlg.ollama_host_edit.setText("  ")
+    dlg.accept()
+    assert "host" in dlg.error_label.text().lower()

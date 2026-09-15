@@ -44,10 +44,14 @@ class LlmSettings(BaseModel):
     enabled: bool = True
     # Whisper yüklenirken LLM'i de belleğe alır (yalnızca Ollama'da anlamlı).
     prewarm: bool = True
-    provider: Literal["ollama", "openai", "anthropic", "gemini", "custom"] = "ollama"
+    provider: Literal["ollama", "lmstudio", "openai", "anthropic", "gemini", "custom"] = "ollama"
     model: str = "qwen3.5:4b"  # Ollama modeli
-    ollama_host: str = "http://127.0.0.1:11434"
+    ollama_host: str = "http://127.0.0.1:11434"  # Ollama'nın varsayılan portu
     keep_alive: str = "30m"
+    # LM Studio yerel sunucusu: OpenAI-uyumlu, varsayılan port 1234, anahtar istemez.
+    lmstudio_base_url: str = "http://127.0.0.1:1234/v1"
+    lmstudio_model: str = ""  # LM Studio'daki model kimliği (ör. qwen3.5-4b)
+    lmstudio_api_key_env: str = ""  # boş = anahtar gönderilmez
     openai_model: str = "gpt-5.5"
     openai_base_url: str = "https://api.openai.com/v1"
     openai_api_key_env: str = "OPENAI_API_KEY"
@@ -65,6 +69,18 @@ class LlmSettings(BaseModel):
     num_ctx: int = Field(default=8192, ge=2048)  # KV cache'i küçük tut (VRAM)
     top_p: float = 0.8
     top_k: int = 20
+
+    @property
+    def active_model(self) -> str:
+        """Seçili sağlayıcının model adı; durum çubuğu ve günlükler bunu gösterir."""
+        return {
+            "ollama": self.model,
+            "lmstudio": self.lmstudio_model,
+            "openai": self.openai_model,
+            "anthropic": self.anthropic_model,
+            "gemini": self.gemini_model,
+            "custom": self.custom_model,
+        }[self.provider]
 
 
 class AudioSettings(BaseModel):

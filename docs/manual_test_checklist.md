@@ -74,6 +74,12 @@
 ## LLM sağlayıcıları
 
 - [ ] Ollama (varsayılan): yerel model çalışırken düzeltme yapılıyor, keep_alive uygulanıyor.
+- [ ] Ollama portu değiştirildiğinde (ör. 11500) "Host" kutusundan yeni adres girilip düzeltme çalışıyor;
+      boş bırakılırsa Kaydet engelleniyor.
+- [ ] LM Studio: Developer > Start Server açıkken, model kimliği girilip düzeltme çalışıyor;
+      anahtar alanı boş bırakılabiliyor ve gizlilik uyarısı görünmüyor (yerel sağlayıcı).
+- [ ] LM Studio 11434 portunu kullanıyorsa Ollama ile çakışma yok: iki sağlayıcı ayrı adreslerle çalışıyor.
+- [ ] Durum çubuğu seçili sağlayıcının modelini gösteriyor (ör. LM Studio modeli, Ollama modeli değil).
 - [ ] OpenAI: `OPENAI_API_KEY` tanımlı, anahtar durumu "✓ tanımlı"; düzeltme JSON şemasıyla dönüyor.
 - [ ] Anthropic: `ANTHROPIC_API_KEY` ile düzeltme çalışıyor.
 - [ ] Gemini: `GEMINI_API_KEY` ile düzeltme çalışıyor.

@@ -99,3 +99,21 @@ def test_missing_gemini_sdk_gives_install_hint(monkeypatch):
     monkeypatch.setenv("GEMINI_API_KEY", "k")
     with pytest.raises(LlmError, match=r"\[gemini\]"):
         make_provider(LlmSettings(provider="gemini"))
+
+
+def test_lmstudio_provider_is_openai_compatible(stub_sdks):
+    s = LlmSettings(provider="lmstudio", lmstudio_model="qwen3.5-4b")
+    assert make_provider(s).name == "lmstudio"
+
+
+def test_lmstudio_requires_model():
+    with pytest.raises(LlmError, match="model adı"):
+        make_provider(LlmSettings(provider="lmstudio"))
+
+
+def test_lmstudio_works_without_api_key(monkeypatch, stub_sdks):
+    monkeypatch.delenv("LMSTUDIO_API_KEY", raising=False)
+    s = LlmSettings(
+        provider="lmstudio", lmstudio_model="m", lmstudio_api_key_env="LMSTUDIO_API_KEY"
+    )
+    assert make_provider(s).name == "lmstudio"

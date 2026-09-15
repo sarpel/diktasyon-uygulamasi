@@ -91,3 +91,30 @@ def test_old_config_without_new_llm_fields_still_loads(tmp_path: Path):
     )
     loaded = load_settings(p)
     assert loaded.llm.gemini_model and loaded.llm.custom_base_url == ""
+
+
+def test_local_server_defaults_match_vendor_ports():
+    from dikte.config import LlmSettings
+
+    llm = LlmSettings()
+    assert llm.ollama_host == "http://127.0.0.1:11434"
+    assert llm.lmstudio_base_url == "http://127.0.0.1:1234/v1"
+    assert llm.lmstudio_model == "" and llm.lmstudio_api_key_env == ""
+
+
+def test_ollama_host_is_configurable():
+    from dikte.config import LlmSettings
+
+    llm = LlmSettings().model_copy(update={"ollama_host": "http://127.0.0.1:11500"})
+    assert llm.ollama_host == "http://127.0.0.1:11500"
+
+
+def test_active_model_follows_provider():
+    from dikte.config import LlmSettings
+
+    base = LlmSettings(lmstudio_model="lm-4b", custom_model="öz-model")
+    assert base.active_model == "qwen3.5:4b"
+    assert base.model_copy(update={"provider": "lmstudio"}).active_model == "lm-4b"
+    assert base.model_copy(update={"provider": "openai"}).active_model == "gpt-5.5"
+    assert base.model_copy(update={"provider": "gemini"}).active_model == "gemini-3.5-flash"
+    assert base.model_copy(update={"provider": "custom"}).active_model == "öz-model"
