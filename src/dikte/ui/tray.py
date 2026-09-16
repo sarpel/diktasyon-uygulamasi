@@ -4,7 +4,7 @@ from PySide6.QtCore import Signal
 from PySide6.QtGui import QAction
 from PySide6.QtWidgets import QMenu, QSystemTrayIcon
 
-from dikte.core.state import DictationState
+from dikte.core.state import BUSY_STATES, DictationState
 from dikte.ui.icons import make_tray_icon
 
 _ICON_STATE = {
@@ -19,6 +19,7 @@ _ICON_STATE = {
 class TrayIcon(QSystemTrayIcon):
     show_requested = Signal()
     toggle_requested = Signal()
+    cancel_requested = Signal()
     settings_requested = Signal()
     quit_requested = Signal()
 
@@ -30,13 +31,15 @@ class TrayIcon(QSystemTrayIcon):
         menu = self._menu
         self._toggle_action = QAction("Kaydı Başlat", menu)
         self._toggle_action.triggered.connect(self.toggle_requested)
+        self._cancel_action = QAction("Vazgeç", menu)
+        self._cancel_action.triggered.connect(self.cancel_requested)
         show = QAction("Pencereyi Göster", menu)
         show.triggered.connect(self.show_requested)
         settings = QAction("Ayarlar…", menu)
         settings.triggered.connect(self.settings_requested)
         quit_ = QAction("Çıkış", menu)
         quit_.triggered.connect(self.quit_requested)
-        for a in (self._toggle_action, show, settings):
+        for a in (self._toggle_action, self._cancel_action, show, settings):
             menu.addAction(a)
         menu.addSeparator()
         menu.addAction(quit_)
@@ -60,6 +63,7 @@ class TrayIcon(QSystemTrayIcon):
         self._toggle_action.setEnabled(
             state not in (DictationState.TRANSCRIBING, DictationState.CORRECTING)
         )
+        self._cancel_action.setEnabled(state in BUSY_STATES)
         labels = {
             DictationState.RECORDING: "Kaydediliyor",
             DictationState.TRANSCRIBING: "Yazıya dökülüyor",

@@ -2,6 +2,7 @@ import logging
 import sys
 
 import pytest
+from PySide6.QtCore import Qt
 
 from dikte import app as app_mod
 from dikte.config import LlmSettings, Settings
@@ -230,3 +231,136 @@ def test_open_settings_rebuilds_llm_without_restart(ctx, monkeypatch):
     assert ctx.controller._llm.name == "none"
     assert restarts == []  # LLM değişikliği yeniden başlatma istemez
     assert not ctx.window.translate_btn.isEnabled()
+
+
+def _escape_shortcut(window):
+    from PySide6.QtGui import QKeySequence, QShortcut
+
+    for sc in window.findChildren(QShortcut):
+        if sc.key() == QKeySequence(Qt.Key_Escape):
+            return sc
+    raise AssertionError("Esc kısayolu bulunamadı")
+
+
+def test_escape_shortcut_cancels(ctx, qtbot):
+    ctx.controller.toggle()
+    ctx.window.show()
+    _escape_shortcut(ctx.window).activated.emit()
+    assert ctx.controller.state is DictationState.IDLE
+
+
+def test_escape_hides_window_when_idle(ctx, qtbot):
+    ctx.window.show()
+    _escape_shortcut(ctx.window).activated.emit()
+    assert not ctx.window.isVisible()
+
+
+def test_cancel_hotkey_registered_only_while_busy(ctx):
+    calls = []
+    ctx.cancel_hotkey.register = lambda spec: calls.append(("reg", spec)) or True
+    ctx.cancel_hotkey.unregister = lambda: calls.append(("unreg", None))
+    ctx.controller.state_changed.emit(DictationState.RECORDING)
+    ctx.controller.state_changed.emit(DictationState.IDLE)
+    assert calls == [("reg", "escape"), ("unreg", None)]
+
+
+def test_overlay_and_tray_cancel_reach_controller(ctx):
+    ctx.controller.toggle()
+    ctx.overlay.cancel_requested.emit()
+    assert ctx.controller.state is DictationState.IDLE
+    ctx.controller.toggle()
+    ctx.tray.cancel_requested.emit()
+    assert ctx.controller.state is DictationState.IDLE
+
+
+def test_cancel_hotkey_uses_separate_id(ctx):
+    from dikte.platform.hotkey import HOTKEY_ID
+
+    assert ctx.hotkey._id == HOTKEY_ID and ctx.cancel_hotkey._id != HOTKEY_ID
+
+
+def test_result_ready_copies_to_clipboard_and_pastes(ctx, monkeypatch):
+    from PySide6.QtWidgets import QApplication
+
+    pasted = []
+    monkeypatch.setattr(app_mod, "paste_active_window", lambda ids, **k: pasted.append(ids) or True)
+    ctx.controller.result_ready.emit("Merhaba.")
+    assert QApplication.clipboard().text() == "Merhaba."
+    assert len(pasted) == 1
+
+
+def test_result_ready_respects_auto_paste_off(ctx, monkeypatch):
+    ctx.settings = ctx.settings.model_copy(update={"auto_paste": False})
+    pasted = []
+    monkeypatch.setattr(app_mod, "paste_active_window", lambda *a, **k: pasted.append(1))
+    ctx.controller.result_ready.emit("x")
+    assert pasted == []
+
+
+def test_result_ready_respects_auto_copy_off(ctx, monkeypatch):
+    from PySide6.QtWidgets import QApplication
+
+    QApplication.clipboard().setText("eski")
+    ctx.settings = ctx.settings.model_copy(update={"auto_copy": False})
+    monkeypatch.setattr(app_mod, "paste_active_window", lambda *a, **k: True)
+    ctx.controller.result_ready.emit("yeni")
+    assert QApplication.clipboard().text() == "eski"
+
+
+def test_history_panel_refreshes_on_result(ctx):
+    ctx.controller._update_session(raw_text="a", corrected_text="A.")
+    ctx.controller.state_changed.emit(DictationState.RESULT)
+    assert ctx.window.history_panel.list_widget.count() == 1
+
+
+def test_history_delete_flows_to_storage(ctx):
+    ctx.controller._update_session(corrected_text="A.")
+    ctx.controller.state_changed.emit(DictationState.RESULT)
+    sid = ctx.history.load()[0].id
+    ctx.window.history_panel.delete_requested.emit(sid)
+    assert ctx.history.load() == ()
+    assert ctx.window.history_panel.list_widget.count() == 0
+
+
+def test_history_clear_flows_to_storage(ctx):
+    ctx.controller._update_session(corrected_text="A.")
+    ctx.controller.state_changed.emit(DictationState.RESULT)
+    ctx.window.history_panel.clear_requested.emit()
+    assert ctx.history.load() == ()
+
+
+def test_history_selection_loads_into_window(ctx):
+    from dikte.core.state import Session
+
+    ctx.window.history_panel.session_selected.emit(Session(corrected_text="Eski metin"))
+    assert ctx.window.corrected_pane.text() == "Eski metin"
+
+
+def test_status_info_set_when_ready(ctx):
+    ctx.stt._compute_type = "float16"
+    ctx.controller.ready_changed.emit(True)
+    assert "float16" in ctx.window.status_info.text()
+
+
+def test_window_toolbar_reaches_controller(ctx):
+    ctx.window.record_action.trigger()
+    assert ctx.controller.state is DictationState.RECORDING
+    ctx.window.cancel_action.trigger()
+    assert ctx.controller.state is DictationState.IDLE
+
+
+def test_invalid_hotkey_in_config_falls_back(monkeypatch, qtbot, tmp_path):
+    from dikte.config import Settings as S
+
+    monkeypatch.setattr(app_mod.paths, "history_path", lambda: tmp_path / "h.jsonl")
+    ctx = app_mod.build_app(S(hotkey="ctrl+"))
+    for w in (ctx.window, ctx.overlay):
+        qtbot.addWidget(w)
+    assert ctx.settings.hotkey == S().hotkey
+
+
+def test_valid_hotkey_is_left_alone():
+    from dikte.config import Settings as S
+
+    s = S(hotkey="ctrl+shift+d")
+    assert app_mod._safe_hotkey(s) is s

@@ -23,6 +23,8 @@ class DictationController(QObject):
     level_changed = Signal(float)
     buckets_changed = Signal(object)
     ready_changed = Signal(bool)
+    cancelled = Signal()
+    result_ready = Signal(str)
 
     def __init__(
         self,
@@ -41,9 +43,11 @@ class DictationController(QObject):
         self._state = DictationState.IDLE
         self._session = Session()
         self._jobs: list = []  # canlı sinyal nesneleri
+        self._gen = 0  # iptal sonrası gelen sonuçları ayırt etmek için
         recorder.level_changed.connect(self.level_changed)
         recorder.buckets_changed.connect(self.buckets_changed)
         recorder.error.connect(self._on_recorder_error)
+        recorder.limit_reached.connect(self._on_limit_reached)
 
     # ---- özellikler
     @property
@@ -68,11 +72,44 @@ class DictationController(QObject):
     # ---- kamu slotları
     @Slot()
     def warm_up(self) -> None:
-        self._spawn(
-            self._stt.load,
-            lambda _: self.ready_changed.emit(True),
-            lambda e: self.error.emit(f"STT modeli yüklenemedi: {e}"),
+        # Isınma iptal kuşağının dışındadır: kullanıcı iptali modeli yüklemeyi bozmamalı.
+        self._track(
+            run_in_pool(
+                self._stt.warm_up,
+                lambda _: self.ready_changed.emit(True),
+                lambda e: self.error.emit(f"STT modeli yüklenemedi: {e}"),
+                self._pool,
+            )
         )
+        self.prewarm_llm()
+
+    @Slot()
+    def prewarm_llm(self) -> None:
+        """LLM sağlayıcıyı (destekliyorsa) arka planda ısındırır; sonucu beklenmez."""
+        warm = getattr(self._llm, "warm_up", None)
+        if not (self._settings.llm.enabled and self._settings.llm.prewarm and warm is not None):
+            return
+        self._track(
+            run_in_pool(
+                warm,
+                lambda _: None,
+                lambda e: log.warning("LLM ısındırma başarısız: %s", e),
+                self._pool,
+            )
+        )
+
+    @Slot()
+    def cancel(self) -> None:
+        """Kaydı ya da süren çözümleme/düzeltmeyi iptal eder; boşta ise hiçbir şey yapmaz."""
+        if self._state in (DictationState.IDLE, DictationState.RESULT):
+            return
+        self._gen += 1  # bu kuşaktan önceki işlerin sonuçları yok sayılacak
+        if self._state is DictationState.RECORDING:
+            self._recorder.stop()  # ses atılır
+        self._session = Session()
+        self.session_updated.emit(self._session)
+        self._set_state(DictationState.IDLE)
+        self.cancelled.emit()
 
     @Slot()
     def toggle(self) -> None:
@@ -133,7 +170,7 @@ class DictationController(QObject):
         self._update_session(raw_text=result.text, duration_s=result.duration_s)
         if not self._settings.llm.enabled:  # LLM kapalı: ham metin sonuç olarak gösterilir
             self._update_session(corrected_text=result.text)
-            self._set_state(DictationState.RESULT)
+            self._finish_result()
             return
         self._set_state(DictationState.CORRECTING)
         raw = result.text
@@ -143,16 +180,27 @@ class DictationController(QObject):
         self._update_session(
             corrected_text=res.corrected_text or self._session.raw_text, changes=res.changes
         )
-        self._set_state(DictationState.RESULT)
+        self._finish_result()
 
     def _on_llm_error(self, msg: str) -> None:
         self.error.emit(f"LLM düzeltmesi başarısız, ham metin gösteriliyor: {msg}")
         self._update_session(corrected_text=self._session.raw_text)
+        self._finish_result()
+
+    def _finish_result(self) -> None:
+        """RESULT durumuna geçer, ardından metni teslim için yayınlar (sıra önemlidir:
+        geçmişe yazma ve pencere güncellemesi yapıştırmadan önce tamamlanmalı)."""
         self._set_state(DictationState.RESULT)
+        self.result_ready.emit(self._session.corrected_text)
 
     def _on_stt_error(self, msg: str) -> None:
         self.error.emit(f"Transkripsiyon başarısız: {msg}")
         self._set_state(DictationState.IDLE)
+
+    def _on_limit_reached(self) -> None:
+        if self._state is DictationState.RECORDING:
+            log.info("kayıt süresi sınırına ulaşıldı, otomatik durduruluyor")
+            self._stop_and_transcribe()
 
     def _on_recorder_error(self, msg: str) -> None:
         self.error.emit(msg)
@@ -170,6 +218,23 @@ class DictationController(QObject):
         self.session_updated.emit(self._session)
 
     def _spawn(self, fn, on_result, on_error) -> None:
-        sig = run_in_pool(fn, on_result, on_error, self._pool)
-        self._jobs.append(sig)
+        """İşi havuzda çalıştırır; iptal edilmiş kuşağın sonuçları yok sayılır."""
+        gen = self._gen
+
+        def guarded_result(result) -> None:
+            if gen == self._gen:
+                on_result(result)
+            else:
+                log.debug("iptal edilmiş işin sonucu yok sayıldı")
+
+        def guarded_error(message: str) -> None:
+            if gen == self._gen:
+                on_error(message)
+            else:
+                log.debug("iptal edilmiş işin hatası yok sayıldı: %s", message)
+
+        self._track(run_in_pool(fn, guarded_result, guarded_error, self._pool))
+
+    def _track(self, signals) -> None:
+        self._jobs.append(signals)
         self._jobs = self._jobs[-16:]

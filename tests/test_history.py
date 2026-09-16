@@ -34,3 +34,26 @@ def test_zero_limit_disables_history(tmp_path: Path):
     h = History(tmp_path / "h.jsonl", limit=0)
     h.append(Session(raw_text="x"))
     assert h.load() == ()
+
+
+def test_delete_removes_only_that_session(tmp_path: Path):
+    h = History(tmp_path / "h.jsonl", limit=10)
+    a, b = Session(raw_text="a"), Session(raw_text="b")
+    h.append(a)
+    h.append(b)
+    h.delete(a.id)
+    assert [s.id for s in h.load()] == [b.id]
+
+
+def test_delete_unknown_id_is_noop(tmp_path: Path):
+    h = History(tmp_path / "h.jsonl", limit=10)
+    h.append(Session(raw_text="a"))
+    h.delete("yok")
+    assert len(h.load()) == 1
+
+
+def test_clear_empties_file(tmp_path: Path):
+    h = History(tmp_path / "h.jsonl", limit=10)
+    h.append(Session(raw_text="a"))
+    h.clear()
+    assert h.load() == ()

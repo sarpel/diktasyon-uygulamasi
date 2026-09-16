@@ -51,3 +51,50 @@
       ipucu metni "LLM kapalı" yazar.
 - [ ] LLM tekrar açıldığında uygulama yeniden başlatılmadan çalışır (yeniden başlatma uyarısı çıkmaz).
 - [ ] `keep_alive` = 0 iken istek bittikten sonra `ollama ps` modeli listeden düşürür (VRAM boşalır).
+
+## İptal
+
+- [ ] Kayıt sürerken `Esc` (Windows'ta global): overlay kapanır, durum boşa döner, tepside "İptal edildi" bildirimi çıkar.
+- [ ] Çözümleme sürerken overlay'deki "Vazgeç": durum boşa döner ve **geç gelen sonuç pencereye düşmez**.
+- [ ] Tepsi menüsündeki "Vazgeç": yalnızca kayıt/çözümleme/düzeltme sırasında etkin, boştayken soluk.
+- [ ] Linux'ta global Esc kaydedilemez; overlay düğmesi, pencere odaktayken `Esc` ve tepsi menüsü ile iptal çalışır.
+- [ ] İptalden sonra kısayola basınca yeni kayıt sorunsuz başlar (önceki oturum metni temizlenmiş olur).
+
+## Geçmiş paneli
+
+- [ ] Araç çubuğundaki "Geçmiş" düğmesi sağdaki paneli açar/kapatır; panel kapatılınca düğme de kalkar.
+- [ ] Yeni bir dikte bitince kayıt listenin **en üstüne** düşer.
+- [ ] Arama kutusu: "toplanti" yazınca "Toplantısı" geçen kayıt görünür (aksan ve büyük/küçük harf duyarsız).
+- [ ] Bir kayda tıklayınca ham/düzeltilmiş/çıktı panelleri o kayıtla dolar.
+- [ ] "Sil" seçili kaydı, "Tümünü temizle" onaydan sonra tüm geçmişi siler; dosya (`history.jsonl`) da güncellenir.
+- [ ] Ayarlardaki "Geçmiş kayıt sayısı" 200 iken 201. kayıt eklenince en eski düşer.
+- [ ] Durum çubuğu: sol tarafta "12 sn · 34 kelime", sağda "large-v3-turbo · float16 · LLM: …".
+- [ ] Değişiklik listesinde `x → x` biçiminde özdeş satır görünmez.
+
+## LLM sağlayıcıları
+
+- [ ] Ollama (varsayılan): yerel model çalışırken düzeltme yapılıyor, keep_alive uygulanıyor.
+- [ ] Ollama portu değiştirildiğinde (ör. 11500) "Host" kutusundan yeni adres girilip düzeltme çalışıyor;
+      boş bırakılırsa Kaydet engelleniyor.
+- [ ] LM Studio: Developer > Start Server açıkken, model kimliği girilip düzeltme çalışıyor;
+      anahtar alanı boş bırakılabiliyor ve gizlilik uyarısı görünmüyor (yerel sağlayıcı).
+- [ ] LM Studio 11434 portunu kullanıyorsa Ollama ile çakışma yok: iki sağlayıcı ayrı adreslerle çalışıyor.
+- [ ] Durum çubuğu seçili sağlayıcının modelini gösteriyor (ör. LM Studio modeli, Ollama modeli değil).
+- [ ] OpenAI: `OPENAI_API_KEY` tanımlı, anahtar durumu "✓ tanımlı"; düzeltme JSON şemasıyla dönüyor.
+- [ ] Anthropic: `ANTHROPIC_API_KEY` ile düzeltme çalışıyor.
+- [ ] Gemini: `GEMINI_API_KEY` ile düzeltme çalışıyor.
+- [ ] Custom / openai formatı: LM Studio (`http://localhost:1234/v1`), anahtar alanı boş; şema
+      desteklenmiyorsa `json_object`'e düşüp yine de düzeltme üretiyor.
+- [ ] Custom / anthropic formatı: Anthropic-uyumlu bir proxy base URL'i ile çalışıyor.
+- [ ] Anahtar tanımlı değilken sağlayıcı seçilirse uygulama çökmüyor; tepside açıklayıcı hata çıkıyor
+      ve ham metin gösteriliyor.
+- [ ] Ayar dosyasında (`config.json`) hiçbir anahtar **değeri** yok, yalnızca ortam değişkeni adları var.
+
+## Sessizlik ve halüsinasyon
+
+- [ ] Kısayola basıp hiç konuşmadan durdur: "Konuşma algılanmadı" uyarısı çıkıyor, uydurma metin yok.
+- [ ] Normal dikte: metin eksiksiz; cümle başları/sonları VAD tarafından kırpılmıyor.
+- [ ] VAD eşiği 0,35'e çekilince fısıltıyla konuşma da yakalanıyor.
+- [ ] "Bilinen uydurma metinleri ele" kapalıyken sessizlikten gelen metin görünüyor (karşılaştırma).
+- [ ] "Bugün toplantıda altyazı ekleme özelliğini konuştuk" cümlesi **elenmiyor** (yanlış pozitif yok).
+- [ ] VAD kapalıyken uzun kayıt hata vermiyor (toplu çözümleme otomatik devre dışı kalıyor).

@@ -13,12 +13,13 @@ from dikte.audio.recorder import AudioRecorder
 from dikte.config import Settings, load_settings, save_settings
 from dikte.core.controller import DictationController
 from dikte.core.history import History
-from dikte.core.state import DictationState
+from dikte.core.state import BUSY_STATES, DictationState
 from dikte.llm import LlmError, make_provider
 from dikte.logging_setup import setup_logging
 from dikte.platform.autostart import set_autostart
-from dikte.platform.hotkey import GlobalHotkey
-from dikte.platform.hotkey_parse import parse_hotkey
+from dikte.platform.hotkey import HOTKEY_ID, GlobalHotkey
+from dikte.platform.hotkey_parse import HotkeyParseError, parse_hotkey
+from dikte.platform.paste import paste_active_window
 from dikte.platform.single_instance import (
     DEFAULT_NAME,
     TOGGLE_MESSAGE,
@@ -44,6 +45,7 @@ class AppContext:
     overlay: RecordingOverlay
     window: ResultWindow
     hotkey: GlobalHotkey
+    cancel_hotkey: GlobalHotkey
     history: History
     stt: FasterWhisperEngine
 
@@ -66,7 +68,24 @@ def _make_llm(settings: Settings):
         return _NullLlm()
 
 
+def _safe_hotkey(settings: Settings) -> Settings:
+    """config.json'daki kısayol bozuksa açılışta çökmek yerine varsayılana döner."""
+    try:
+        parse_hotkey(settings.hotkey)
+    except HotkeyParseError as exc:
+        fallback = Settings().hotkey
+        log.error(
+            "config'teki kısayol geçersiz (%s): %s; '%s' kullanılıyor",
+            settings.hotkey,
+            exc,
+            fallback,
+        )
+        return settings.model_copy(update={"hotkey": fallback})
+    return settings
+
+
 def build_app(settings: Settings) -> AppContext:
+    settings = _safe_hotkey(settings)
     recorder = AudioRecorder(settings.audio)
     stt = FasterWhisperEngine(settings.stt)
     controller = DictationController(
@@ -77,25 +96,32 @@ def build_app(settings: Settings) -> AppContext:
         pool=QThreadPool.globalInstance(),
     )
     hotkey = GlobalHotkey()
+    cancel_hotkey = GlobalHotkey(hotkey_id=HOTKEY_ID + 1)  # iptal için ikinci kayıt
     tray = TrayIcon(parse_hotkey(settings.hotkey).label)
     overlay = RecordingOverlay()
     window = ResultWindow()
     history = History(paths.history_path(), settings.history_limit)
-    ctx = AppContext(settings, controller, tray, overlay, window, hotkey, history, stt)
+    ctx = AppContext(
+        settings, controller, tray, overlay, window, hotkey, cancel_hotkey, history, stt
+    )
     _wire(ctx)
     return ctx
 
 
 def _wire(ctx: AppContext) -> None:
     c = ctx.controller
-    ctx.window.bind(c, close_after_copy=ctx.settings.close_after_copy)
+    ctx.window.bind(
+        c,
+        close_after_copy=ctx.settings.close_after_copy,
+        raise_on_result=ctx.settings.raise_window_on_result,
+    )
     c.state_changed.connect(ctx.overlay.on_state)
     c.buckets_changed.connect(ctx.overlay.on_buckets)
     c.state_changed.connect(ctx.tray.set_state)
     c.ready_changed.connect(ctx.tray.set_ready)
     c.ready_changed.connect(lambda ready: ready and _warn_if_downgraded(ctx))
     c.error.connect(lambda m: ctx.tray.notify(APP_NAME, m, critical=True))
-    c.state_changed.connect(lambda s: s is DictationState.RESULT and ctx.history.append(c.session))
+    c.state_changed.connect(lambda s: s is DictationState.RESULT and _store_session(ctx))
     ctx.hotkey.activated.connect(c.toggle)
     ctx.tray.toggle_requested.connect(c.toggle)
     ctx.tray.show_requested.connect(
@@ -103,6 +129,64 @@ def _wire(ctx: AppContext) -> None:
     )
     ctx.tray.settings_requested.connect(lambda: _open_settings(ctx))
     ctx.tray.quit_requested.connect(lambda: _quit(ctx))
+    c.cancelled.connect(lambda: ctx.tray.notify(APP_NAME, "İptal edildi"))
+    ctx.overlay.cancel_requested.connect(c.cancel)
+    ctx.tray.cancel_requested.connect(c.cancel)
+    ctx.cancel_hotkey.activated.connect(c.cancel)
+    c.state_changed.connect(lambda s: _sync_cancel_hotkey(ctx, s))
+    c.result_ready.connect(lambda text: _on_result_ready(ctx, text))
+    ctx.window.history_panel.delete_requested.connect(lambda sid: _delete_session(ctx, sid))
+    ctx.window.history_panel.clear_requested.connect(lambda: _clear_history(ctx))
+    ctx.window.record_requested.connect(c.toggle)
+    ctx.window.cancel_requested.connect(c.cancel)
+    ctx.window.settings_requested.connect(lambda: _open_settings(ctx))
+    c.ready_changed.connect(lambda ready: ready and _refresh_status_info(ctx))
+    _refresh_history(ctx)
+
+
+def _store_session(ctx: AppContext) -> None:
+    ctx.history.append(ctx.controller.session)
+    _refresh_history(ctx)
+
+
+def _refresh_history(ctx: AppContext) -> None:
+    ctx.window.history_panel.set_sessions(ctx.history.load())
+
+
+def _delete_session(ctx: AppContext, session_id: str) -> None:
+    ctx.history.delete(session_id)
+    _refresh_history(ctx)
+
+
+def _clear_history(ctx: AppContext) -> None:
+    ctx.history.clear()
+    _refresh_history(ctx)
+
+
+def _refresh_status_info(ctx: AppContext) -> None:
+    llm = ctx.settings.llm.active_model if ctx.settings.llm.enabled else "kapalı"
+    ctx.window.set_status_info(ctx.settings.stt.model, ctx.stt.compute_type, llm)
+
+
+def _on_result_ready(ctx: AppContext, text: str) -> None:
+    """Sonucu panoya yazar ve (ayar açıksa) ön plandaki uygulamaya yapıştırır."""
+    if not text or not ctx.settings.auto_copy:
+        return
+    QApplication.clipboard().setText(text)
+    if not ctx.settings.auto_paste or ctx.window.isActiveWindow():
+        return
+    own_ids = {int(ctx.window.winId()), int(ctx.overlay.winId())}
+    if not paste_active_window(own_ids):
+        log.info("yapıştırma atlandı; metin panoda")
+
+
+def _sync_cancel_hotkey(ctx: AppContext, state: DictationState) -> None:
+    """İptal için global Esc yalnızca iş sürerken kayıtlı kalır; boştayken serbest bırakılır."""
+    if state in BUSY_STATES:
+        if not ctx.cancel_hotkey.register("escape"):
+            log.info("global Esc kaydedilemedi; pencere, overlay veya tepsiden iptal edilebilir")
+    else:
+        ctx.cancel_hotkey.unregister()
 
 
 def _warn_if_downgraded(ctx: AppContext) -> None:
@@ -154,8 +238,13 @@ def _open_settings(ctx: AppContext) -> None:
     ctx.controller.update_settings(new)
     if llm_changed:  # sağlayıcı yeniden kurulur, yeniden başlatma gerekmez
         ctx.controller.set_llm(_make_llm(new))
+        ctx.controller.prewarm_llm()
     ctx.window.set_llm_enabled(new.llm.enabled)
     ctx.window.close_after_copy = new.close_after_copy
+    ctx.window.raise_on_result = new.raise_window_on_result
+    ctx.history = History(paths.history_path(), new.history_limit)
+    _refresh_history(ctx)
+    _refresh_status_info(ctx)
     _apply_hotkey(ctx)
     if needs_restart:
         QMessageBox.information(
@@ -167,6 +256,7 @@ def _open_settings(ctx: AppContext) -> None:
 
 def _quit(ctx: AppContext) -> None:
     ctx.hotkey.unregister()
+    ctx.cancel_hotkey.unregister()
     ctx.tray.hide()
     QApplication.instance().quit()
 
@@ -199,9 +289,16 @@ def main(argv: list[str] | None = None) -> int:
 
     settings = load_settings()
     ctx = build_app(settings)
+    if ctx.settings.hotkey != settings.hotkey:  # bozuk kısayol düzeltildi, kalıcı hâle getir
+        save_settings(ctx.settings)
     single.activated.connect(ctx.tray.show_requested)
     single.toggle_requested.connect(ctx.controller.toggle)
     ctx.tray.show()
+    if ctx.settings.hotkey != settings.hotkey:
+        ctx.tray.notify(
+            APP_NAME,
+            f"Ayarlardaki kısayol geçersizdi; '{ctx.settings.hotkey}' kullanılıyor.",
+        )
     _apply_hotkey(ctx)
     set_autostart(settings.autostart)
     ctx.controller.warm_up()

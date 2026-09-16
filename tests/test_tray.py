@@ -51,3 +51,21 @@ def test_set_hotkey_label_updates_tooltip(qtbot):
     t = make(qtbot)
     t.set_hotkey_label("Ctrl+Shift+D")
     assert "Ctrl+Shift+D" in t.toolTip()
+
+
+def test_cancel_action_enabled_only_while_busy(qtbot):
+    t = make(qtbot)
+    assert not t._cancel_action.isEnabled()
+    t.set_state(DictationState.RECORDING)
+    assert t._cancel_action.isEnabled()
+    t.set_state(DictationState.CORRECTING)
+    assert t._cancel_action.isEnabled()
+    t.set_state(DictationState.RESULT)
+    assert not t._cancel_action.isEnabled()
+
+
+def test_cancel_action_emits_signal(qtbot):
+    t = make(qtbot)
+    t.set_state(DictationState.RECORDING)
+    with qtbot.waitSignal(t.cancel_requested):
+        t._cancel_action.trigger()
