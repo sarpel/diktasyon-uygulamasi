@@ -543,6 +543,29 @@ def test_status_info_set_when_ready(ctx):
     assert "float16" in ctx.window.status_info.text()
 
 
+def test_low_vram_shows_status_bar_warning(ctx, monkeypatch):
+    from dikte.platform.gpu_info import VramInfo
+
+    monkeypatch.setattr(app_mod, "query_vram", lambda: VramInfo(7500, 8192))
+    app_mod._refresh_status_info(ctx)
+    msg = ctx.window.statusBar().currentMessage()
+    assert "Boş VRAM düşük" in msg
+
+
+def test_sufficient_vram_shows_no_warning(ctx, monkeypatch):
+    from dikte.platform.gpu_info import VramInfo
+
+    monkeypatch.setattr(app_mod, "query_vram", lambda: VramInfo(1000, 8192))
+    app_mod._refresh_status_info(ctx)
+    assert "Boş VRAM düşük" not in ctx.window.statusBar().currentMessage()
+
+
+def test_unknown_vram_shows_no_warning(ctx, monkeypatch):
+    monkeypatch.setattr(app_mod, "query_vram", lambda: None)
+    app_mod._refresh_status_info(ctx)
+    assert "Boş VRAM düşük" not in ctx.window.statusBar().currentMessage()
+
+
 def test_status_info_shows_actually_loaded_model_not_pending_setting(ctx):
     ctx.controller.ready_changed.emit(True)
     assert ctx.stt.active_model in ctx.window.status_info.text()

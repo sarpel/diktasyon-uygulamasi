@@ -181,7 +181,7 @@ Ayarlar penceresi (tepsi menüsü veya araç çubuğu → "Ayarlar…") yedi sek
 | Metin Düzeltme | LLM aç/kapa, sağlayıcı ve sağlayıcıya özel alanlar, bellekte tutma |
 | Sözlük | Özel terimler (doğru yazım + yanlış tanınan biçimler), LLM düzeltmesine ek serbest talimat |
 | Gelişmiş | beam_size, başlangıç promptu, num_ctx, top_p, top_k, zaman aşımı, düşünme modu |
-| Hakkında | Sürümler, GPU ve desteklenen hassasiyetler, log / ayar klasörünü aç |
+| Hakkında | Sürümler, GPU ve desteklenen hassasiyetler, VRAM kullanımı (`nvidia-smi` üzerinden), log / ayar klasörünü aç |
 
 Model/hassasiyet değişince model arka planda yeniden yüklenir; mikrofon değişikliği sonraki kayıtta geçerlidir. İpucu alanın üstüne gelince görünür.
 `config.json` içindeki kısayol bozuksa uygulama çökmez, varsayılana döner ve bunu bildirir.

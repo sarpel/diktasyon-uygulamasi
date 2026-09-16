@@ -44,12 +44,24 @@ def _default_gpu_probe() -> str:
         return "bilinmiyor"
 
 
+def _default_vram_probe() -> str:
+    from dikte.platform.gpu_info import format_vram, query_vram
+
+    return format_vram(query_vram())
+
+
 class AboutTab(QWidget):
     """Sürüm bilgileri, GPU durumu ve dosya konumları."""
 
     title = "Hakkında"
 
-    def __init__(self, settings: Settings, gpu_probe: Callable[[], str] | None = None, parent=None):
+    def __init__(
+        self,
+        settings: Settings,
+        gpu_probe: Callable[[], str] | None = None,
+        vram_probe: Callable[[], str] | None = None,
+        parent=None,
+    ):
         super().__init__(parent)
         form = QFormLayout()
         form.addRow("Uygulama", QLabel(f"{APP_NAME} {__version__}"))
@@ -59,6 +71,8 @@ class AboutTab(QWidget):
         self.gpu_label = QLabel((gpu_probe or _default_gpu_probe)())
         self.gpu_label.setWordWrap(True)
         form.addRow("GPU", self.gpu_label)
+        self.vram_label = QLabel((vram_probe or _default_vram_probe)())
+        form.addRow("VRAM", self.vram_label)
 
         self.open_log_btn = QPushButton("Log dosyasını aç")
         self.open_log_btn.clicked.connect(lambda: self._open(paths.log_path()))

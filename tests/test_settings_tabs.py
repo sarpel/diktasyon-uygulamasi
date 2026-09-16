@@ -110,6 +110,15 @@ def test_about_tab_lists_versions(dlg):
     assert "Dikte" in texts and dlg.gpu_label.text()
 
 
+def test_about_tab_uses_injected_gpu_and_vram_probes(qtbot):
+    from dikte.ui.settings.about_tab import AboutTab
+
+    tab = AboutTab(Settings(), gpu_probe=lambda: "sahte GPU", vram_probe=lambda: "3,2 / 8,0 GB")
+    qtbot.addWidget(tab)
+    assert tab.gpu_label.text() == "sahte GPU"
+    assert tab.vram_label.text() == "3,2 / 8,0 GB"
+
+
 def test_microphone_test_button_starts_and_stops_recorder(dlg, qtbot):
     class FakeRecorder:
         instances = []

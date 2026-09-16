@@ -20,6 +20,7 @@ from dikte.core.state import BUSY_STATES, MODES, DictationState
 from dikte.llm import LlmError, make_provider
 from dikte.logging_setup import setup_logging
 from dikte.platform.autostart import set_autostart
+from dikte.platform.gpu_info import LOW_VRAM_MB, query_vram
 from dikte.platform.hold_detect import HoldDetector
 from dikte.platform.hotkey import HOTKEY_ID, GlobalHotkey
 from dikte.platform.hotkey_parse import HotkeyParseError, parse_hotkey
@@ -281,6 +282,20 @@ def _repaste(ctx: AppContext, text: str) -> None:
 def _refresh_status_info(ctx: AppContext) -> None:
     llm = ctx.settings.llm.active_model if ctx.settings.llm.enabled else "kapalı"
     ctx.window.set_status_info(ctx.stt.active_model, ctx.stt.compute_type, llm)
+    _warn_if_low_vram(ctx)
+
+
+def _warn_if_low_vram(ctx: AppContext) -> None:
+    info = query_vram()
+    if info is None:
+        return
+    free_mb = info.total_mb - info.used_mb
+    if free_mb < LOW_VRAM_MB:
+        free_gb = free_mb / 1024
+        ctx.window.statusBar().showMessage(
+            f"Boş VRAM düşük ({free_gb:.1f} GB): LLM'i kapatmayı veya keep_alive=0 yapmayı düşünün",
+            15000,
+        )
 
 
 def _on_result_ready(ctx: AppContext, text: str) -> None:
