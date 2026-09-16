@@ -45,6 +45,42 @@ def test_show_error_is_visible_then_hides(qtbot):
     qtbot.waitUntil(lambda: not o.isVisible(), timeout=1000)
 
 
+def test_show_partial_truncates_to_last_70_chars(qtbot):
+    o = RecordingOverlay()
+    qtbot.addWidget(o)
+    o.show_recording()
+    o.show_partial("a" * 100)
+    assert o._partial.text() == "…" + "a" * 70
+    assert o._partial.isVisible()
+
+
+def test_show_partial_short_text_not_truncated(qtbot):
+    o = RecordingOverlay()
+    qtbot.addWidget(o)
+    o.show_recording()
+    o.show_partial("kısa metin")
+    assert o._partial.text() == "kısa metin"
+
+
+def test_hide_overlay_clears_partial_text(qtbot):
+    o = RecordingOverlay()
+    qtbot.addWidget(o)
+    o.show_recording()
+    o.show_partial("a" * 100)
+    o.hide_overlay()
+    assert o._partial.text() == ""
+    assert not o._partial.isVisible()
+
+
+def test_show_recording_clears_previous_partial_text(qtbot):
+    o = RecordingOverlay()
+    qtbot.addWidget(o)
+    o.show_recording()
+    o.show_partial("eski parça")
+    o.show_recording()
+    assert o._partial.text() == ""
+
+
 def test_error_hide_does_not_cancel_new_recording(qtbot):
     o = RecordingOverlay()
     qtbot.addWidget(o)

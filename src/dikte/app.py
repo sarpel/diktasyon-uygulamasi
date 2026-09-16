@@ -172,6 +172,7 @@ def _wire(ctx: AppContext) -> None:
     )
     c.state_changed.connect(ctx.overlay.on_state)
     c.buckets_changed.connect(ctx.overlay.on_buckets)
+    c.partial_text.connect(ctx.overlay.show_partial)
     c.state_changed.connect(ctx.tray.set_state)
     c.ready_changed.connect(ctx.tray.set_ready)
     c.ready_changed.connect(lambda ready: ready and _warn_if_downgraded(ctx))

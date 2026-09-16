@@ -109,6 +109,19 @@
 - [ ] "Bugün toplantıda altyazı ekleme özelliğini konuştuk" cümlesi **elenmiyor** (yanlış pozitif yok).
 - [ ] VAD kapalıyken uzun kayıt hata vermiyor (toplu çözümleme otomatik devre dışı kalıyor).
 
+## Canlı çözümleme
+
+- [ ] Ayarlar → Konuşma Tanıma → "Canlı çözümleme parça süresi" varsayılan (20 sn) iken ~2 dk
+      sürekli konuşulan bir dikte yapılır: overlay'de dalganın altında kayıt sürerken canlı
+      transkript (son ~70 karakter) beliriyor ve konuştukça güncelleniyor.
+- [ ] Kayıt durdurulunca bekleme süresi kısa kalıyor (tüm 2 dk'nın sonda tek seferde
+      çözümlenmesini beklemek yerine, yalnızca son küçük parça bekleniyor).
+- [ ] Sonuç metni eksiksiz ve parça sınırlarında kelime/cümle kopması yok.
+- [ ] Parça süresi `0`'a (Kapalı) çekilince davranış eskisi gibi: overlay'de canlı metin
+      görünmüyor, kayıt bitince tek seferde çözümleniyor.
+- [ ] Kısa bir dikte (birkaç saniye, parça süresinden kısa) normal çalışıyor — canlı çözümleme
+      hiç tetiklenmese de sonuç eksiksiz geliyor.
+
 ## Bas-konuş / tıkla-aç (Windows)
 
 - [ ] Kısayolu 1 sn basılı tut → bırakınca çözümleme başlıyor (bas-konuş).

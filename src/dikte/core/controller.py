@@ -36,6 +36,7 @@ class DictationController(QObject):
     cancelled = Signal()
     result_ready = Signal(str)
     edit_learned = Signal(object)
+    partial_text = Signal(str)
 
     def __init__(
         self,
@@ -58,12 +59,19 @@ class DictationController(QObject):
         self._jobs: list = []  # canlı sinyal nesneleri
         self._gen = 0  # iptal sonrası gelen sonuçları ayırt etmek için
         self._active_profile: AppProfile | None = None
+        self._chunk_seq = 0
+        self._chunk_texts: dict[int, str] = {}
+        self._chunks_pending = 0
+        self._chunk_sample_total = 0
+        self._recording_stopped = False
         recorder.level_changed.connect(self.level_changed)
         recorder.buckets_changed.connect(self.buckets_changed)
         recorder.error.connect(self._on_recorder_error)
         recorder.limit_reached.connect(self._on_limit_reached)
         recorder.silence_reached.connect(self._on_silence)
+        recorder.chunk_ready.connect(self._on_chunk)
         self._push_dictionary()
+        self._recorder.set_chunking(settings.stt.live_chunk_s, settings.stt.live_max_chunk_s)
 
     # ---- özellikler
     @property
@@ -77,6 +85,7 @@ class DictationController(QObject):
     def update_settings(self, settings: Settings) -> None:
         self._settings = settings
         self._push_dictionary()
+        self._recorder.set_chunking(settings.stt.live_chunk_s, settings.stt.live_max_chunk_s)
 
     def set_llm(self, llm: LlmProvider) -> None:
         """Ayar değişince sağlayıcıyı yeniden başlatmadan değiştirir."""
@@ -223,17 +232,71 @@ class DictationController(QObject):
         effective_mode = profile.mode if profile and mode == "correct" else mode
         self._session = Session(mode=effective_mode, profile=profile.name if profile else "")
         self.session_updated.emit(self._session)
+        self._chunk_seq = 0
+        self._chunk_texts = {}
+        self._chunks_pending = 0
+        self._chunk_sample_total = 0
+        self._recording_stopped = False
         self._recorder.start()
         self._set_state(DictationState.RECORDING)
 
     def _stop_and_transcribe(self) -> None:
         audio: np.ndarray = self._recorder.stop()
         self._set_state(DictationState.TRANSCRIBING)
+        if self._settings.stt.live_chunk_s <= 0:
+            self._spawn(
+                lambda: self._stt.transcribe(audio, self._settings.stt.language),
+                self._on_transcribed,
+                self._on_stt_error,
+            )
+            return
+        self._recording_stopped = True
+        if audio.size:
+            self._spawn_chunk(audio)
+        self._maybe_finish_transcription()
+
+    def _on_chunk(self, audio: np.ndarray) -> None:
+        if self._state is not DictationState.RECORDING:
+            return
+        self._spawn_chunk(audio)
+
+    def _spawn_chunk(self, audio: np.ndarray) -> None:
+        seq = self._chunk_seq
+        self._chunk_seq += 1
+        self._chunks_pending += 1
+        self._chunk_sample_total += audio.shape[0]
+        lang = self._settings.stt.language
         self._spawn(
-            lambda: self._stt.transcribe(audio, self._settings.stt.language),
-            self._on_transcribed,
-            self._on_stt_error,
+            lambda: self._stt.transcribe(audio, lang, previous_text=self._joined_text()),
+            lambda result: self._on_chunk_transcribed(seq, result),
+            self._on_chunk_error,
         )
+
+    def _on_chunk_transcribed(self, seq: int, result: TranscriptResult) -> None:
+        self._chunk_texts[seq] = result.text
+        self._chunks_pending -= 1
+        self.partial_text.emit(self._joined_text())
+        self._maybe_finish_transcription()
+
+    def _on_chunk_error(self, msg: str) -> None:
+        self._gen += 1  # bekleyen diğer parçaların geç gelen sonuçları da yok sayılsın
+        self._on_stt_error(msg)
+
+    def _maybe_finish_transcription(self) -> None:
+        if self._chunks_pending != 0 or not self._recording_stopped:
+            return
+        self._on_transcribed(
+            TranscriptResult(
+                text=self._joined_text(),
+                language=self._settings.stt.language,
+                duration_s=self._chunk_sample_total / self._settings.audio.sample_rate,
+                segments=(),
+            )
+        )
+
+    def _joined_text(self) -> str:
+        pieces = (self._chunk_texts[i].strip() for i in sorted(self._chunk_texts))
+        return " ".join(p for p in pieces if p)
 
     def _on_transcribed(self, result: TranscriptResult) -> None:
         if not result.text.strip():

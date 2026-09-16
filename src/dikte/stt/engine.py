@@ -35,7 +35,9 @@ class SttEngine(Protocol):
 
     def warm_up(self) -> None: ...
 
-    def transcribe(self, audio: np.ndarray, language: str | None = None) -> TranscriptResult: ...
+    def transcribe(
+        self, audio: np.ndarray, language: str | None = None, *, previous_text: str = ""
+    ) -> TranscriptResult: ...
 
 
 def _default_model_factory(*args, **kwargs):
@@ -243,7 +245,9 @@ class FasterWhisperEngine:
             log.info("Toplu çözümleme açıldı (batch_size=%s)", self._settings.batch_size)
         return self._pipeline
 
-    def transcribe(self, audio: np.ndarray, language: str | None = None) -> TranscriptResult:
+    def transcribe(
+        self, audio: np.ndarray, language: str | None = None, *, previous_text: str = ""
+    ) -> TranscriptResult:
         if audio.size == 0:
             raise SttError("Ses kaydı boş")
         s = self._settings
@@ -267,7 +271,9 @@ class FasterWhisperEngine:
             "log_prob_threshold": s.log_prob_threshold,
             "hallucination_silence_threshold": s.hallucination_silence_threshold_s or None,
             "without_timestamps": True,  # kelime zamanları kullanılmıyor
-            "initial_prompt": " ".join(p for p in (s.initial_prompt, self._prompt_terms) if p)
+            "initial_prompt": " ".join(
+                p for p in (s.initial_prompt, self._prompt_terms, previous_text[-200:]) if p
+            )
             or None,
             "hotwords": self._hotwords or None,
         }

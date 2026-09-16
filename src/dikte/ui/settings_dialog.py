@@ -52,6 +52,7 @@ _PROXIED = {
         "batch_threshold_spin",
         "batch_size_spin",
         "warm_up_check",
+        "live_chunk_spin",
         "vad_check",
         "vad_threshold_spin",
         "vad_min_silence_spin",

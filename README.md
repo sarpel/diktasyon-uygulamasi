@@ -127,6 +127,22 @@ Kayıt süresi varsayılan olarak **sınırsızdır** (Ayarlar → "Kayıt süre
 kullanımı 16 kHz float32 ham ses için yaklaşık **230 MB/saat**'tir. Bir sınır girilirse süre
 dolunca kayıt sessizce kesilmez; otomatik durur ve o ana kadarki ses çözümlenir.
 
+### Canlı çözümleme
+
+Uzun diktelerde tüm kaydı sonda tek seferde çözümlemek yerine, kayıt sürerken konuşma +
+sessizlik biriktikçe **parça parça** çözümlenir (Ayarlar → Konuşma Tanıma → "Canlı çözümleme
+parça süresi", varsayılan 20 sn, `0` = kapalı). Her parça, önceki parçaların metniyle birlikte
+(bağlam olarak) çözümlenir ve overlay'de dalganın altında **canlı transkript** olarak görünür.
+Bu sayede:
+
+- Uzun bir dikte bittiğinde beklenen süre neredeyse **sabit kalır** (yalnızca son küçük parça
+  çözümlenmeyi bekler), tüm kaydın çözümlenmesini beklemek yerine.
+- Bir parça çok uzun sessizsiz konuşursa **45 saniyede** (sabit üst sınır, `live_max_chunk_s`)
+  sessizlikten bağımsız olarak yine de bölünür.
+
+Kısa diktelerde (parça süresinden kısa kayıtlarda) davranış değişmez: tüm kayıt kayıt bitince
+tek seferde çözümlenir.
+
 ### Halüsinasyon ve sessizlik
 
 Whisper, sessiz veya çok gürültülü parçalarda eğitim verisindeki altyazı kalıplarını tekrar
@@ -186,7 +202,7 @@ Ayarlar penceresi (tepsi menüsü veya araç çubuğu → "Ayarlar…") sekiz se
 |---|---|
 | Genel | Kısayol (tuşa basarak yakalanır) + isteğe bağlı ayrı çeviri/agent-prompt kısayolları, bas-konuş (yalnızca Windows), geçmiş kayıt sayısı, açılışta başlat, panoya kopyala / yapıştır / pencereyi öne getir, elle düzeltmelerden sözlük önerisi çıkarma |
 | Ses | Mikrofon, kayıt süresi sınırı (0 = sınırsız), sessizlikte otomatik durdurma (0 = kapalı), canlı seviye testi |
-| Konuşma Tanıma | Whisper modeli, hassasiyet (compute_type), dil, toplu çözümleme, açılışta ısıtma, "Sessizlik ve halüsinasyon" (VAD eşiği, en kısa sessizlik, konuşma yok eşiği, kara liste) |
+| Konuşma Tanıma | Whisper modeli, hassasiyet (compute_type), dil, toplu çözümleme, açılışta ısıtma, canlı çözümleme parça süresi, "Sessizlik ve halüsinasyon" (VAD eşiği, en kısa sessizlik, konuşma yok eşiği, kara liste) |
 | Metin Düzeltme | LLM aç/kapa, sağlayıcı ve sağlayıcıya özel alanlar, bellekte tutma |
 | Sözlük | Özel terimler (doğru yazım + yanlış tanınan biçimler), LLM düzeltmesine ek serbest talimat |
 | Gelişmiş | beam_size, başlangıç promptu, num_ctx, top_p, top_k, zaman aşımı, düşünme modu |

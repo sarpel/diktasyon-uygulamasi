@@ -418,6 +418,13 @@ def test_dictionary_rejects_empty_term(dlg):
     assert dlg.dictionary.validate() == "Sözlükte boş terim var"
 
 
+def test_live_chunk_spin_defaults_and_round_trips(dlg):
+    assert dlg.live_chunk_spin.value() == 20
+    dlg.live_chunk_spin.setValue(0)
+    s = dlg.result_settings()
+    assert s.stt.live_chunk_s == 0
+
+
 def test_profiles_starts_empty():
     d = SettingsDialog(Settings(), ())
     assert d.profiles_table.rowCount() == 0
