@@ -39,6 +39,7 @@ _PROXIED = {
         "sounds_check",
         "push_to_talk_check",
         "suggest_dictionary_check",
+        "voice_commands_check",
         "history_spin",
     ),
     "audio": ("device_combo", "max_seconds_spin", "silence_stop_spin", "level_bar", "test_btn"),

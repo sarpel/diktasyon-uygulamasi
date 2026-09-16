@@ -13,6 +13,7 @@ from dikte.llm.diff import word_changes
 from dikte.llm.provider import LlmProvider
 from dikte.stt.engine import SttEngine
 from dikte.stt.result import TranscriptResult
+from dikte.text.commands import apply_commands
 from dikte.text.dictionary import apply_rules, hotwords, prompt_terms
 
 log = logging.getLogger(__name__)
@@ -212,6 +213,8 @@ class DictationController(QObject):
             return
         entries = self._settings.dictionary.entries
         text = apply_rules(result.text, entries)
+        if self._settings.voice_commands:
+            text = apply_commands(text)
         self._update_session(raw_text=text, duration_s=result.duration_s)
         if not self._settings.llm.enabled:  # LLM kapalı: ham metin sonuç olarak gösterilir
             self._update_session(corrected_text=text)
