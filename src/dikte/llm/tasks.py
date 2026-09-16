@@ -30,11 +30,12 @@ def _parse_correction(reply: str, raw: str) -> CorrectionResult:
     return CorrectionResult(corrected_text=text, changes=word_changes(raw, text))
 
 
-def correct(provider: LlmProvider, raw: str) -> CorrectionResult:
+def correct(provider: LlmProvider, raw: str, *, glossary: str = "") -> CorrectionResult:
     if not raw.strip():
         return CorrectionResult("", ())
+    system = prompts.CORRECT_SYSTEM + (f"\n\n{glossary}" if glossary else "")
     reply = provider.complete(
-        prompts.CORRECT_SYSTEM,
+        system,
         prompts.correct_user(raw),
         json_schema=prompts.CORRECT_SCHEMA,
         temperature=0.1,

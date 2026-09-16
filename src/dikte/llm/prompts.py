@@ -1,3 +1,5 @@
+from collections.abc import Sequence
+
 CORRECT_SYSTEM = """Sen bir Türkçe transkript düzeltme asistanısın. Sana bir konuşma tanıma (STT)
 sisteminden çıkan ham Türkçe metin verilecek. Görevin:
 1. Yanlış tanınmış, bağlama uymayan veya anlamsız kelimeleri, konuşmacının büyük olasılıkla
@@ -45,3 +47,12 @@ def translate_user(text: str) -> str:
 
 def enhance_user(text: str) -> str:
     return f'User request:\n"""\n{text}\n"""'
+
+
+def glossary_block(terms: Sequence[str], instructions: str) -> str:
+    parts = []
+    if terms:
+        parts.append(f"Sözlük (doğru yazımlar): {', '.join(terms)}")
+    if instructions:
+        parts.append(f"Ek talimat: {instructions}")
+    return "\n\n".join(parts)

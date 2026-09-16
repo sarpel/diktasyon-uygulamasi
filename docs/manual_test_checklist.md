@@ -114,3 +114,11 @@
 - [ ] Kısayolu 1 sn basılı tut → bırakınca çözümleme başlıyor (bas-konuş).
 - [ ] Kısayola kısa basıp bırak → normal aç/kapat gibi davranıyor (tıkla-aç).
 - [ ] Ayarlar → Genel → "Bas-konuş" kapatılınca kısayol her zaman aç/kapat olarak çalışıyor.
+
+## Özel sözlük
+
+- [ ] Ayarlar → Sözlük'e "Kubernetes" (yanlış biçim: "kuber netes") eklenip kaydedilince,
+      diktede "kuber netes" denince sonuçta "Kubernetes" çıkıyor (LLM kapalıyken bile).
+- [ ] Sözlükteki terimler LLM açıkken düzeltme kalitesini gözle görülür şekilde artırıyor
+      (ör. nadir özel adlar artık yanlış tahmin edilmiyor).
+- [ ] Boş terimli bir satırla kaydetmeye çalışınca "Sözlükte boş terim var" hatası çıkıyor.

@@ -93,6 +93,13 @@ def test_old_config_without_new_llm_fields_still_loads(tmp_path: Path):
     assert loaded.llm.gemini_model and loaded.llm.custom_base_url == ""
 
 
+def test_dictionary_defaults_to_empty_and_loads_from_json():
+    assert Settings().dictionary.entries == ()
+    loaded = Settings.model_validate_json('{"dictionary": {"entries": [{"term": "X"}]}}')
+    assert loaded.dictionary.entries[0].term == "X"
+    assert loaded.dictionary.entries[0].wrong == ()
+
+
 def test_local_server_defaults_match_vendor_ports():
     from dikte.config import LlmSettings
 
