@@ -5,7 +5,6 @@ from PySide6.QtGui import QAction, QKeySequence, QShortcut
 from PySide6.QtWidgets import (
     QHBoxLayout,
     QLabel,
-    QListWidget,
     QMainWindow,
     QPushButton,
     QSplitter,
@@ -42,9 +41,7 @@ class ResultWindow(QMainWindow):
         self.raw_pane = TextPane("Ham")
         self.corrected_pane = TextPane("Düzeltilmiş")
         self.output_pane = TextPane(TITLE_TRANSLATION)
-        self.changes_list = QListWidget()
-        self.changes_list.setMaximumHeight(110)
-        self.changes_list.setToolTip("LLM'in yaptığı düzeltmeler")
+        self.output_pane.setVisible(False)
 
         self.translate_btn = QPushButton("İngilizce'ye Çevir")
         self.enhance_btn = QPushButton("Agent Prompt'a Dönüştür")
@@ -60,7 +57,6 @@ class ResultWindow(QMainWindow):
         ml = QVBoxLayout(mid)
         ml.setContentsMargins(0, 0, 0, 0)
         ml.addWidget(self.corrected_pane, 1)
-        ml.addWidget(self.changes_list)
         split = QSplitter(Qt.Horizontal)
         for w in (left, mid, self.output_pane):
             split.addWidget(w)
@@ -151,7 +147,7 @@ class ResultWindow(QMainWindow):
             return
         self.raw_pane.set_text(s.raw_text)
         self.corrected_pane.set_text(s.corrected_text)
-        self._fill_changes(s)
+        self.corrected_pane.set_highlights(s.changes)
         if self._pending == "translation" and s.translation:
             self.output_pane.set_text(s.translation)
             self._finish_pending()
@@ -164,6 +160,7 @@ class ResultWindow(QMainWindow):
         elif self._pending is None and s.mode == "prompt" and s.enhanced_prompt:
             self.output_pane.title_label.setText(TITLE_PROMPT)
             self.output_pane.set_text(s.enhanced_prompt)
+        self.output_pane.setVisible(bool(self.output_pane.text()))
         self._show_session_stats(s)  # _finish_pending mesajı temizledikten sonra yazılır
 
     def on_state(self, state: DictationState) -> None:
@@ -178,6 +175,7 @@ class ResultWindow(QMainWindow):
                 QTimer.singleShot(0, self._activate_result)
         elif state is DictationState.RECORDING:
             self.output_pane.set_text("")
+            self.output_pane.setVisible(False)
             self._finish_pending()
 
     def _activate_result(self) -> None:
@@ -198,7 +196,8 @@ class ResultWindow(QMainWindow):
         self.output_pane.title_label.setText(
             TITLE_PROMPT if (s.enhanced_prompt and not s.translation) else TITLE_TRANSLATION
         )
-        self._fill_changes(s)
+        self.output_pane.setVisible(bool(self.output_pane.text()))
+        self.corrected_pane.set_highlights(s.changes)
         self._show_session_stats(s)
         self.translate_btn.setEnabled(self._llm_enabled)
         self.enhance_btn.setEnabled(self._llm_enabled)
@@ -223,6 +222,7 @@ class ResultWindow(QMainWindow):
         self._ignored_session_id = None  # kullanıcı yeni istek başlattı; sonuçlar yine gösterilir
         self.output_pane.title_label.setText(title)
         self.output_pane.set_text("")
+        self.output_pane.setVisible(True)
         self.output_pane.set_busy(True)
         self.translate_btn.setEnabled(False)
         self.enhance_btn.setEnabled(False)
@@ -236,13 +236,6 @@ class ResultWindow(QMainWindow):
         self.statusBar().clearMessage()
 
     # ---- iç
-    def _fill_changes(self, s: Session) -> None:
-        self.changes_list.clear()
-        for c in s.changes:
-            if c.original.strip() == c.replacement.strip():  # görünür bir fark yok
-                continue
-            self.changes_list.addItem(f"{c.original}  →  {c.replacement}   ({c.reason})")
-
     def _show_session_stats(self, s: Session) -> None:
         if not s.corrected_text and not s.raw_text:
             return
