@@ -5,16 +5,12 @@ import logging
 from dataclasses import dataclass
 
 from dikte.llm import prompts
+from dikte.llm.diff import Change, word_changes
 from dikte.llm.provider import LlmError, LlmProvider
 
 log = logging.getLogger(__name__)
 
-
-@dataclass(frozen=True)
-class Change:
-    original: str
-    replacement: str
-    reason: str
+__all__ = ["Change", "CorrectionResult", "correct", "enhance_prompt", "translate"]
 
 
 @dataclass(frozen=True)
@@ -23,23 +19,15 @@ class CorrectionResult:
     changes: tuple[Change, ...]
 
 
-def _parse_correction(reply: str) -> CorrectionResult:
+def _parse_correction(reply: str, raw: str) -> CorrectionResult:
     try:
         data = json.loads(reply)
     except json.JSONDecodeError as exc:
         raise LlmError(f"LLM geçerli JSON döndürmedi: {reply[:120]!r}") from exc
     if not isinstance(data, dict) or not isinstance(data.get("corrected_text"), str):
         raise LlmError("LLM yanıtında corrected_text yok")
-    changes = tuple(
-        Change(
-            str(c.get("original", "")),
-            str(c.get("replacement", "")),
-            str(c.get("reason", "")),
-        )
-        for c in data.get("changes", [])
-        if isinstance(c, dict)
-    )
-    return CorrectionResult(corrected_text=data["corrected_text"].strip(), changes=changes)
+    text = data["corrected_text"].strip()
+    return CorrectionResult(corrected_text=text, changes=word_changes(raw, text))
 
 
 def correct(provider: LlmProvider, raw: str) -> CorrectionResult:
@@ -51,7 +39,7 @@ def correct(provider: LlmProvider, raw: str) -> CorrectionResult:
         json_schema=prompts.CORRECT_SCHEMA,
         temperature=0.1,
     )
-    return _parse_correction(reply)
+    return _parse_correction(reply, raw)
 
 
 def translate(provider: LlmProvider, text: str) -> str:

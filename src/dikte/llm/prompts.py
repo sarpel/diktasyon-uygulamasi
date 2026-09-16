@@ -5,27 +5,15 @@ sisteminden çıkan ham Türkçe metin verilecek. Görevin:
 2. Yazım, noktalama ve büyük/küçük harf hatalarını düzeltmek.
 3. Anlamı, üslubu ve cümle yapısını KORUMAK. Özetleme, ekleme, yorum yapma.
 4. Teknik terimleri ve İngilizce kelimeleri (ör. "prompt", "agent", "repo") olduğu gibi bırakmak.
-Yalnızca verilen JSON şemasına uyan bir nesne döndür. corrected_text tam düzeltilmiş metindir;
-changes listesi yaptığın her anlamlı değişikliği kısa gerekçesiyle içerir."""
+Yalnızca verilen JSON şemasına uyan bir nesne döndür; corrected_text tam düzeltilmiş metindir.
+Satır sonlarını koru."""
 
 CORRECT_SCHEMA = {
     "type": "object",
     "properties": {
         "corrected_text": {"type": "string"},
-        "changes": {
-            "type": "array",
-            "items": {
-                "type": "object",
-                "properties": {
-                    "original": {"type": "string"},
-                    "replacement": {"type": "string"},
-                    "reason": {"type": "string"},
-                },
-                "required": ["original", "replacement", "reason"],
-            },
-        },
     },
-    "required": ["corrected_text", "changes"],
+    "required": ["corrected_text"],
 }
 
 TRANSLATE_SYSTEM = """You are a professional Turkish-to-English translator. Translate the user's
