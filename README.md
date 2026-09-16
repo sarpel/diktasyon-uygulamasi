@@ -180,7 +180,7 @@ otomatik olarak `json_object` moduna düşülür.
 
 ### Ayarlar
 
-Ayarlar penceresi (tepsi menüsü veya araç çubuğu → "Ayarlar…") yedi sekmeden oluşur:
+Ayarlar penceresi (tepsi menüsü veya araç çubuğu → "Ayarlar…") sekiz sekmeden oluşur:
 
 | Sekme | İçerik |
 |---|---|
@@ -190,6 +190,7 @@ Ayarlar penceresi (tepsi menüsü veya araç çubuğu → "Ayarlar…") yedi sek
 | Metin Düzeltme | LLM aç/kapa, sağlayıcı ve sağlayıcıya özel alanlar, bellekte tutma |
 | Sözlük | Özel terimler (doğru yazım + yanlış tanınan biçimler), LLM düzeltmesine ek serbest talimat |
 | Gelişmiş | beam_size, başlangıç promptu, num_ctx, top_p, top_k, zaman aşımı, düşünme modu |
+| Profiller | Ön plandaki uygulamaya göre mod/yapıştırma/LLM/sonek profilleri (bkz. [Uygulama profilleri](#uygulama-profilleri)) |
 | Hakkında | Sürümler, GPU ve desteklenen hassasiyetler, VRAM kullanımı (`nvidia-smi` üzerinden), log / ayar klasörünü aç |
 
 Model/hassasiyet değişince model arka planda yeniden yüklenir; mikrofon değişikliği sonraki kayıtta geçerlidir. İpucu alanın üstüne gelince görünür.
@@ -237,6 +238,36 @@ Süren bir kayıt/çözümleme varsa yeni bir dosya kabul edilmez. Sonuç, ham m
 çözümleme adımlarının (sözlük kuralları, sesli komutlar, LLM düzeltmesi) hepsinden
 mikrofon kaydındaki gibi geçer; tek fark **panoya kopyalanır ama otomatik yapıştırılmaz**
 (dosyadan gelen sonucun yapıştırılacağı doğal bir hedef pencere yoktur).
+
+#### Uygulama profilleri
+
+Ayarlar → Profiller'de, kısayola bastığınız anda **ön plandaki uygulamanın sürecine göre**
+mod, yapıştırma tuşu, LLM düzeltmesi ve sonuca eklenecek sonek değiştirilebilir. Her profil şu
+alanlardan oluşur:
+
+| Alan | Anlamı |
+|---|---|
+| Ad | Yalnızca listede tanımak için (isteğe bağlı içerik zorunluluğu yok, boş bırakılamaz) |
+| Eşleşme | Süreç adının (küçük harf) içinde aranan alt dize, ör. `code`, `windowsterminal` |
+| Mod | `correct` / `translate` / `prompt` — yalnızca kısayol "düzelt" modundaysa (varsayılan kısayol) devreye girer; ayrı çeviri/prompt kısayolları profille geçersiz kılınmaz |
+| Yapıştırma | `ctrl+v`, `ctrl+shift+v` (bazı terminallerde yapıştır için ayrı kısayoldur) veya `type` (panoyu kullanmadan karakter karakter yazar) |
+| LLM | Kapatılırsa bu uygulamada metin düzeltmeden geçmez, ham metin doğrudan teslim edilir |
+| Sonek | Sonuca eklenecek `(yok)` / `boşluk` / `yeni satır` |
+
+Birden fazla profil eşleşirse **listede önce gelen** kazanır. Eşleşme boş bırakılan bir profil
+hiçbir zaman eşleşmez.
+
+Örnekler:
+
+- **Windows Terminal:** Eşleşme=`windowsterminal`, Yapıştırma=`ctrl+shift+v` — çoğu terminal
+  emülatöründe `Ctrl+V` başka bir işleve (ya da hiçbir şeye) bağlıdır.
+- **Bir not uygulamasında LLM'siz hızlı not:** Eşleşme=`notepad`, LLM=kapalı — ham metin
+  hızlıca yapıştırılır, düzeltme için LLM çağrısı beklenmez.
+
+Ön plan sürecinin adı Windows'ta `GetForegroundWindow`/`QueryFullProcessImageNameW` ile,
+Linux'ta `xdotool` (X11) ile okunur; araç kurulu değilse veya sorgu başarısız olursa profil
+eşleştirme sessizce atlanır (genel ayarlar geçerli olur). Hiç profil tanımlı değilse ön plan
+sürecine hiç bakılmaz.
 
 ## Geliştirme
 

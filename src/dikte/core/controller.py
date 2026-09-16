@@ -6,7 +6,7 @@ from collections.abc import Callable
 import numpy as np
 from PySide6.QtCore import QObject, QThreadPool, Signal, Slot
 
-from dikte.config import Settings
+from dikte.config import AppProfile, Settings
 from dikte.core.state import DictationState, Session
 from dikte.core.workers import run_in_pool
 from dikte.llm import prompts, tasks
@@ -57,6 +57,7 @@ class DictationController(QObject):
         self._session = Session()
         self._jobs: list = []  # canlı sinyal nesneleri
         self._gen = 0  # iptal sonrası gelen sonuçları ayırt etmek için
+        self._active_profile: AppProfile | None = None
         recorder.level_changed.connect(self.level_changed)
         recorder.buckets_changed.connect(self.buckets_changed)
         recorder.error.connect(self._on_recorder_error)
@@ -129,9 +130,9 @@ class DictationController(QObject):
 
     @Slot()
     @Slot(str)
-    def toggle(self, mode: str = "correct") -> None:
+    def toggle(self, mode: str = "correct", *, profile: AppProfile | None = None) -> None:
         if self._state in (DictationState.IDLE, DictationState.RESULT):
-            self.start_recording(mode)
+            self.start_recording(mode, profile=profile)
         elif self._state is DictationState.RECORDING:
             self.stop_recording()
         else:
@@ -139,10 +140,10 @@ class DictationController(QObject):
 
     @Slot()
     @Slot(str)
-    def start_recording(self, mode: str = "correct") -> None:
+    def start_recording(self, mode: str = "correct", *, profile: AppProfile | None = None) -> None:
         """Bas-konuş: tuş basılı tutulmaya başlayınca çağrılır."""
         if self._state in (DictationState.IDLE, DictationState.RESULT):
-            self._start_recording(mode)
+            self._start_recording(mode, profile=profile)
         else:
             log.debug("start_recording yok sayıldı (durum: %s)", self._state)
 
@@ -160,6 +161,7 @@ class DictationController(QObject):
         if self._state not in (DictationState.IDLE, DictationState.RESULT):
             self.error.emit("Önce süren işi bitirin.")
             return
+        self._active_profile = None
         self._session = Session(source_path=path)
         self.session_updated.emit(self._session)
         self._set_state(DictationState.TRANSCRIBING)
@@ -216,8 +218,10 @@ class DictationController(QObject):
         self.error.emit("LLM kapalı; Ayarlar'dan metin düzeltmeyi açın.")
         return False
 
-    def _start_recording(self, mode: str = "correct") -> None:
-        self._session = Session(mode=mode)
+    def _start_recording(self, mode: str = "correct", *, profile: AppProfile | None = None) -> None:
+        self._active_profile = profile
+        effective_mode = profile.mode if profile and mode == "correct" else mode
+        self._session = Session(mode=effective_mode, profile=profile.name if profile else "")
         self.session_updated.emit(self._session)
         self._recorder.start()
         self._set_state(DictationState.RECORDING)
@@ -241,7 +245,10 @@ class DictationController(QObject):
         if self._settings.voice_commands:
             text = apply_commands(text)
         self._update_session(raw_text=text, duration_s=result.duration_s)
-        if not self._settings.llm.enabled:  # LLM kapalı: ham metin sonuç olarak gösterilir
+        profile_skips_llm = (
+            self._active_profile is not None and not self._active_profile.llm_enabled
+        )
+        if not self._settings.llm.enabled or profile_skips_llm:  # LLM kapalı: ham metin sonuç
             self._update_session(corrected_text=text)
             self._after_correction()
             return

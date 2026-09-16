@@ -4,6 +4,7 @@ from dikte.ui.settings.audio_tab import AudioTab
 from dikte.ui.settings.dictionary_tab import DictionaryTab
 from dikte.ui.settings.general_tab import GeneralTab
 from dikte.ui.settings.llm_tab import LlmTab
+from dikte.ui.settings.profiles_tab import ProfilesTab
 from dikte.ui.settings.stt_tab import SttTab
 
 __all__ = [
@@ -13,5 +14,6 @@ __all__ = [
     "DictionaryTab",
     "GeneralTab",
     "LlmTab",
+    "ProfilesTab",
     "SttTab",
 ]

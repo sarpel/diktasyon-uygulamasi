@@ -5,7 +5,7 @@ import numpy as np
 import pytest
 from PySide6.QtCore import QObject, QThreadPool, Signal
 
-from dikte.config import DictionaryEntry, DictionarySettings, Settings
+from dikte.config import AppProfile, DictionaryEntry, DictionarySettings, Settings
 from dikte.core.controller import DictationController
 from dikte.core.state import DictationState
 from dikte.stt.result import TranscriptResult
@@ -559,3 +559,56 @@ def test_apply_edit_no_signal_when_unchanged(ctl, qtbot):
     c.edit_learned.connect(changes.append)
     c.apply_edit(c.session.corrected_text)
     assert changes == []
+
+
+def test_profile_overrides_mode_and_tags_session(ctl, qtbot):
+    c, rec, stt, llm = ctl
+    results = []
+    c.result_ready.connect(results.append)
+    profile = AppProfile(name="Terminal", match="wt", mode="translate")
+    c.toggle(profile=profile)
+    assert c.session.mode == "translate" and c.session.profile == "Terminal"
+    c.toggle(profile=profile)
+    qtbot.waitUntil(lambda: c.state is DictationState.RESULT, timeout=3000)
+    assert results == ["Hello world."]
+
+
+def test_profile_llm_disabled_skips_correction(ctl, qtbot):
+    c, rec, stt, llm = ctl
+    profile = AppProfile(name="Terminal", match="wt", llm_enabled=False)
+    states = []
+    c.state_changed.connect(states.append)
+    c.toggle(profile=profile)
+    c.toggle(profile=profile)
+    qtbot.waitUntil(lambda: c.state is DictationState.RESULT, timeout=3000)
+    assert DictationState.CORRECTING not in states
+    assert c.session.corrected_text == "merhaba dünya"
+    assert llm.calls == []
+
+
+def test_profile_with_default_mode_does_not_override_explicit_mode(ctl, qtbot):
+    c, rec, stt, llm = ctl
+    profile = AppProfile(name="Terminal", match="wt", mode="translate")
+    c.toggle("prompt", profile=profile)
+    assert c.session.mode == "prompt"
+    c.toggle("prompt", profile=profile)
+    qtbot.waitUntil(lambda: c.state is DictationState.RESULT, timeout=3000)
+
+
+def test_transcribe_file_ignores_stale_active_profile(qtbot):
+    profile = AppProfile(name="Terminal", match="wt", llm_enabled=False)
+    rec, stt, llm = FakeRecorder(), FakeStt(), FakeLlm()
+    c = DictationController(
+        Settings(),
+        recorder=rec,
+        stt=stt,
+        llm=llm,
+        pool=QThreadPool(),
+        audio_loader=lambda path: np.ones(16000, dtype=np.float32),
+    )
+    c.toggle(profile=profile)
+    c.cancel()
+    c.transcribe_file("/tmp/x.wav")
+    qtbot.waitUntil(lambda: c.state is DictationState.RESULT, timeout=3000)
+    assert c.session.corrected_text == "Merhaba dünya."
+    assert llm.calls != []

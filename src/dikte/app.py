@@ -12,7 +12,7 @@ from PySide6.QtWidgets import QApplication, QDialog, QMessageBox, QSystemTrayIco
 
 from dikte import APP_NAME, __version__, paths
 from dikte.audio.recorder import AudioRecorder
-from dikte.config import DictionaryEntry, Settings, load_settings, save_settings
+from dikte.config import AppProfile, DictionaryEntry, Settings, load_settings, save_settings
 from dikte.core.controller import DictationController
 from dikte.core.health import (
     HealthItem,
@@ -27,11 +27,12 @@ from dikte.core.state import BUSY_STATES, MODES, DictationState
 from dikte.llm import LlmError, make_provider
 from dikte.logging_setup import setup_logging
 from dikte.platform.autostart import set_autostart
+from dikte.platform.foreground import foreground_process_name
 from dikte.platform.gpu_info import LOW_VRAM_MB, query_vram
 from dikte.platform.hold_detect import HoldDetector
 from dikte.platform.hotkey import HOTKEY_ID, GlobalHotkey
 from dikte.platform.hotkey_parse import HotkeyParseError, parse_hotkey
-from dikte.platform.paste import paste_active_window
+from dikte.platform.paste import foreground_window_id, paste_active_window, type_unicode_text
 from dikte.platform.single_instance import (
     DEFAULT_NAME,
     START_MESSAGE,
@@ -42,6 +43,7 @@ from dikte.platform.single_instance import (
 )
 from dikte.stt.download import download_model
 from dikte.stt.engine import FasterWhisperEngine
+from dikte.text.profiles import match_profile
 from dikte.ui.health_dialog import HealthDialog
 from dikte.ui.overlay import RecordingOverlay
 from dikte.ui.result_window import ResultWindow
@@ -74,6 +76,7 @@ class AppContext:
     hold: HoldDetector
     hold_mode: str = "correct"  # hold'un hangi kısayol için silahlandığını taşır
     health_dialog: HealthDialog | None = None  # ilk çalıştırmada/STT hatasında gösterilir
+    active_profile: AppProfile | None = None  # son kısayolda ön plandaki uygulamayla eşleşen profil
 
 
 class _NullLlm:
@@ -181,8 +184,8 @@ def _wire(ctx: AppContext) -> None:
     ctx.hotkey.activated.connect(lambda: _on_hotkey(ctx))
     ctx.hotkey_translate.activated.connect(lambda: _on_hotkey(ctx, "translate"))
     ctx.hotkey_prompt.activated.connect(lambda: _on_hotkey(ctx, "prompt"))
-    ctx.hold.tapped.connect(lambda: c.toggle(ctx.hold_mode))
-    ctx.hold.held.connect(lambda: c.start_recording(ctx.hold_mode))
+    ctx.hold.tapped.connect(lambda: c.toggle(ctx.hold_mode, profile=ctx.active_profile))
+    ctx.hold.held.connect(lambda: c.start_recording(ctx.hold_mode, profile=ctx.active_profile))
     ctx.hold.released.connect(c.stop_recording)
     ctx.tray.toggle_requested.connect(c.toggle)
     ctx.tray.show_requested.connect(
@@ -318,6 +321,9 @@ def _on_result_ready(ctx: AppContext, text: str) -> None:
     """
     if not text or not ctx.settings.auto_copy:
         return
+    profile = ctx.active_profile
+    if profile and profile.trailing:
+        text += profile.trailing
     clipboard = QApplication.clipboard()
     previous = clipboard.text() if ctx.settings.restore_clipboard else ""
     clipboard.setText(text)
@@ -326,7 +332,15 @@ def _on_result_ready(ctx: AppContext, text: str) -> None:
     if not ctx.settings.auto_paste or ctx.window.isActiveWindow():
         return
     own_ids = {int(ctx.window.winId()), int(ctx.overlay.winId())}
-    if not paste_active_window(own_ids):
+    foreground = foreground_window_id()
+    if foreground is not None and foreground in own_ids:
+        return
+    if profile and profile.paste == "type":
+        pasted = type_unicode_text(text)
+    else:
+        combo = profile.paste if profile else "ctrl+v"
+        pasted = paste_active_window(own_ids, combo=combo)
+    if not pasted:
         log.info("yapıştırma atlandı; metin panoda")
         return
     if ctx.settings.restore_clipboard and previous:
@@ -389,8 +403,11 @@ def _hotkey_spec(ctx: AppContext, mode: str) -> str:
 
 def _on_hotkey(ctx: AppContext, mode: str = "correct") -> None:
     """Kısayola basılınca çağrılır: bas-konuş yalnızca Windows'ta anlamlıdır."""
+    # Profil tanımlı değilse ön plan sürecini hiç sorgulama (win32 API'sini gereksiz çağırmaz).
+    exe = foreground_process_name() if ctx.settings.profiles else ""
+    ctx.active_profile = match_profile(ctx.settings.profiles, exe)
     if not ctx.settings.push_to_talk or sys.platform != "win32":
-        ctx.controller.toggle(mode)
+        ctx.controller.toggle(mode, profile=ctx.active_profile)
         return
     ctx.hold_mode = mode
     ctx.hold.arm(parse_hotkey(_hotkey_spec(ctx, mode)).vk)

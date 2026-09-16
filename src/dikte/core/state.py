@@ -38,6 +38,7 @@ class Session:
     enhanced_prompt: str = ""
     duration_s: float = 0.0
     source_path: str = ""  # dosyadan çözümlendiyse kaynak dosyanın yolu; mikrofon kaydında boş
+    profile: str = ""  # eşleşen uygulama profilinin adı; eşleşme yoksa boş
 
     def with_(self, **kwargs) -> Session:
         return replace(self, **kwargs)

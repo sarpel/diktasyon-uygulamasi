@@ -108,6 +108,16 @@ class DictionarySettings(BaseModel):
     user_instructions: str = ""  # LLM düzeltme talimatına ek serbest metin
 
 
+class AppProfile(BaseModel):
+    model_config = ConfigDict(frozen=True)
+    name: str
+    match: str  # exe adı alt dizesi, küçük harf (ör. "code", "windowsterminal")
+    mode: Literal["correct", "translate", "prompt"] = "correct"
+    paste: Literal["ctrl+v", "ctrl+shift+v", "type"] = "ctrl+v"
+    llm_enabled: bool = True
+    trailing: Literal["", " ", "\n"] = ""
+
+
 class Settings(BaseModel):
     model_config = ConfigDict(frozen=True)
     hotkey: str = "ctrl+alt+space"
@@ -129,6 +139,7 @@ class Settings(BaseModel):
     llm: LlmSettings = LlmSettings()
     audio: AudioSettings = AudioSettings()
     dictionary: DictionarySettings = DictionarySettings()
+    profiles: tuple[AppProfile, ...] = ()
 
 
 def load_settings(path: Path | None = None) -> Settings:
