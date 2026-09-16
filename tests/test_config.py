@@ -11,7 +11,7 @@ def test_default_settings_values():
     assert s.stt.model == "large-v3-turbo"
     assert s.stt.language == "tr"
     assert s.llm.provider == "ollama"
-    assert s.llm.model == "qwen3.5:4b"
+    assert s.llm.model == "gemma4:e4b-it-qat"
     assert s.llm.think is False
 
 
@@ -113,7 +113,7 @@ def test_active_model_follows_provider():
     from dikte.config import LlmSettings
 
     base = LlmSettings(lmstudio_model="lm-4b", custom_model="öz-model")
-    assert base.active_model == "qwen3.5:4b"
+    assert base.active_model == "gemma4:e4b-it-qat"
     assert base.model_copy(update={"provider": "lmstudio"}).active_model == "lm-4b"
     assert base.model_copy(update={"provider": "openai"}).active_model == "gpt-5.5"
     assert base.model_copy(update={"provider": "gemini"}).active_model == "gemini-3.5-flash"

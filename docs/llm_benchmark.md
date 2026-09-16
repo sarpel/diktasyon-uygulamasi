@@ -70,7 +70,7 @@ model `LlmSettings.model` varsayılanı olacaktır.
 
 | Model | Puan/10 | yazim | baglam | teknik_koru | noktalama | anlam_koru | bos_degisiklik | Ort. gecikme | Hata |
 |---|---|---|---|---|---|---|---|---|---|
-| qwen3.5:4b | **0.0** | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 sn | 90 |
-| gemma4:e4b-it-qat | **0.0** | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 sn | 90 |
+| gemma4:e4b-it-qat | **9.02** | 8.75 | 7.0 | 10.0 | 9.29 | 9.29 | 10.0 | 1.96 sn | 7 |
+| qwen3.5:4b | **7.37** | 9.0 | 4.88 | 8.62 | 9.29 | 7.36 | 5.0 | 2.44 sn | 7 |
 
 <!-- RESULTS:END -->

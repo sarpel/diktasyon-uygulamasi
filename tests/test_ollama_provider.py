@@ -24,7 +24,7 @@ def test_complete_sends_system_and_user_messages():
     p = OllamaProvider(LlmSettings(), client_factory=lambda host, timeout: c)
     assert p.complete("SYS", "USER") == "cevap"
     call = c.calls[0]
-    assert call["model"] == "qwen3.5:4b"
+    assert call["model"] == "gemma4:e4b-it-qat"
     assert call["messages"] == [
         {"role": "system", "content": "SYS"},
         {"role": "user", "content": "USER"},
