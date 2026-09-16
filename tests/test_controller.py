@@ -452,3 +452,41 @@ def test_result_ready_emits_raw_text_when_llm_fails(qtbot):
     c.toggle()
     c.toggle()
     qtbot.waitUntil(lambda: texts == ["merhaba dünya"], timeout=5000)
+
+
+def test_apply_edit_ignored_outside_result(ctl):
+    c, *_ = ctl
+    assert c.state is DictationState.IDLE
+    c.apply_edit("yeni metin")
+    assert c.session.corrected_text == ""
+
+
+def test_apply_edit_updates_session_in_result(ctl, qtbot):
+    c, *_ = ctl
+    c.toggle()
+    c.toggle()
+    qtbot.waitUntil(lambda: c.state is DictationState.RESULT, timeout=5000)
+    c.apply_edit("Merhaba dünya, düzenlendi.")
+    assert c.session.corrected_text == "Merhaba dünya, düzenlendi."
+
+
+def test_apply_edit_emits_edit_learned_when_changed(ctl, qtbot):
+    c, *_ = ctl
+    c.toggle()
+    c.toggle()
+    qtbot.waitUntil(lambda: c.state is DictationState.RESULT, timeout=5000)
+    changes = []
+    c.edit_learned.connect(changes.append)
+    c.apply_edit("Merhaba dünyalar.")
+    assert len(changes) == 1 and len(changes[0]) > 0
+
+
+def test_apply_edit_no_signal_when_unchanged(ctl, qtbot):
+    c, *_ = ctl
+    c.toggle()
+    c.toggle()
+    qtbot.waitUntil(lambda: c.state is DictationState.RESULT, timeout=5000)
+    changes = []
+    c.edit_learned.connect(changes.append)
+    c.apply_edit(c.session.corrected_text)
+    assert changes == []

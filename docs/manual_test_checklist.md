@@ -122,3 +122,15 @@
 - [ ] Sözlükteki terimler LLM açıkken düzeltme kalitesini gözle görülür şekilde artırıyor
       (ör. nadir özel adlar artık yanlış tahmin edilmiyor).
 - [ ] Boş terimli bir satırla kaydetmeye çalışınca "Sözlükte boş terim var" hatası çıkıyor.
+
+## Elle düzenleme ve yeniden yapıştırma
+
+- [ ] Sonuç penceresinde düzeltilmiş metni değiştirip 800 ms bekleyince düzenleme geçmişteki
+      kayda yansıyor (geçmiş kaydı büyümüyor, aynı satır güncelleniyor).
+- [ ] Araç çubuğu → "Yeniden yapıştır" (Ctrl+Enter): pencere gizlenip metin tekrar aktif
+      pencereye yapıştırılıyor.
+- [ ] Tek kelimelik bir düzeltme yapılınca (ör. "çuk" → "çok") alt çubukta "Sözlüğe ekle" önerisi
+      çıkıyor; "Sözlüğe ekle" tıklanınca terim Ayarlar → Sözlük'e ekleniyor.
+- [ ] "Yok say" tıklanınca öneri çubuğu kapanıyor, sözlüğe hiçbir şey eklenmiyor.
+- [ ] Ayarlar → Genel → "Elle düzeltmelerden tek kelimelik sözlük önerisi çıkar" kapatılınca
+      öneri çubuğu hiç görünmüyor.

@@ -442,6 +442,59 @@ def test_history_selection_loads_into_window(ctx):
     assert ctx.window.corrected_pane.text() == "Eski metin"
 
 
+def test_text_edited_reaches_controller_apply_edit(ctx):
+    ctx.controller._update_session(raw_text="a", corrected_text="A.")
+    ctx.controller._state = DictationState.RESULT
+    ctx.window.text_edited.emit("A düzenlendi.")
+    assert ctx.controller.session.corrected_text == "A düzenlendi."
+
+
+def test_session_update_while_result_updates_history(ctx):
+    ctx.controller._update_session(raw_text="a", corrected_text="A.")
+    ctx.controller.state_changed.emit(DictationState.RESULT)
+    ctx.controller._state = DictationState.RESULT
+    ctx.controller._update_session(corrected_text="A düzenlendi.")
+    assert [s.corrected_text for s in ctx.history.load()] == ["A düzenlendi."]
+
+
+def test_session_update_before_result_does_not_touch_history(ctx):
+    ctx.controller._update_session(raw_text="a", corrected_text="A.")
+    assert ctx.history.load() == ()
+
+
+def test_edit_learned_shows_dictionary_suggestion(ctx):
+    from dikte.llm.diff import Change
+
+    ctx.controller.edit_learned.emit((Change("çuk", "çok", "değiştirildi"),))
+    assert ctx.window.suggest_bar.isVisible() or ctx.window._pending_suggestion == ("çuk", "çok")
+
+
+def test_edit_learned_ignored_when_suggest_dictionary_off(ctx):
+    from dikte.llm.diff import Change
+
+    ctx.settings = ctx.settings.model_copy(update={"suggest_dictionary": False})
+    ctx.controller.edit_learned.emit((Change("çuk", "çok", "değiştirildi"),))
+    assert ctx.window._pending_suggestion is None
+
+
+def test_add_dictionary_entry_saves_and_updates_settings(ctx, monkeypatch):
+    saved = []
+    monkeypatch.setattr(app_mod, "save_settings", saved.append)
+    ctx.window.dictionary_add_requested.emit("çuk", "çok")
+    assert ctx.settings.dictionary.entries[-1].term == "çok"
+    assert ctx.settings.dictionary.entries[-1].wrong == ("çuk",)
+    assert saved and saved[0].dictionary.entries[-1].term == "çok"
+
+
+def test_repaste_hides_window_and_re_delivers_text(ctx, monkeypatch, qtbot):
+    ctx.window.show()
+    delivered = []
+    monkeypatch.setattr(app_mod, "_on_result_ready", lambda c, t: delivered.append(t))
+    ctx.window.repaste_requested.emit("yeniden yapıştırılan metin")
+    assert not ctx.window.isVisible()
+    qtbot.waitUntil(lambda: delivered == ["yeniden yapıştırılan metin"], timeout=1000)
+
+
 def test_status_info_set_when_ready(ctx):
     ctx.stt._compute_type = "float16"
     ctx.controller.ready_changed.emit(True)
