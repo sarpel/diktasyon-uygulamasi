@@ -15,7 +15,7 @@ from PySide6.QtWidgets import (
 from dikte.config import Settings
 
 COMPUTE_TYPES = ("float16", "int8_float16", "bfloat16", "int8_float32", "float32")
-RESTART_HINT = "Değişiklik uygulamayı yeniden başlatınca etkin olur."
+RESTART_HINT = "Değişince model arka planda yeniden yüklenir."
 
 
 class SttTab(QWidget):
@@ -52,6 +52,16 @@ class SttTab(QWidget):
 
         self.warm_up_check = QCheckBox("Açılışta modeli ısıt (ilk diktedeki gecikmeyi alır)")
         self.warm_up_check.setChecked(settings.stt.warm_up)
+
+        self.live_chunk_spin = QSpinBox()
+        self.live_chunk_spin.setRange(0, 120)
+        self.live_chunk_spin.setSuffix(" sn")
+        self.live_chunk_spin.setSpecialValueText("Kapalı")
+        self.live_chunk_spin.setValue(int(settings.stt.live_chunk_s))
+        self.live_chunk_spin.setToolTip(
+            "Kayıt sırasında bu kadar konuşma + sessizlik biriktiğinde parça parça çözümlenir; "
+            "overlay'de canlı metin görünür. Kapalıysa kayıt bitince tek seferde çözümlenir."
+        )
 
         self.vad_check = QCheckBox("Sessizlik algılama (VAD) açık")
         self.vad_check.setChecked(settings.stt.vad_filter)
@@ -115,6 +125,7 @@ class SttTab(QWidget):
         form.addRow("Toplu çözümleme yığını", self.batch_size_spin)
         form.addRow(self.batch_check)
         form.addRow(self.warm_up_check)
+        form.addRow("Canlı çözümleme parça süresi", self.live_chunk_spin)
 
         lay = QVBoxLayout(self)
         lay.addLayout(form)
@@ -140,6 +151,7 @@ class SttTab(QWidget):
                         "batch_threshold_s": float(self.batch_threshold_spin.value()),
                         "batch_size": self.batch_size_spin.value(),
                         "warm_up": self.warm_up_check.isChecked(),
+                        "live_chunk_s": float(self.live_chunk_spin.value()),
                         "vad_filter": self.vad_check.isChecked(),
                         "vad_threshold": self.vad_threshold_spin.value(),
                         "vad_min_silence_ms": self.vad_min_silence_spin.value(),

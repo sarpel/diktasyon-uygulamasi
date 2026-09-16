@@ -52,6 +52,16 @@ class History:
         kept = self.load()[-(self._limit - 1) :] if self._limit > 1 else ()
         self._write((*kept, session))
 
+    def update(self, session: Session) -> None:
+        """Aynı `id`'ye sahip satır varsa yerinde değiştirir, yoksa `append` gibi ekler."""
+        if self._limit <= 0:
+            return
+        existing = self.load()
+        if any(s.id == session.id for s in existing):
+            self._write(tuple(session if s.id == session.id else s for s in existing))
+        else:
+            self.append(session)
+
     def delete(self, session_id: str) -> None:
         self._write(tuple(s for s in self.load() if s.id != session_id))
 

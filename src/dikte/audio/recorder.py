@@ -25,10 +25,18 @@ class AudioRecorder(QObject):
     level_changed = Signal(float)
     buckets_changed = Signal(object)
     limit_reached = Signal()
+    silence_reached = Signal()
+    chunk_ready = Signal(object)
     error = Signal(str)
 
     def __init__(
-        self, settings: AudioSettings, stream_factory: Callable | None = None, parent=None
+        self,
+        settings: AudioSettings,
+        stream_factory: Callable | None = None,
+        parent=None,
+        *,
+        chunk_s: float = 0.0,
+        max_chunk_s: float = 45.0,
     ):
         super().__init__(parent)
         self._settings = settings
@@ -36,17 +44,34 @@ class AudioRecorder(QObject):
         self._stream = None
         self._chunks: list[np.ndarray] = []
         self._total = 0
+        self._chunk_samples = 0
+        self._chunk_s = chunk_s
+        self._max_chunk_s = max_chunk_s
         self._limit_hit = False
+        self._speech_seen = False
+        self._silent_samples = 0
+        self._silence_hit = False
         self._lock = threading.Lock()
 
     @property
     def is_recording(self) -> bool:
         return self._stream is not None
 
+    def update_settings(self, settings: AudioSettings) -> None:
+        """Süren kayıt etkilenmez; yeni cihaz/parametreler bir sonraki `start()`'ta geçerli olur."""
+        self._settings = settings
+
+    def set_chunking(self, chunk_s: float, max_chunk_s: float) -> None:
+        """Canlı parça parça çözümleme parametrelerini günceller (`chunk_s=0` kapatır)."""
+        self._chunk_s = chunk_s
+        self._max_chunk_s = max_chunk_s
+
     def start(self) -> None:
         if self._stream is not None:
             return
         self._chunks, self._total, self._limit_hit = [], 0, False
+        self._chunk_samples = 0
+        self._speech_seen, self._silent_samples, self._silence_hit = False, 0, False
         try:
             self._stream = self._factory(
                 callback=self._on_audio,
@@ -73,6 +98,7 @@ class AudioRecorder(QObject):
         with self._lock:
             chunks, self._chunks = self._chunks, []
             self._total = 0
+            self._chunk_samples = 0
         if not chunks:
             return np.zeros(0, dtype=np.float32)
         return np.concatenate(chunks).astype(np.float32, copy=False)
@@ -83,6 +109,8 @@ class AudioRecorder(QObject):
         frame = np.asarray(indata, dtype=np.float32).reshape(-1)
         limit = self._settings.max_seconds * self._settings.sample_rate  # 0 = sınırsız
         first_hit = False
+        level = 0.0
+        chunk_to_emit: np.ndarray | None = None
         with self._lock:
             if limit > 0:
                 room = limit - self._total
@@ -94,12 +122,46 @@ class AudioRecorder(QObject):
             if frame is not None:
                 self._chunks.append(frame)
                 self._total += frame.shape[0]
+                self._chunk_samples += frame.shape[0]
                 # Sınırı tam dolduran blok da kaydı hemen bitirir (bir blok gecikmeden).
                 if 0 < limit <= self._total and not self._limit_hit:
                     first_hit, self._limit_hit = True, True
+                level = rms(frame)
+                if self._chunk_s > 0:
+                    chunk_to_emit = self._maybe_flush_chunk(level)
         if first_hit:
             self.limit_reached.emit()
         if frame is None:
             return
-        self.level_changed.emit(rms(frame))
+        self._track_silence(level, frame.shape[0])
+        self.level_changed.emit(level)
         self.buckets_changed.emit(bucketize(frame, BUCKETS))
+        if chunk_to_emit is not None:
+            self.chunk_ready.emit(chunk_to_emit)
+
+    def _maybe_flush_chunk(self, level: float) -> np.ndarray | None:
+        """Kilit altında çağrılır. Toplanan süre `chunk_s`i geçip blok sessizse, ya da
+        `max_chunk_s`e ulaşılmışsa (sessizlikten bağımsız sert kesim) parçayı boşaltır."""
+        duration_s = self._chunk_samples / self._settings.sample_rate
+        should_flush = duration_s >= self._max_chunk_s or (
+            duration_s >= self._chunk_s and level < self._settings.silence_threshold
+        )
+        if not should_flush or not self._chunks:
+            return None
+        chunk, self._chunks = self._chunks, []
+        self._chunk_samples = 0
+        return np.concatenate(chunk).astype(np.float32, copy=False)
+
+    def _track_silence(self, level: float, n: int) -> None:
+        stop_s, thr = self._settings.silence_stop_s, self._settings.silence_threshold
+        if stop_s <= 0 or self._silence_hit:
+            return
+        if level > thr * 3:
+            self._speech_seen, self._silent_samples = True, 0
+            return
+        if not self._speech_seen:
+            return
+        self._silent_samples += n
+        if self._silent_samples >= stop_s * self._settings.sample_rate:
+            self._silence_hit = True
+            self.silence_reached.emit()

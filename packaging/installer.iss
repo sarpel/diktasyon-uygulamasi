@@ -1,5 +1,5 @@
 #define AppName "Dikte"
-#define AppVersion "0.1.0"
+#define AppVersion "0.2.0"
 [Setup]
 AppId={{7B1C0E52-3D7A-4B54-9C8F-2E1D6A5F0D1E}
 AppName={#AppName}

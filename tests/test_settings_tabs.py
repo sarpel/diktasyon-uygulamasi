@@ -1,10 +1,19 @@
 import pytest
 from PySide6.QtGui import QKeySequence
 
-from dikte.config import Settings
+from dikte.config import AppProfile, DictionaryEntry, Settings
 from dikte.ui.settings_dialog import SettingsDialog
 
-TAB_TITLES = ["Genel", "Ses", "Konuşma Tanıma", "Metin Düzeltme", "Gelişmiş", "Hakkında"]
+TAB_TITLES = [
+    "Genel",
+    "Ses",
+    "Konuşma Tanıma",
+    "Metin Düzeltme",
+    "Sözlük",
+    "Gelişmiş",
+    "Profiller",
+    "Hakkında",
+]
 
 
 @pytest.fixture
@@ -38,6 +47,12 @@ def test_hotkey_capture_writes_spec(dlg):
     assert dlg.result_settings().hotkey == "ctrl+shift+d"
 
 
+def test_voice_commands_checkbox_round_trips(dlg):
+    assert dlg.voice_commands_check.isChecked() is True
+    dlg.voice_commands_check.setChecked(False)
+    assert dlg.result_settings().voice_commands is False
+
+
 def test_provider_groups_follow_selection(dlg):
     dlg.provider_combo.setCurrentText("anthropic")
     assert not dlg.ollama_group.isVisibleTo(dlg.llm) and dlg.anthropic_group.isVisibleTo(dlg.llm)
@@ -51,12 +66,22 @@ def test_privacy_warning_only_for_remote_providers(dlg):
     assert dlg.privacy_label.isVisibleTo(dlg.llm)
 
 
-def test_restart_hint_present_on_stt_model(dlg):
-    assert "yeniden başlat" in dlg.stt_model_edit.toolTip().lower()
+def test_reload_hint_present_on_stt_model(dlg):
+    assert "yeniden yüklenir" in dlg.stt_model_edit.toolTip().lower()
 
 
 def test_max_seconds_special_text(dlg):
     assert dlg.max_seconds_spin.specialValueText() == "Sınırsız"
+
+
+def test_silence_stop_special_text(dlg):
+    assert dlg.silence_stop_spin.specialValueText() == "Kapalı"
+
+
+def test_silence_stop_round_trip(dlg):
+    dlg.silence_stop_spin.setValue(2.5)
+    s = dlg.result_settings()
+    assert s.audio.silence_stop_s == 2.5
 
 
 def test_warm_up_and_prewarm_round_trip(dlg):
@@ -90,6 +115,19 @@ def test_about_tab_lists_versions(dlg):
     labels = dlg.about.findChildren(type(dlg.gpu_label))
     texts = " ".join(label.text() for label in labels)
     assert "Dikte" in texts and dlg.gpu_label.text()
+
+
+def test_about_tab_has_health_check_button(dlg):
+    assert dlg.health_btn.text() == "Durum kontrolü…"
+
+
+def test_about_tab_uses_injected_gpu_and_vram_probes(qtbot):
+    from dikte.ui.settings.about_tab import AboutTab
+
+    tab = AboutTab(Settings(), gpu_probe=lambda: "sahte GPU", vram_probe=lambda: "3,2 / 8,0 GB")
+    qtbot.addWidget(tab)
+    assert tab.gpu_label.text() == "sahte GPU"
+    assert tab.vram_label.text() == "3,2 / 8,0 GB"
 
 
 def test_microphone_test_button_starts_and_stops_recorder(dlg, qtbot):
@@ -219,7 +257,7 @@ def test_connection_test_button_reports_success(dlg, monkeypatch):
     def fake_run_in_pool(fn, on_result, on_error, pool=None):
         try:
             on_result(fn())
-        except Exception as exc:  # noqa: BLE001 - test double, gerçek hata yolu sınanıyor
+        except Exception as exc:
             on_error(str(exc))
 
     monkeypatch.setattr(llm_tab_mod, "run_in_pool", fake_run_in_pool)
@@ -244,7 +282,7 @@ def test_connection_test_button_reports_failure(dlg, monkeypatch):
     def fake_run_in_pool(fn, on_result, on_error, pool=None):
         try:
             on_result(fn())
-        except Exception as exc:  # noqa: BLE001 - test double, gerçek hata yolu sınanıyor
+        except Exception as exc:
             on_error(str(exc))
 
     monkeypatch.setattr(llm_tab_mod, "run_in_pool", fake_run_in_pool)
@@ -293,6 +331,43 @@ def test_empty_ollama_host_blocks_accept(dlg):
     assert "host" in dlg.error_label.text().lower()
 
 
+def test_sounds_check_unchecked_disables_sounds(dlg):
+    dlg.sounds_check.setChecked(False)
+    assert dlg.result_settings().sounds_enabled is False
+
+
+def test_restore_clipboard_round_trip(dlg):
+    dlg.auto_paste_check.setChecked(True)
+    dlg.restore_clipboard_check.setChecked(True)
+    assert dlg.result_settings().restore_clipboard is True
+
+
+def test_restore_clipboard_disabled_when_auto_paste_off(dlg):
+    dlg.auto_paste_check.setChecked(False)
+    assert not dlg.restore_clipboard_check.isEnabled()
+
+
+def test_push_to_talk_round_trip(dlg):
+    dlg.push_to_talk_check.setChecked(False)
+    assert dlg.result_settings().push_to_talk is False
+
+
+def test_mode_hotkeys_default_to_empty(dlg):
+    s = dlg.result_settings()
+    assert s.hotkey_translate == "" and s.hotkey_prompt == ""
+
+
+def test_translate_hotkey_round_trip(dlg):
+    dlg.hotkey_translate_edit.setKeySequence(QKeySequence("Ctrl+Alt+T"))
+    assert dlg.result_settings().hotkey_translate == "ctrl+alt+t"
+
+
+def test_same_hotkey_for_two_modes_blocks_accept(dlg):
+    dlg.hotkey_translate_edit.setKeySequence(dlg.hotkey_edit.keySequence())
+    dlg.accept()
+    assert "farklı olmalı" in dlg.error_label.text()
+
+
 def test_open_location_failure_warns_user(dlg, monkeypatch):
     """QDesktopServices açamazsa sessiz kalınmaz; yolu içeren bir uyarı gösterilir."""
     from dikte.ui.settings import about_tab as about_mod
@@ -323,3 +398,78 @@ def test_microphone_test_failure_resets_button_and_warns(dlg, monkeypatch):
     assert not dlg.test_btn.isChecked()
     assert dlg.test_btn.text() == "Mikrofonu test et"
     assert warned and "cihaz meşgul" in warned[0]
+
+
+def test_dictionary_round_trip(dlg):
+    dlg.dictionary.add_entry_btn.click()
+    row = dlg.dictionary_table.rowCount() - 1
+    dlg.dictionary_table.item(row, 0).setText("Kubernetes")
+    dlg.dictionary_table.item(row, 1).setText("kuber netes, kübernetes")
+    dlg.instructions_edit.setPlainText("Kısa tut")
+    s = dlg.result_settings()
+    assert s.dictionary.entries == (
+        DictionaryEntry(term="Kubernetes", wrong=("kuber netes", "kübernetes")),
+    )
+    assert s.dictionary.user_instructions == "Kısa tut"
+
+
+def test_dictionary_rejects_empty_term(dlg):
+    dlg.dictionary.add_entry_btn.click()
+    assert dlg.dictionary.validate() == "Sözlükte boş terim var"
+
+
+def test_live_chunk_spin_defaults_and_round_trips(dlg):
+    assert dlg.live_chunk_spin.value() == 20
+    dlg.live_chunk_spin.setValue(0)
+    s = dlg.result_settings()
+    assert s.stt.live_chunk_s == 0
+
+
+def test_profiles_starts_empty():
+    d = SettingsDialog(Settings(), ())
+    assert d.profiles_table.rowCount() == 0
+
+
+def test_profiles_loads_existing_profiles():
+    profile = AppProfile(name="Kod", match="code", mode="translate", paste="type")
+    s = Settings(profiles=(profile,))
+    d = SettingsDialog(s, ())
+    assert d.profiles_table.rowCount() == 1
+    assert d.profiles_table.item(0, 0).text() == "Kod"
+    assert d.profiles_table.item(0, 1).text() == "code"
+
+
+def test_profiles_round_trip(dlg):
+    dlg.profiles.add_profile_btn.click()
+    row = dlg.profiles_table.rowCount() - 1
+    dlg.profiles_table.item(row, 0).setText("Terminal")
+    dlg.profiles_table.item(row, 1).setText("windowsterminal")
+    dlg.profiles_table.cellWidget(row, 2).setCurrentText("prompt")
+    dlg.profiles_table.cellWidget(row, 3).setCurrentText("ctrl+shift+v")
+    dlg.profiles_table.cellWidget(row, 4).setChecked(False)
+    dlg.profiles_table.cellWidget(row, 5).setCurrentText("yeni satır")
+    s = dlg.result_settings()
+    assert s.profiles == (
+        AppProfile(
+            name="Terminal",
+            match="windowsterminal",
+            mode="prompt",
+            paste="ctrl+shift+v",
+            llm_enabled=False,
+            trailing="\n",
+        ),
+    )
+
+
+def test_profiles_rejects_empty_name_or_match(dlg):
+    dlg.profiles.add_profile_btn.click()
+    row = dlg.profiles_table.rowCount() - 1
+    dlg.profiles_table.item(row, 1).setText("code")
+    assert dlg.profiles.validate() == "Profilde ad ve eşleşme alanları boş olamaz"
+
+
+def test_profiles_remove_selected(dlg):
+    dlg.profiles.add_profile_btn.click()
+    dlg.profiles_table.selectRow(0)
+    dlg.profiles.remove_profile_btn.click()
+    assert dlg.profiles_table.rowCount() == 0

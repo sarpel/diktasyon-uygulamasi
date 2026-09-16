@@ -93,6 +93,13 @@ def test_old_config_without_new_llm_fields_still_loads(tmp_path: Path):
     assert loaded.llm.gemini_model and loaded.llm.custom_base_url == ""
 
 
+def test_dictionary_defaults_to_empty_and_loads_from_json():
+    assert Settings().dictionary.entries == ()
+    loaded = Settings.model_validate_json('{"dictionary": {"entries": [{"term": "X"}]}}')
+    assert loaded.dictionary.entries[0].term == "X"
+    assert loaded.dictionary.entries[0].wrong == ()
+
+
 def test_local_server_defaults_match_vendor_ports():
     from dikte.config import LlmSettings
 
@@ -118,3 +125,69 @@ def test_active_model_follows_provider():
     assert base.model_copy(update={"provider": "openai"}).active_model == "gpt-5.5"
     assert base.model_copy(update={"provider": "gemini"}).active_model == "gemini-3.5-flash"
     assert base.model_copy(update={"provider": "custom"}).active_model == "öz-model"
+
+
+def test_profiles_default_to_empty():
+    assert Settings().profiles == ()
+
+
+def test_app_profile_defaults():
+    from dikte.config import AppProfile
+
+    p = AppProfile(name="Kod", match="code")
+    assert p.mode == "correct"
+    assert p.paste == "ctrl+v"
+    assert p.llm_enabled is True
+    assert p.trailing == ""
+
+
+def test_app_profile_is_immutable():
+    from dikte.config import AppProfile
+
+    p = AppProfile(name="Kod", match="code")
+    with pytest.raises(Exception):
+        p.name = "x"  # type: ignore[misc]
+
+
+def test_profiles_load_from_json():
+    loaded = Settings.model_validate_json(
+        '{"profiles": [{"name": "Terminal", "match": "windowsterminal", '
+        '"paste": "ctrl+shift+v", "llm_enabled": false}]}'
+    )
+    assert loaded.profiles[0].name == "Terminal"
+    assert loaded.profiles[0].paste == "ctrl+shift+v"
+    assert loaded.profiles[0].llm_enabled is False
+
+
+def test_old_config_without_profiles_still_loads(tmp_path: Path):
+    import json
+
+    p = tmp_path / "config.json"
+    p.write_text(json.dumps({"hotkey": "ctrl+alt+space"}), encoding="utf-8")
+    assert load_settings(p).profiles == ()
+
+
+def test_live_chunk_defaults():
+    s = Settings()
+    assert s.stt.live_chunk_s == 20.0
+    assert s.stt.live_max_chunk_s == 45.0
+
+
+def test_live_chunk_s_zero_allowed():
+    from dikte.config import SttSettings
+
+    assert SttSettings(live_chunk_s=0).live_chunk_s == 0
+
+
+def test_live_chunk_s_negative_rejected():
+    from dikte.config import SttSettings
+
+    with pytest.raises(Exception):
+        SttSettings(live_chunk_s=-1)
+
+
+def test_live_max_chunk_s_below_five_rejected():
+    from dikte.config import SttSettings
+
+    with pytest.raises(Exception):
+        SttSettings(live_max_chunk_s=4)

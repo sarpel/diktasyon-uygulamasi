@@ -5,7 +5,7 @@ import numpy as np
 import pytest
 from PySide6.QtCore import QObject, QThreadPool, Signal
 
-from dikte.config import Settings
+from dikte.config import AppProfile, DictionaryEntry, DictionarySettings, Settings
 from dikte.core.controller import DictationController
 from dikte.core.state import DictationState
 from dikte.stt.result import TranscriptResult
@@ -15,12 +15,15 @@ class FakeRecorder(QObject):
     level_changed = Signal(float)
     buckets_changed = Signal(object)
     limit_reached = Signal()
+    silence_reached = Signal()
+    chunk_ready = Signal(object)
     error = Signal(str)
 
     def __init__(self):
         super().__init__()
         self.started = self.stopped = False
         self.audio = np.ones(16000, dtype=np.float32) * 0.1
+        self.chunking = None
 
     def start(self):
         self.started = True
@@ -28,6 +31,9 @@ class FakeRecorder(QObject):
     def stop(self):
         self.stopped = True
         return self.audio
+
+    def set_chunking(self, chunk_s, max_chunk_s):
+        self.chunking = (chunk_s, max_chunk_s)
 
 
 class FakeStt:
@@ -45,7 +51,7 @@ class FakeStt:
         self.load()
         self.warmed = True
 
-    def transcribe(self, audio, language=None):
+    def transcribe(self, audio, language=None, **kwargs):
         return TranscriptResult(self.text, "tr", 1.0, ())
 
 
@@ -60,7 +66,7 @@ class FakeLlm:
         self.warmed = True
 
     def complete(self, system, user, *, json_schema=None, temperature=0.2):
-        self.calls.append(user)
+        self.calls.append({"system": system, "user": user})
         if json_schema:
             return json.dumps({"corrected_text": "Merhaba dünya.", "changes": []})
         if "User request" in user:
@@ -201,6 +207,80 @@ def test_llm_disabled_rejects_translation(qtbot):
     assert llm.calls == []
 
 
+def test_translate_mode_chains_translation_and_emits_it(ctl, qtbot):
+    c, rec, stt, llm = ctl
+    results = []
+    c.result_ready.connect(results.append)
+    c.toggle("translate")
+    assert c.state is DictationState.RECORDING and rec.started
+    c.toggle("translate")
+    qtbot.waitUntil(lambda: c.state is DictationState.RESULT, timeout=3000)
+    assert results == ["Hello world."]
+    assert c.session.mode == "translate"
+    assert c.session.translation == "Hello world."
+
+
+def test_prompt_mode_chains_enhanced_prompt_and_emits_it(ctl, qtbot):
+    c, rec, stt, llm = ctl
+    results = []
+    c.result_ready.connect(results.append)
+    c.toggle("prompt")
+    c.toggle("prompt")
+    qtbot.waitUntil(lambda: c.state is DictationState.RESULT, timeout=3000)
+    assert results and results[0].startswith("# Goal")
+    assert c.session.mode == "prompt"
+    assert c.session.enhanced_prompt.startswith("# Goal")
+
+
+def test_mode_with_llm_disabled_emits_error_and_raw(qtbot):
+    settings, _ = _disabled_llm_settings()
+    rec, stt, llm = FakeRecorder(), FakeStt(), FakeLlm()
+    c = DictationController(settings, recorder=rec, stt=stt, llm=llm, pool=QThreadPool())
+    errors, results = [], []
+    c.error.connect(errors.append)
+    c.result_ready.connect(results.append)
+    c.toggle("prompt")
+    c.toggle("prompt")
+    qtbot.waitUntil(lambda: c.state is DictationState.RESULT, timeout=3000)
+    assert errors and "LLM kapalı" in errors[-1]
+    assert results == ["merhaba dünya"]
+    assert llm.calls == []
+
+
+def test_dictionary_rules_applied_and_glossary_sent_to_llm(qtbot):
+    entries = (DictionaryEntry(term="Kubernetes", wrong=("kuber netes",)),)
+    settings = Settings(
+        dictionary=DictionarySettings(entries=entries, user_instructions="Kısa tut")
+    )
+    rec, stt, llm = FakeRecorder(), FakeStt(text="kuber netes"), FakeLlm()
+    c = DictationController(settings, recorder=rec, stt=stt, llm=llm, pool=QThreadPool())
+    c.toggle()
+    c.toggle()
+    qtbot.waitUntil(lambda: c.state is DictationState.RESULT, timeout=3000)
+    assert c.session.raw_text == "Kubernetes"
+    assert "Kubernetes" in llm.calls[0]["system"]
+    assert "Kısa tut" in llm.calls[0]["system"]
+
+
+def test_voice_commands_applied_when_enabled(qtbot):
+    rec, stt, llm = FakeRecorder(), FakeStt(text="merhaba yeni satır nasılsın"), FakeLlm()
+    c = DictationController(Settings(), recorder=rec, stt=stt, llm=llm, pool=QThreadPool())
+    c.toggle()
+    c.toggle()
+    qtbot.waitUntil(lambda: c.state is DictationState.RESULT, timeout=3000)
+    assert c.session.raw_text == "merhaba\nNasılsın"
+
+
+def test_voice_commands_left_untouched_when_disabled(qtbot):
+    settings = Settings(voice_commands=False)
+    rec, stt, llm = FakeRecorder(), FakeStt(text="merhaba yeni satır nasılsın"), FakeLlm()
+    c = DictationController(settings, recorder=rec, stt=stt, llm=llm, pool=QThreadPool())
+    c.toggle()
+    c.toggle()
+    qtbot.waitUntil(lambda: c.state is DictationState.RESULT, timeout=3000)
+    assert c.session.raw_text == "merhaba yeni satır nasılsın"
+
+
 def test_set_llm_replaces_provider(qtbot):
     c = DictationController(
         Settings(), recorder=FakeRecorder(), stt=FakeStt(), llm=FakeLlm(), pool=QThreadPool()
@@ -225,6 +305,91 @@ def test_limit_reached_ignored_when_not_recording(ctl):
     assert c.state is DictationState.IDLE
 
 
+def test_silence_signal_stops_recording(ctl):
+    c, rec, *_ = ctl
+    c.toggle()
+    assert c.state is DictationState.RECORDING
+    rec.silence_reached.emit()
+    assert c.state is DictationState.TRANSCRIBING and rec.stopped
+
+
+def test_start_recording_from_idle_starts(ctl):
+    c, rec, *_ = ctl
+    c.start_recording()
+    assert c.state is DictationState.RECORDING and rec.started
+
+
+def test_start_recording_while_recording_is_a_no_op(ctl):
+    c, rec, *_ = ctl
+    c.start_recording()
+    rec.started = False
+    c.start_recording()
+    assert c.state is DictationState.RECORDING and not rec.started
+
+
+def test_stop_recording_while_idle_is_a_no_op(ctl):
+    c, rec, *_ = ctl
+    c.stop_recording()
+    assert c.state is DictationState.IDLE and not rec.stopped
+
+
+def test_stop_recording_while_recording_transcribes(ctl):
+    c, rec, *_ = ctl
+    c.start_recording()
+    c.stop_recording()
+    assert c.state is DictationState.TRANSCRIBING and rec.stopped
+
+
+def test_transcribe_file_reaches_result_with_source_path(qtbot):
+    loaded = []
+
+    def loader(path):
+        loaded.append(path)
+        return np.ones(16000, dtype=np.float32)
+
+    c = DictationController(
+        Settings(),
+        recorder=FakeRecorder(),
+        stt=FakeStt(),
+        llm=FakeLlm(),
+        pool=QThreadPool(),
+        audio_loader=loader,
+    )
+    c.transcribe_file("/tmp/a.wav")
+    qtbot.waitUntil(lambda: c.state is DictationState.RESULT, timeout=3000)
+    assert c.session.source_path == "/tmp/a.wav"
+    assert loaded == ["/tmp/a.wav"]
+
+
+def test_transcribe_file_rejected_while_busy(ctl):
+    c, rec, *_ = ctl
+    c.toggle()  # kayıt başlar, meşgul olur
+    errors = []
+    c.error.connect(errors.append)
+    c.transcribe_file("/tmp/a.wav")
+    assert errors == ["Önce süren işi bitirin."]
+    assert c.state is DictationState.RECORDING
+
+
+def test_transcribe_file_error_emits_message(qtbot):
+    def boom(path):
+        raise OSError("bozuk dosya")
+
+    c = DictationController(
+        Settings(),
+        recorder=FakeRecorder(),
+        stt=FakeStt(),
+        llm=FakeLlm(),
+        pool=QThreadPool(),
+        audio_loader=boom,
+    )
+    errors = []
+    c.error.connect(errors.append)
+    c.transcribe_file("/tmp/bad.wav")
+    qtbot.waitUntil(lambda: bool(errors), timeout=3000)
+    assert "Dosya çözümlenemedi" in errors[0]
+
+
 class BlockingStt(FakeStt):
     """transcribe() serbest bırakılana kadar bekler; geç gelen sonucu test etmek için."""
 
@@ -232,7 +397,7 @@ class BlockingStt(FakeStt):
         super().__init__(text)
         self.gate = threading.Event()
 
-    def transcribe(self, audio, language=None):
+    def transcribe(self, audio, language=None, **kwargs):
         self.gate.wait(timeout=5)
         return TranscriptResult(self.text, "tr", 1.0, ())
 
@@ -361,3 +526,201 @@ def test_result_ready_emits_raw_text_when_llm_fails(qtbot):
     c.toggle()
     c.toggle()
     qtbot.waitUntil(lambda: texts == ["merhaba dünya"], timeout=5000)
+
+
+def test_apply_edit_ignored_outside_result(ctl):
+    c, *_ = ctl
+    assert c.state is DictationState.IDLE
+    c.apply_edit("yeni metin")
+    assert c.session.corrected_text == ""
+
+
+def test_apply_edit_updates_session_in_result(ctl, qtbot):
+    c, *_ = ctl
+    c.toggle()
+    c.toggle()
+    qtbot.waitUntil(lambda: c.state is DictationState.RESULT, timeout=5000)
+    c.apply_edit("Merhaba dünya, düzenlendi.")
+    assert c.session.corrected_text == "Merhaba dünya, düzenlendi."
+
+
+def test_apply_edit_emits_edit_learned_when_changed(ctl, qtbot):
+    c, *_ = ctl
+    c.toggle()
+    c.toggle()
+    qtbot.waitUntil(lambda: c.state is DictationState.RESULT, timeout=5000)
+    changes = []
+    c.edit_learned.connect(changes.append)
+    c.apply_edit("Merhaba dünyalar.")
+    assert len(changes) == 1 and len(changes[0]) > 0
+
+
+def test_apply_edit_no_signal_when_unchanged(ctl, qtbot):
+    c, *_ = ctl
+    c.toggle()
+    c.toggle()
+    qtbot.waitUntil(lambda: c.state is DictationState.RESULT, timeout=5000)
+    changes = []
+    c.edit_learned.connect(changes.append)
+    c.apply_edit(c.session.corrected_text)
+    assert changes == []
+
+
+def test_profile_overrides_mode_and_tags_session(ctl, qtbot):
+    c, rec, stt, llm = ctl
+    results = []
+    c.result_ready.connect(results.append)
+    profile = AppProfile(name="Terminal", match="wt", mode="translate")
+    c.toggle(profile=profile)
+    assert c.session.mode == "translate" and c.session.profile == "Terminal"
+    c.toggle(profile=profile)
+    qtbot.waitUntil(lambda: c.state is DictationState.RESULT, timeout=3000)
+    assert results == ["Hello world."]
+
+
+def test_profile_llm_disabled_skips_correction(ctl, qtbot):
+    c, rec, stt, llm = ctl
+    profile = AppProfile(name="Terminal", match="wt", llm_enabled=False)
+    states = []
+    c.state_changed.connect(states.append)
+    c.toggle(profile=profile)
+    c.toggle(profile=profile)
+    qtbot.waitUntil(lambda: c.state is DictationState.RESULT, timeout=3000)
+    assert DictationState.CORRECTING not in states
+    assert c.session.corrected_text == "merhaba dünya"
+    assert llm.calls == []
+
+
+def test_profile_with_default_mode_does_not_override_explicit_mode(ctl, qtbot):
+    c, rec, stt, llm = ctl
+    profile = AppProfile(name="Terminal", match="wt", mode="translate")
+    c.toggle("prompt", profile=profile)
+    assert c.session.mode == "prompt"
+    c.toggle("prompt", profile=profile)
+    qtbot.waitUntil(lambda: c.state is DictationState.RESULT, timeout=3000)
+
+
+def test_transcribe_file_ignores_stale_active_profile(qtbot):
+    profile = AppProfile(name="Terminal", match="wt", llm_enabled=False)
+    rec, stt, llm = FakeRecorder(), FakeStt(), FakeLlm()
+    c = DictationController(
+        Settings(),
+        recorder=rec,
+        stt=stt,
+        llm=llm,
+        pool=QThreadPool(),
+        audio_loader=lambda path: np.ones(16000, dtype=np.float32),
+    )
+    c.toggle(profile=profile)
+    c.cancel()
+    c.transcribe_file("/tmp/x.wav")
+    qtbot.waitUntil(lambda: c.state is DictationState.RESULT, timeout=3000)
+    assert c.session.corrected_text == "Merhaba dünya."
+    assert llm.calls != []
+
+
+def _live_chunk_settings(live_chunk_s=1.0, live_max_chunk_s=45.0):
+    s = Settings()
+    return s.model_copy(
+        update={
+            "stt": s.stt.model_copy(
+                update={"live_chunk_s": live_chunk_s, "live_max_chunk_s": live_max_chunk_s}
+            )
+        }
+    )
+
+
+class SequentialStt(FakeStt):
+    """Ardışık çağrılarda sırayla farklı metinler döndürür (canlı-parça testleri için)."""
+
+    def __init__(self, texts):
+        super().__init__(texts[0] if texts else "")
+        self._texts = list(texts)
+        self.calls: list[str] = []
+
+    def transcribe(self, audio, language=None, **kwargs):
+        self.calls.append(kwargs.get("previous_text", ""))
+        return TranscriptResult(self._texts.pop(0), "tr", 1.0, ())
+
+
+def test_controller_configures_recorder_chunking_on_init():
+    rec = FakeRecorder()
+    DictationController(Settings(), recorder=rec, stt=FakeStt(), llm=FakeLlm(), pool=QThreadPool())
+    assert rec.chunking == (20.0, 45.0)
+
+
+def test_update_settings_reconfigures_recorder_chunking():
+    rec = FakeRecorder()
+    c = DictationController(
+        Settings(), recorder=rec, stt=FakeStt(), llm=FakeLlm(), pool=QThreadPool()
+    )
+    c.update_settings(_live_chunk_settings(live_chunk_s=5.0))
+    assert rec.chunking == (5.0, 45.0)
+
+
+def test_live_chunk_s_zero_uses_single_pass_path(qtbot):
+    rec, stt, llm = FakeRecorder(), FakeStt(), FakeLlm()
+    c = DictationController(
+        _live_chunk_settings(live_chunk_s=0), recorder=rec, stt=stt, llm=llm, pool=QThreadPool()
+    )
+    partials = []
+    c.partial_text.connect(partials.append)
+    c.toggle()
+    c.toggle()
+    qtbot.waitUntil(lambda: c.state is DictationState.RESULT, timeout=3000)
+    assert partials == []
+    assert c.session.raw_text == "merhaba dünya"
+
+
+def test_live_chunking_joins_partial_texts_in_order(qtbot):
+    rec = FakeRecorder()
+    stt = SequentialStt(["Birinci parça.", "İkinci parça.", "Üçüncü parça."])
+    llm = FakeLlm()
+    c = DictationController(
+        _live_chunk_settings(), recorder=rec, stt=stt, llm=llm, pool=QThreadPool()
+    )
+    partials = []
+    c.partial_text.connect(partials.append)
+    c.toggle()
+    rec.chunk_ready.emit(np.ones(1600, dtype=np.float32) * 0.1)
+    qtbot.waitUntil(lambda: len(partials) == 1, timeout=3000)
+    rec.chunk_ready.emit(np.ones(1600, dtype=np.float32) * 0.1)
+    qtbot.waitUntil(lambda: len(partials) == 2, timeout=3000)
+    assert partials == ["Birinci parça.", "Birinci parça. İkinci parça."]
+    c.toggle()  # durdur: kuyruktaki son parça da aynı yolla gönderilir
+    qtbot.waitUntil(lambda: c.state is DictationState.RESULT, timeout=3000)
+    assert c.session.raw_text == "Birinci parça. İkinci parça. Üçüncü parça."
+    assert stt.calls == ["", "Birinci parça.", "Birinci parça. İkinci parça."]
+
+
+def test_chunk_ready_ignored_when_not_recording(qtbot):
+    rec, stt, llm = FakeRecorder(), FakeStt(), FakeLlm()
+    c = DictationController(
+        _live_chunk_settings(), recorder=rec, stt=stt, llm=llm, pool=QThreadPool()
+    )
+    partials = []
+    c.partial_text.connect(partials.append)
+    rec.chunk_ready.emit(np.ones(1600, dtype=np.float32) * 0.1)
+    qtbot.wait(200)
+    assert partials == []
+
+
+def test_live_chunk_error_sets_idle_and_emits_error(qtbot):
+    class FailingStt(FakeStt):
+        def transcribe(self, audio, language=None, **kwargs):
+            raise RuntimeError("çözümleme koptu")
+
+    rec = FakeRecorder()
+    c = DictationController(
+        _live_chunk_settings(),
+        recorder=rec,
+        stt=FailingStt(),
+        llm=FakeLlm(),
+        pool=QThreadPool(),
+    )
+    errors = []
+    c.error.connect(errors.append)
+    c.toggle()
+    rec.chunk_ready.emit(np.ones(1600, dtype=np.float32) * 0.1)
+    qtbot.waitUntil(lambda: c.state is DictationState.IDLE, timeout=3000)
+    assert errors and "çözümleme koptu" in errors[-1]

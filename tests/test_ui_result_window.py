@@ -1,4 +1,4 @@
-from PySide6.QtCore import QObject, Signal
+from PySide6.QtCore import QMimeData, QObject, QUrl, Signal
 
 from dikte.core.state import DictationState, Session
 from dikte.llm.tasks import Change
@@ -35,12 +35,13 @@ def test_session_fills_panes_and_changes(qtbot):
     s = Session(
         raw_text="hava çuk güzel",
         corrected_text="Hava çok güzel.",
-        changes=(Change("çuk", "çok", "yazım"),),
+        changes=(Change("çuk", "çok", "yazım", 5, 8),),
     )
     c.session_updated.emit(s)
     assert w.raw_pane.text() == "hava çuk güzel"
     assert w.corrected_pane.text() == "Hava çok güzel."
-    assert w.changes_list.count() == 1 and "çuk" in w.changes_list.item(0).text()
+    sel = w.corrected_pane.editor.extraSelections()
+    assert len(sel) == 1 and sel[0].cursor.selectedText() == "çok"
 
 
 def test_translate_button_sends_current_corrected_text(qtbot):
@@ -51,6 +52,21 @@ def test_translate_button_sends_current_corrected_text(qtbot):
     assert c.translations == ["Merhaba dünya.\nElle eklendi."]
     assert w.output_pane.title_label.text() == "İngilizce Çeviri"
     assert not w.translate_btn.isEnabled()  # bekleme sırasında kilit
+
+
+def test_translate_mode_session_auto_fills_output_without_pending(qtbot):
+    """Çeviri kısayoluyla gelen sonuç, pencere içi düğmeye basılmasa da çıkış paneline yazılır."""
+    w, c = make(qtbot)
+    c.session_updated.emit(Session(mode="translate", corrected_text="a", translation="b"))
+    assert w.output_pane.text() == "b"
+    assert w.output_pane.title_label.text() == "İngilizce Çeviri"
+
+
+def test_prompt_mode_session_auto_fills_output_without_pending(qtbot):
+    w, c = make(qtbot)
+    c.session_updated.emit(Session(mode="prompt", corrected_text="a", enhanced_prompt="# Goal"))
+    assert w.output_pane.text() == "# Goal"
+    assert w.output_pane.title_label.text() == "Agent Prompt (EN)"
 
 
 def test_enhance_button_sends_text_and_result_fills_output(qtbot):
@@ -112,18 +128,23 @@ def test_window_raised_when_setting_enabled(qtbot):
     qtbot.waitUntil(lambda: w.isVisible(), timeout=1000)
 
 
-def test_identical_changes_are_hidden(qtbot):
+def test_changes_without_offsets_are_not_highlighted(qtbot):
+    """Eski kayıtlardaki (offset'siz) Change'ler vurgu üretmez, yalnızca sessizce yok sayılır."""
     w, c = make(qtbot)
     c.session_updated.emit(
-        Session(
-            changes=(
-                Change("a", "a", "noktalama"),
-                Change(" boşluk ", "boşluk", "boşluk"),
-                Change("promt", "prompt", "yazım"),
-            )
-        )
+        Session(corrected_text="Hava çok güzel.", changes=(Change("çuk", "çok", "yazım"),))
     )
-    assert w.changes_list.count() == 1
+    assert w.corrected_pane.editor.extraSelections() == []
+
+
+def test_output_pane_hidden_until_needed(qtbot):
+    w, c = make(qtbot)
+    w.show()
+    assert not w.output_pane.isVisible()
+    c.session_updated.emit(Session(raw_text="a", corrected_text="A."))
+    assert not w.output_pane.isVisible()
+    w._on_translate()
+    assert w.output_pane.isVisible()
 
 
 def test_status_bar_shows_duration_and_word_count(qtbot):
@@ -168,6 +189,14 @@ def test_status_info_label_shows_model_and_llm(qtbot):
     w.set_status_info("large-v3-turbo", "float16", "qwen3.5:4b")
     text = w.status_info.text()
     assert "large-v3-turbo" in text and "float16" in text and "qwen3.5:4b" in text
+
+
+def test_status_info_uses_system_palette_not_hardcoded_gray(qtbot):
+    from PySide6.QtGui import QPalette
+
+    w, _ = make(qtbot)
+    assert "#888" not in w.status_info.styleSheet()
+    assert w.status_info.foregroundRole() == QPalette.ColorRole.PlaceholderText
 
 
 def test_history_action_toggles_dock(qtbot):
@@ -227,3 +256,164 @@ def test_new_request_after_history_load_is_shown_again(qtbot):
     w._start_pending("translation", "İngilizce Çeviri")
     c.session_updated.emit(Session(id=c.session.id, raw_text="canlı", translation="yeni"))
     assert w.output_pane.text() == "yeni"
+
+
+def test_editing_corrected_text_emits_debounced_text_edited(qtbot):
+    w, c = make(qtbot)
+    c.session_updated.emit(Session(raw_text="a", corrected_text="Merhaba."))
+    w.corrected_pane.editor.setPlainText("Merhaba dünya.")
+    with qtbot.waitSignal(w.text_edited, timeout=2000) as blocker:
+        pass
+    assert blocker.args == ["Merhaba dünya."]
+
+
+def test_programmatic_session_update_does_not_emit_text_edited(qtbot):
+    w, c = make(qtbot)
+    fired = []
+    w.text_edited.connect(fired.append)
+    c.session_updated.emit(Session(raw_text="a", corrected_text="Merhaba."))
+    qtbot.wait(900)
+    assert fired == []
+
+
+def test_repaste_action_emits_current_corrected_text(qtbot):
+    w, c = make(qtbot)
+    w.corrected_pane.set_text("Yeniden yapıştırılacak metin.")
+    with qtbot.waitSignal(w.repaste_requested) as blocker:
+        w.repaste_action.trigger()
+    assert blocker.args == ["Yeniden yapıştırılacak metin."]
+
+
+def test_show_suggestion_and_add_to_dictionary(qtbot):
+    w, c = make(qtbot)
+    w.show()
+    assert not w.suggest_bar.isVisible()
+    w.show_suggestion("çuk", "çok")
+    assert w.suggest_bar.isVisible()
+    with qtbot.waitSignal(w.dictionary_add_requested) as blocker:
+        w.suggest_add_btn.click()
+    assert blocker.args == ["çuk", "çok"]
+    assert not w.suggest_bar.isVisible()
+
+
+def test_dismiss_suggestion_hides_bar_without_signal(qtbot):
+    w, c = make(qtbot)
+    w.show()
+    w.show_suggestion("çuk", "çok")
+    fired = []
+    w.dictionary_add_requested.connect(lambda *a: fired.append(a))
+    w.suggest_dismiss_btn.click()
+    assert not w.suggest_bar.isVisible()
+    assert fired == []
+
+
+def _shortcut(window, sequence: str):
+    from PySide6.QtGui import QKeySequence, QShortcut
+
+    for sc in window.findChildren(QShortcut):
+        if sc.key() == QKeySequence(sequence):
+            return sc
+    raise AssertionError(f"{sequence} kısayolu bulunamadı")
+
+
+def test_ctrl_comma_triggers_settings(qtbot):
+    w, c = make(qtbot)
+    fired = []
+    w.settings_requested.connect(lambda: fired.append(1))
+    _shortcut(w, "Ctrl+,").activated.emit()
+    assert fired == [1]
+
+
+def test_ctrl_h_toggles_history_panel(qtbot):
+    w, c = make(qtbot)
+    w.show()
+    assert not w.history_panel.isVisible()
+    _shortcut(w, "Ctrl+H").activated.emit()
+    assert w.history_panel.isVisible()
+    _shortcut(w, "Ctrl+H").activated.emit()
+    assert not w.history_panel.isVisible()
+
+
+def test_ctrl_f_opens_history_and_focuses_search(qtbot):
+    w, c = make(qtbot)
+    w.show()
+    qtbot.waitExposed(w)
+    _shortcut(w, "Ctrl+F").activated.emit()
+    assert w.history_panel.isVisible()
+    qtbot.waitUntil(lambda: w.history_panel.search_edit.hasFocus(), timeout=1000)
+
+
+class FakeDropEvent:
+    """Gerçek QDropEvent/QDragEnterEvent bu ortamda acceptProposedAction() ile çöküyor
+    (drag kaynağı olmayan elle oluşturulmuş olaylarda); mantığı gerçek Qt event sınıfı
+    olmadan sınamak için minimal bir sahte kullanılır."""
+
+    def __init__(self, path: str):
+        md = QMimeData()
+        md.setUrls([QUrl.fromLocalFile(path)])
+        self._mime_data = md
+        self._accepted = False
+
+    def mimeData(self):
+        return self._mime_data
+
+    def acceptProposedAction(self):
+        self._accepted = True
+
+    def ignore(self):
+        self._accepted = False
+
+    def isAccepted(self) -> bool:
+        return self._accepted
+
+
+def test_drag_enter_accepts_single_audio_file(qtbot):
+    w, c = make(qtbot)
+    event = FakeDropEvent("/tmp/a.wav")
+    w.dragEnterEvent(event)
+    assert event.isAccepted()
+
+
+def test_drag_enter_rejects_non_audio_file(qtbot):
+    w, c = make(qtbot)
+    event = FakeDropEvent("/tmp/a.txt")
+    w.dragEnterEvent(event)
+    assert not event.isAccepted()
+
+
+def test_drop_emits_file_requested_for_audio_file(qtbot):
+    w, c = make(qtbot)
+    got = []
+    w.file_requested.connect(got.append)
+    event = FakeDropEvent("/tmp/a.wav")
+    w.dropEvent(event)
+    assert got == ["/tmp/a.wav"]
+    assert event.isAccepted()
+
+
+def test_drop_ignores_non_audio_file(qtbot):
+    w, c = make(qtbot)
+    got = []
+    w.file_requested.connect(got.append)
+    event = FakeDropEvent("/tmp/a.txt")
+    w.dropEvent(event)
+    assert got == []
+    assert not event.isAccepted()
+
+
+def test_open_file_action_emits_path_from_injected_dialog(qtbot):
+    w = ResultWindow(file_dialog=lambda *a, **k: ("/tmp/a.wav", "Ses dosyaları"))
+    qtbot.addWidget(w)
+    got = []
+    w.file_requested.connect(got.append)
+    w.open_file_action.trigger()
+    assert got == ["/tmp/a.wav"]
+
+
+def test_open_file_action_does_nothing_when_dialog_cancelled(qtbot):
+    w = ResultWindow(file_dialog=lambda *a, **k: ("", ""))
+    qtbot.addWidget(w)
+    got = []
+    w.file_requested.connect(got.append)
+    w.open_file_action.trigger()
+    assert got == []

@@ -9,6 +9,8 @@ log = logging.getLogger(__name__)
 DEFAULT_NAME = "dikte-single-instance"
 SHOW_MESSAGE = b"show"
 TOGGLE_MESSAGE = b"toggle"
+START_MESSAGE = b"start"
+STOP_MESSAGE = b"stop"
 ACK = b"ok"
 _TIMEOUT_MS = 2000
 
@@ -55,7 +57,9 @@ def send_command(name: str, message: bytes, timeout_ms: int = _TIMEOUT_MS) -> bo
 
 class SingleInstance(QObject):
     activated = Signal()
-    toggle_requested = Signal()
+    toggle_requested = Signal(str)  # mod: "correct" | "translate" | "prompt"
+    start_requested = Signal(str)
+    stop_requested = Signal()
 
     def __init__(self, name: str = DEFAULT_NAME, parent=None):
         super().__init__(parent)
@@ -90,7 +94,11 @@ class SingleInstance(QObject):
         if not payload:
             return
         if payload.startswith(TOGGLE_MESSAGE):
-            self.toggle_requested.emit()
+            self.toggle_requested.emit(_parse_mode(payload, TOGGLE_MESSAGE))
+        elif payload.startswith(START_MESSAGE):
+            self.start_requested.emit(_parse_mode(payload, START_MESSAGE))
+        elif payload.startswith(STOP_MESSAGE):
+            self.stop_requested.emit()
         elif payload.startswith(SHOW_MESSAGE):
             self.activated.emit()
         else:
@@ -98,3 +106,11 @@ class SingleInstance(QObject):
         conn.write(ACK)
         conn.flush()
         conn.disconnectFromServer()
+
+
+def _parse_mode(payload: bytes, prefix: bytes) -> str:
+    """`b"toggle:translate"` → "translate"; salt `b"toggle"` → varsayılan "correct"."""
+    rest = payload[len(prefix) :]
+    if rest.startswith(b":"):
+        return rest[1:].decode("ascii", errors="replace")
+    return "correct"

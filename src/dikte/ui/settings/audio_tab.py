@@ -5,6 +5,7 @@ from collections.abc import Callable
 
 from PySide6.QtWidgets import (
     QComboBox,
+    QDoubleSpinBox,
     QFormLayout,
     QHBoxLayout,
     QMessageBox,
@@ -18,7 +19,7 @@ from dikte.audio.recorder import AudioRecorder
 from dikte.config import Settings
 
 log = logging.getLogger(__name__)
-RESTART_HINT = "Değişiklik uygulamayı yeniden başlatınca etkin olur."
+RESTART_HINT = "Sonraki kayıtta etkin olur."
 
 
 class AudioTab(QWidget):
@@ -56,6 +57,17 @@ class AudioTab(QWidget):
             "0 = sınırsız. Sınır konulursa süre dolunca kayıt otomatik durur ve çözümlenir."
         )
 
+        self.silence_stop_spin = QDoubleSpinBox()
+        self.silence_stop_spin.setRange(0, 30)
+        self.silence_stop_spin.setSingleStep(0.5)
+        self.silence_stop_spin.setSuffix(" sn")
+        self.silence_stop_spin.setSpecialValueText("Kapalı")
+        self.silence_stop_spin.setValue(settings.audio.silence_stop_s)
+        self.silence_stop_spin.setToolTip(
+            "0 = kapalı. Konuşma algılandıktan sonra bu kadar sessizlik geçince kayıt "
+            "otomatik durur ve çözümlenir."
+        )
+
         self.level_bar = QProgressBar()
         self.level_bar.setRange(0, 100)
         self.level_bar.setTextVisible(False)
@@ -70,6 +82,7 @@ class AudioTab(QWidget):
         form = QFormLayout(self)
         form.addRow("Mikrofon", self.device_combo)
         form.addRow("Kayıt süresi sınırı", self.max_seconds_spin)
+        form.addRow("Sessizlikte otomatik durdurma", self.silence_stop_spin)
         form.addRow("Seviye", test_row)
 
     # ---- canlı seviye
@@ -129,6 +142,7 @@ class AudioTab(QWidget):
                     update={
                         "device_index": self.device_combo.currentData(),
                         "max_seconds": self.max_seconds_spin.value(),
+                        "silence_stop_s": self.silence_stop_spin.value(),
                     }
                 )
             }

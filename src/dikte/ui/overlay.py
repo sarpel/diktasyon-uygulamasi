@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from PySide6.QtCore import QElapsedTimer, Qt, QTimer, Signal
 from PySide6.QtGui import QCursor, QGuiApplication
-from PySide6.QtWidgets import QHBoxLayout, QLabel, QPushButton, QWidget
+from PySide6.QtWidgets import QHBoxLayout, QLabel, QPushButton, QVBoxLayout, QWidget
 
 from dikte.core.state import DictationState
 from dikte.ui.waveform import WaveformWidget
@@ -11,6 +11,7 @@ _STATUS = {
     DictationState.TRANSCRIBING: "Yazıya dökülüyor…",
     DictationState.CORRECTING: "Düzeltiliyor…",
 }
+PARTIAL_MAX_CHARS = 70
 
 
 class RecordingOverlay(QWidget):
@@ -20,6 +21,8 @@ class RecordingOverlay(QWidget):
         super().__init__(parent, Qt.Tool | Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint)
         self.setAttribute(Qt.WA_TranslucentBackground)
         self.setAttribute(Qt.WA_ShowWithoutActivating)
+        # Bilerek koyu: yarı saydam, her masaüstü arka planının üzerinde okunaklı kalması gereken
+        # bir HUD panelidir; sistem temasına bağlamak kontrastı öngörülemez kılar.
         self.setStyleSheet(
             "QWidget#panel{background:rgba(20,20,20,225);border-radius:14px;}"
             "QLabel{color:white;font-size:14px;}"
@@ -29,9 +32,8 @@ class RecordingOverlay(QWidget):
         )
         panel = QWidget(self)
         panel.setObjectName("panel")
-        lay = QHBoxLayout(panel)
-        lay.setContentsMargins(16, 10, 16, 10)
-        lay.setSpacing(12)
+        row = QHBoxLayout()
+        row.setSpacing(12)
         self._dot = QLabel("●")
         self._dot.setStyleSheet("color:#E53935;font-size:22px;")
         self._wave = WaveformWidget()
@@ -44,7 +46,15 @@ class RecordingOverlay(QWidget):
         self.cancel_btn.setToolTip("Kaydı iptal et (Esc)")
         self.cancel_btn.clicked.connect(self.cancel_requested)
         for w in (self._dot, self._wave, self._time, self._status, self.cancel_btn):
-            lay.addWidget(w)
+            row.addWidget(w)
+        self._partial = QLabel("")
+        self._partial.setStyleSheet("color:#BBBBBB;font-size:12px;")
+        self._partial.hide()
+        panel_lay = QVBoxLayout(panel)
+        panel_lay.setContentsMargins(16, 10, 16, 10)
+        panel_lay.setSpacing(6)
+        panel_lay.addLayout(row)
+        panel_lay.addWidget(self._partial)
         outer = QHBoxLayout(self)
         outer.setContentsMargins(0, 0, 0, 0)
         outer.addWidget(panel)
@@ -56,6 +66,11 @@ class RecordingOverlay(QWidget):
         self._clock.timeout.connect(self._update_time)
         self._elapsed = QElapsedTimer()
         self._dot_on = True
+        self._error_token = 0
+        self._pending_error_token = 0
+        self._error_timer = QTimer(self)
+        self._error_timer.setSingleShot(True)
+        self._error_timer.timeout.connect(self._on_error_timeout)
 
     # ---- kamu
     def show_recording(self) -> None:
@@ -63,6 +78,8 @@ class RecordingOverlay(QWidget):
         self._wave.show()
         self._time.show()
         self._status.hide()
+        self._partial.setText("")
+        self._partial.hide()
         self._dot.show()
         self._dot_on = True
         self._dot.setVisible(True)
@@ -86,16 +103,50 @@ class RecordingOverlay(QWidget):
         self._place()
         self.show()
 
+    def show_error(self, text: str, ms: int = 2500) -> None:
+        self._blink.stop()
+        self._clock.stop()
+        self._error_timer.stop()
+        self._error_token += 1
+        self._pending_error_token = self._error_token
+        self._dot.setStyleSheet("color:#E53935;font-size:22px;")
+        self._dot.setVisible(True)
+        self._wave.hide()
+        self._time.hide()
+        self._status.setText(f"✗ {text}")
+        self._status.show()
+        self.adjustSize()
+        self._place()
+        self.show()
+        self._error_timer.start(ms)
+
+    def _on_error_timeout(self) -> None:
+        # `self._error_token`, aradan yeni bir on_state(...) veya show_error çağrısıyla
+        # değişmiş olur; bu durumda gizleme atlanır, yeni duruma dokunulmaz.
+        if self._pending_error_token == self._error_token:
+            self.hide_overlay()
+
     def hide_overlay(self) -> None:
         self._blink.stop()
         self._clock.stop()
         self._dot.setStyleSheet("color:#E53935;font-size:22px;")
+        self._partial.setText("")
+        self._partial.hide()
         self.hide()
+
+    def show_partial(self, text: str) -> None:
+        """Kayıt sırasında henüz teslim edilmemiş canlı transkripti dalganın altında gösterir."""
+        truncated = text[-PARTIAL_MAX_CHARS:]
+        if len(text) > PARTIAL_MAX_CHARS:
+            truncated = "…" + truncated
+        self._partial.setText(truncated)
+        self._partial.setVisible(bool(truncated))
 
     def on_buckets(self, buckets) -> None:
         self._wave.push_buckets(tuple(buckets))
 
     def on_state(self, state: DictationState) -> None:
+        self._error_token += 1  # bekleyen hata gizleme zamanlayıcısını geçersiz kılar
         if state is DictationState.RECORDING:
             self.show_recording()
         elif state in _STATUS:

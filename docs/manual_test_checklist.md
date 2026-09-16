@@ -52,6 +52,16 @@
 - [ ] LLM tekrar açıldığında uygulama yeniden başlatılmadan çalışır (yeniden başlatma uyarısı çıkmaz).
 - [ ] `keep_alive` = 0 iken istek bittikten sonra `ollama ps` modeli listeden düşürür (VRAM boşalır).
 
+## Yeniden başlatma gerektirmeyen ayarlar
+
+- [ ] Ayarlar → Konuşma Tanıma'da model veya hassasiyet değiştirip kaydedince uygulama
+      yeniden başlatılmaz; bir sonraki dikte modeli arka planda yeniden yükler.
+- [ ] Süren bir dikte varken model değiştirilip kaydedilirse bilgilendirme mesajı çıkar
+      ("Model değişikliği süren iş bittikten sonra..."); iş bitince Ayarlar tekrar
+      kaydedilince model yeniden yüklenir.
+- [ ] Ayarlar → Ses'te mikrofon değiştirilince süren kayıt etkilenmez, bir sonraki kayıt
+      yeni cihazı kullanır.
+
 ## İptal
 
 - [ ] Kayıt sürerken `Esc` (Windows'ta global): overlay kapanır, durum boşa döner, tepside "İptal edildi" bildirimi çıkar.
@@ -98,3 +108,42 @@
 - [ ] "Bilinen uydurma metinleri ele" kapalıyken sessizlikten gelen metin görünüyor (karşılaştırma).
 - [ ] "Bugün toplantıda altyazı ekleme özelliğini konuştuk" cümlesi **elenmiyor** (yanlış pozitif yok).
 - [ ] VAD kapalıyken uzun kayıt hata vermiyor (toplu çözümleme otomatik devre dışı kalıyor).
+
+## Canlı çözümleme
+
+- [ ] Ayarlar → Konuşma Tanıma → "Canlı çözümleme parça süresi" varsayılan (20 sn) iken ~2 dk
+      sürekli konuşulan bir dikte yapılır: overlay'de dalganın altında kayıt sürerken canlı
+      transkript (son ~70 karakter) beliriyor ve konuştukça güncelleniyor.
+- [ ] Kayıt durdurulunca bekleme süresi kısa kalıyor (tüm 2 dk'nın sonda tek seferde
+      çözümlenmesini beklemek yerine, yalnızca son küçük parça bekleniyor).
+- [ ] Sonuç metni eksiksiz ve parça sınırlarında kelime/cümle kopması yok.
+- [ ] Parça süresi `0`'a (Kapalı) çekilince davranış eskisi gibi: overlay'de canlı metin
+      görünmüyor, kayıt bitince tek seferde çözümleniyor.
+- [ ] Kısa bir dikte (birkaç saniye, parça süresinden kısa) normal çalışıyor — canlı çözümleme
+      hiç tetiklenmese de sonuç eksiksiz geliyor.
+
+## Bas-konuş / tıkla-aç (Windows)
+
+- [ ] Kısayolu 1 sn basılı tut → bırakınca çözümleme başlıyor (bas-konuş).
+- [ ] Kısayola kısa basıp bırak → normal aç/kapat gibi davranıyor (tıkla-aç).
+- [ ] Ayarlar → Genel → "Bas-konuş" kapatılınca kısayol her zaman aç/kapat olarak çalışıyor.
+
+## Özel sözlük
+
+- [ ] Ayarlar → Sözlük'e "Kubernetes" (yanlış biçim: "kuber netes") eklenip kaydedilince,
+      diktede "kuber netes" denince sonuçta "Kubernetes" çıkıyor (LLM kapalıyken bile).
+- [ ] Sözlükteki terimler LLM açıkken düzeltme kalitesini gözle görülür şekilde artırıyor
+      (ör. nadir özel adlar artık yanlış tahmin edilmiyor).
+- [ ] Boş terimli bir satırla kaydetmeye çalışınca "Sözlükte boş terim var" hatası çıkıyor.
+
+## Elle düzenleme ve yeniden yapıştırma
+
+- [ ] Sonuç penceresinde düzeltilmiş metni değiştirip 800 ms bekleyince düzenleme geçmişteki
+      kayda yansıyor (geçmiş kaydı büyümüyor, aynı satır güncelleniyor).
+- [ ] Araç çubuğu → "Yeniden yapıştır" (Ctrl+Enter): pencere gizlenip metin tekrar aktif
+      pencereye yapıştırılıyor.
+- [ ] Tek kelimelik bir düzeltme yapılınca (ör. "çuk" → "çok") alt çubukta "Sözlüğe ekle" önerisi
+      çıkıyor; "Sözlüğe ekle" tıklanınca terim Ayarlar → Sözlük'e ekleniyor.
+- [ ] "Yok say" tıklanınca öneri çubuğu kapanıyor, sözlüğe hiçbir şey eklenmiyor.
+- [ ] Ayarlar → Genel → "Elle düzeltmelerden tek kelimelik sözlük önerisi çıkar" kapatılınca
+      öneri çubuğu hiç görünmüyor.
