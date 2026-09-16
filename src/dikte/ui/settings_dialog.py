@@ -20,6 +20,8 @@ log = logging.getLogger(__name__)
 _PROXIED = {
     "general": (
         "hotkey_edit",
+        "hotkey_translate_edit",
+        "hotkey_prompt_edit",
         "autostart_check",
         "auto_copy_check",
         "auto_paste_check",

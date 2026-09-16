@@ -202,6 +202,46 @@ def test_llm_disabled_rejects_translation(qtbot):
     assert llm.calls == []
 
 
+def test_translate_mode_chains_translation_and_emits_it(ctl, qtbot):
+    c, rec, stt, llm = ctl
+    results = []
+    c.result_ready.connect(results.append)
+    c.toggle("translate")
+    assert c.state is DictationState.RECORDING and rec.started
+    c.toggle("translate")
+    qtbot.waitUntil(lambda: c.state is DictationState.RESULT, timeout=3000)
+    assert results == ["Hello world."]
+    assert c.session.mode == "translate"
+    assert c.session.translation == "Hello world."
+
+
+def test_prompt_mode_chains_enhanced_prompt_and_emits_it(ctl, qtbot):
+    c, rec, stt, llm = ctl
+    results = []
+    c.result_ready.connect(results.append)
+    c.toggle("prompt")
+    c.toggle("prompt")
+    qtbot.waitUntil(lambda: c.state is DictationState.RESULT, timeout=3000)
+    assert results and results[0].startswith("# Goal")
+    assert c.session.mode == "prompt"
+    assert c.session.enhanced_prompt.startswith("# Goal")
+
+
+def test_mode_with_llm_disabled_emits_error_and_raw(qtbot):
+    settings, _ = _disabled_llm_settings()
+    rec, stt, llm = FakeRecorder(), FakeStt(), FakeLlm()
+    c = DictationController(settings, recorder=rec, stt=stt, llm=llm, pool=QThreadPool())
+    errors, results = [], []
+    c.error.connect(errors.append)
+    c.result_ready.connect(results.append)
+    c.toggle("prompt")
+    c.toggle("prompt")
+    qtbot.waitUntil(lambda: c.state is DictationState.RESULT, timeout=3000)
+    assert errors and "LLM kapalı" in errors[-1]
+    assert results == ["merhaba dünya"]
+    assert llm.calls == []
+
+
 def test_set_llm_replaces_provider(qtbot):
     c = DictationController(
         Settings(), recorder=FakeRecorder(), stt=FakeStt(), llm=FakeLlm(), pool=QThreadPool()

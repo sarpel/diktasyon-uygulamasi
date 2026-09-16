@@ -324,6 +324,22 @@ def test_push_to_talk_round_trip(dlg):
     assert dlg.result_settings().push_to_talk is False
 
 
+def test_mode_hotkeys_default_to_empty(dlg):
+    s = dlg.result_settings()
+    assert s.hotkey_translate == "" and s.hotkey_prompt == ""
+
+
+def test_translate_hotkey_round_trip(dlg):
+    dlg.hotkey_translate_edit.setKeySequence(QKeySequence("Ctrl+Alt+T"))
+    assert dlg.result_settings().hotkey_translate == "ctrl+alt+t"
+
+
+def test_same_hotkey_for_two_modes_blocks_accept(dlg):
+    dlg.hotkey_translate_edit.setKeySequence(dlg.hotkey_edit.keySequence())
+    dlg.accept()
+    assert "farklı olmalı" in dlg.error_label.text()
+
+
 def test_open_location_failure_warns_user(dlg, monkeypatch):
     """QDesktopServices açamazsa sessiz kalınmaz; yolu içeren bir uyarı gösterilir."""
     from dikte.ui.settings import about_tab as about_mod

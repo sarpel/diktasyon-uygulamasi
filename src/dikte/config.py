@@ -99,6 +99,8 @@ class AudioSettings(BaseModel):
 class Settings(BaseModel):
     model_config = ConfigDict(frozen=True)
     hotkey: str = "ctrl+alt+space"
+    hotkey_translate: str = ""  # boş = kapalı
+    hotkey_prompt: str = ""  # boş = kapalı
     autostart: bool = True
     close_after_copy: bool = False
     history_limit: int = Field(default=200, ge=0)

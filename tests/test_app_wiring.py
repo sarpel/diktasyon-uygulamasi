@@ -28,6 +28,14 @@ def test_build_app_returns_wired_context(ctx):
     assert "Ctrl+Alt+Space" in ctx.tray.toolTip()
 
 
+def test_build_app_creates_mode_hotkeys(ctx):
+    from dikte.platform.hotkey import GlobalHotkey
+
+    assert isinstance(ctx.hotkey_translate, GlobalHotkey)
+    assert isinstance(ctx.hotkey_prompt, GlobalHotkey)
+    assert ctx.hotkey_translate._id != ctx.hotkey._id != ctx.hotkey_prompt._id
+
+
 def test_state_changes_propagate_to_tray_and_overlay(ctx, qtbot):
     ctx.controller.state_changed.emit(DictationState.RECORDING)
     assert ctx.overlay.isVisible()
@@ -178,6 +186,27 @@ def test_hotkey_arms_detector_on_windows(ctx, monkeypatch):
     ctx.hold.arm = lambda vk: armed.append(vk)
     app_mod._on_hotkey(ctx)
     assert armed == [app_mod.parse_hotkey(ctx.settings.hotkey).vk]
+
+
+def test_translate_hotkey_toggles_in_translate_mode_when_ptt_off(ctx):
+    ctx.settings = ctx.settings.model_copy(
+        update={"push_to_talk": False, "hotkey_translate": "ctrl+alt+t"}
+    )
+    app_mod._on_hotkey(ctx, "translate")
+    assert ctx.controller.state is DictationState.RECORDING
+    assert ctx.controller.session.mode == "translate"
+
+
+def test_translate_hotkey_arms_detector_with_own_vk_on_windows(ctx, monkeypatch):
+    monkeypatch.setattr(app_mod.sys, "platform", "win32")
+    ctx.settings = ctx.settings.model_copy(
+        update={"push_to_talk": True, "hotkey_translate": "ctrl+alt+t"}
+    )
+    armed = []
+    ctx.hold.arm = lambda vk: armed.append(vk)
+    app_mod._on_hotkey(ctx, "translate")
+    assert armed == [app_mod.parse_hotkey("ctrl+alt+t").vk]
+    assert ctx.hold_mode == "translate"
 
 
 def test_apply_hotkey_falls_back_to_cli_label_off_windows(ctx, monkeypatch):

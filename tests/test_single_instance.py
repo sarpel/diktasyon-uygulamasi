@@ -33,9 +33,19 @@ def test_toggle_message_emits_toggle_requested(qtbot):
     inst = SingleInstance(name)
     assert inst.try_acquire() is True
     toggles = []
-    inst.toggle_requested.connect(lambda: toggles.append(True))
+    inst.toggle_requested.connect(toggles.append)
     assert send_command(name, TOGGLE_MESSAGE) is True
-    assert toggles == [True]
+    assert toggles == ["correct"]
+
+
+def test_toggle_message_with_mode_suffix_carries_mode(qtbot):
+    name = f"dikte-test-{uuid.uuid4().hex[:8]}"
+    inst = SingleInstance(name)
+    assert inst.try_acquire() is True
+    toggles = []
+    inst.toggle_requested.connect(toggles.append)
+    assert send_command(name, TOGGLE_MESSAGE + b":translate") is True
+    assert toggles == ["translate"]
 
 
 def test_start_message_emits_start_requested(qtbot):
@@ -43,9 +53,9 @@ def test_start_message_emits_start_requested(qtbot):
     inst = SingleInstance(name)
     assert inst.try_acquire() is True
     starts = []
-    inst.start_requested.connect(lambda: starts.append(True))
-    assert send_command(name, START_MESSAGE) is True
-    assert starts == [True]
+    inst.start_requested.connect(starts.append)
+    assert send_command(name, START_MESSAGE + b":prompt") is True
+    assert starts == ["prompt"]
 
 
 def test_stop_message_emits_stop_requested(qtbot):

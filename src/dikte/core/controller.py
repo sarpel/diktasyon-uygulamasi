@@ -113,19 +113,21 @@ class DictationController(QObject):
         self.cancelled.emit()
 
     @Slot()
-    def toggle(self) -> None:
+    @Slot(str)
+    def toggle(self, mode: str = "correct") -> None:
         if self._state in (DictationState.IDLE, DictationState.RESULT):
-            self.start_recording()
+            self.start_recording(mode)
         elif self._state is DictationState.RECORDING:
             self.stop_recording()
         else:
             log.debug("toggle yok sayıldı (durum: %s)", self._state)
 
     @Slot()
-    def start_recording(self) -> None:
+    @Slot(str)
+    def start_recording(self, mode: str = "correct") -> None:
         """Bas-konuş: tuş basılı tutulmaya başlayınca çağrılır."""
         if self._state in (DictationState.IDLE, DictationState.RESULT):
-            self._start_recording()
+            self._start_recording(mode)
         else:
             log.debug("start_recording yok sayıldı (durum: %s)", self._state)
 
@@ -164,8 +166,8 @@ class DictationController(QObject):
         self.error.emit("LLM kapalı; Ayarlar'dan metin düzeltmeyi açın.")
         return False
 
-    def _start_recording(self) -> None:
-        self._session = Session()
+    def _start_recording(self, mode: str = "correct") -> None:
+        self._session = Session(mode=mode)
         self.session_updated.emit(self._session)
         self._recorder.start()
         self._set_state(DictationState.RECORDING)
@@ -187,7 +189,7 @@ class DictationController(QObject):
         self._update_session(raw_text=result.text, duration_s=result.duration_s)
         if not self._settings.llm.enabled:  # LLM kapalı: ham metin sonuç olarak gösterilir
             self._update_session(corrected_text=result.text)
-            self._finish_result()
+            self._after_correction()
             return
         self._set_state(DictationState.CORRECTING)
         raw = result.text
@@ -197,6 +199,46 @@ class DictationController(QObject):
         self._update_session(
             corrected_text=res.corrected_text or self._session.raw_text, changes=res.changes
         )
+        self._after_correction()
+
+    def _after_correction(self) -> None:
+        """Düzeltme (veya LLM-kapalı kısayolu) bittikten sonra moda göre devam eder:
+        correct ise doğrudan sonuç, translate/prompt ise düzeltilmiş metin üzerinden
+        ikinci bir LLM çağrısı yapılır."""
+        mode = self._session.mode
+        if mode == "correct":
+            self._finish_result()
+            return
+        if not self._settings.llm.enabled:
+            self.error.emit(
+                "LLM kapalı; çeviri/prompt için Ayarlar'dan açın. Düzeltilmemiş metin yapıştırıldı."
+            )
+            self._finish_result()
+            return
+        corrected = self._session.corrected_text
+        if mode == "translate":
+            self._spawn(
+                lambda: tasks.translate(self._llm, corrected),
+                self._on_translated,
+                self._on_mode_error,
+            )
+        else:  # "prompt"
+            self._spawn(
+                lambda: tasks.enhance_prompt(self._llm, corrected),
+                self._on_prompted,
+                self._on_mode_error,
+            )
+
+    def _on_translated(self, text: str) -> None:
+        self._update_session(translation=text)
+        self._finish_result()
+
+    def _on_prompted(self, text: str) -> None:
+        self._update_session(enhanced_prompt=text)
+        self._finish_result()
+
+    def _on_mode_error(self, msg: str) -> None:
+        self.error.emit(f"Çeviri/prompt başarısız, düzeltilmiş metin gösteriliyor: {msg}")
         self._finish_result()
 
     def _on_llm_error(self, msg: str) -> None:
@@ -208,7 +250,7 @@ class DictationController(QObject):
         """RESULT durumuna geçer, ardından metni teslim için yayınlar (sıra önemlidir:
         geçmişe yazma ve pencere güncellemesi yapıştırmadan önce tamamlanmalı)."""
         self._set_state(DictationState.RESULT)
-        self.result_ready.emit(self._session.corrected_text)
+        self.result_ready.emit(self._session.output_text)
 
     def _on_stt_error(self, msg: str) -> None:
         self.error.emit(f"Transkripsiyon başarısız: {msg}")

@@ -14,7 +14,7 @@ from dikte.audio.recorder import AudioRecorder
 from dikte.config import Settings, load_settings, save_settings
 from dikte.core.controller import DictationController
 from dikte.core.history import History, HistoryError
-from dikte.core.state import BUSY_STATES, DictationState
+from dikte.core.state import BUSY_STATES, MODES, DictationState
 from dikte.llm import LlmError, make_provider
 from dikte.logging_setup import setup_logging
 from dikte.platform.autostart import set_autostart
@@ -53,10 +53,13 @@ class AppContext:
     window: ResultWindow
     hotkey: GlobalHotkey
     cancel_hotkey: GlobalHotkey
+    hotkey_translate: GlobalHotkey
+    hotkey_prompt: GlobalHotkey
     history: History
     stt: FasterWhisperEngine
     sounds: SoundPlayer
     hold: HoldDetector
+    hold_mode: str = "correct"  # hold'un hangi kısayol için silahlandığını taşır
 
 
 class _NullLlm:
@@ -78,7 +81,7 @@ def _make_llm(settings: Settings):
 
 
 def _safe_hotkey(settings: Settings) -> Settings:
-    """config.json'daki kısayol bozuksa açılışta çökmek yerine varsayılana döner."""
+    """config.json'daki kısayol(lar) bozuksa açılışta çökmek yerine varsayılana/kapalıya döner."""
     try:
         parse_hotkey(settings.hotkey)
     except HotkeyParseError as exc:
@@ -89,7 +92,16 @@ def _safe_hotkey(settings: Settings) -> Settings:
             exc,
             fallback,
         )
-        return settings.model_copy(update={"hotkey": fallback})
+        settings = settings.model_copy(update={"hotkey": fallback})
+    for field_name in ("hotkey_translate", "hotkey_prompt"):
+        spec = getattr(settings, field_name)
+        if not spec:
+            continue
+        try:
+            parse_hotkey(spec)
+        except HotkeyParseError as exc:
+            log.error("config'teki %s geçersiz (%s): %s; kapatılıyor", field_name, spec, exc)
+            settings = settings.model_copy(update={field_name: ""})
     return settings
 
 
@@ -106,6 +118,8 @@ def build_app(settings: Settings) -> AppContext:
     )
     hotkey = GlobalHotkey()
     cancel_hotkey = GlobalHotkey(hotkey_id=HOTKEY_ID + 1)  # iptal için ikinci kayıt
+    hotkey_translate = GlobalHotkey(hotkey_id=HOTKEY_ID + 2)
+    hotkey_prompt = GlobalHotkey(hotkey_id=HOTKEY_ID + 3)
     tray = TrayIcon(parse_hotkey(settings.hotkey).label)
     overlay = RecordingOverlay()
     window = ResultWindow()
@@ -120,6 +134,8 @@ def build_app(settings: Settings) -> AppContext:
         window,
         hotkey,
         cancel_hotkey,
+        hotkey_translate,
+        hotkey_prompt,
         history,
         stt,
         sounds,
@@ -147,8 +163,10 @@ def _wire(ctx: AppContext) -> None:
     c.error.connect(ctx.overlay.show_error)
     c.state_changed.connect(lambda s: s is DictationState.RESULT and _store_session(ctx))
     ctx.hotkey.activated.connect(lambda: _on_hotkey(ctx))
-    ctx.hold.tapped.connect(c.toggle)
-    ctx.hold.held.connect(c.start_recording)
+    ctx.hotkey_translate.activated.connect(lambda: _on_hotkey(ctx, "translate"))
+    ctx.hotkey_prompt.activated.connect(lambda: _on_hotkey(ctx, "prompt"))
+    ctx.hold.tapped.connect(lambda: c.toggle(ctx.hold_mode))
+    ctx.hold.held.connect(lambda: c.start_recording(ctx.hold_mode))
     ctx.hold.released.connect(c.stop_recording)
     ctx.tray.toggle_requested.connect(c.toggle)
     ctx.tray.show_requested.connect(
@@ -244,19 +262,34 @@ def _warn_if_downgraded(ctx: AppContext) -> None:
     )
 
 
-def _on_hotkey(ctx: AppContext) -> None:
+def _hotkey_spec(ctx: AppContext, mode: str) -> str:
+    return {
+        "correct": ctx.settings.hotkey,
+        "translate": ctx.settings.hotkey_translate,
+        "prompt": ctx.settings.hotkey_prompt,
+    }[mode]
+
+
+def _on_hotkey(ctx: AppContext, mode: str = "correct") -> None:
     """Kısayola basılınca çağrılır: bas-konuş yalnızca Windows'ta anlamlıdır."""
     if not ctx.settings.push_to_talk or sys.platform != "win32":
-        ctx.controller.toggle()
+        ctx.controller.toggle(mode)
         return
-    ctx.hold.arm(parse_hotkey(ctx.settings.hotkey).vk)
+    ctx.hold_mode = mode
+    ctx.hold.arm(parse_hotkey(_hotkey_spec(ctx, mode)).vk)
+
+
+def _mode_hotkeys(ctx: AppContext) -> tuple[tuple[GlobalHotkey, str, str], ...]:
+    return (
+        (ctx.hotkey_translate, ctx.settings.hotkey_translate, "translate"),
+        (ctx.hotkey_prompt, ctx.settings.hotkey_prompt, "prompt"),
+    )
 
 
 def _apply_hotkey(ctx: AppContext) -> None:
     if ctx.hotkey.register(ctx.settings.hotkey):
         ctx.tray.set_hotkey_label(ctx.hotkey.label or ctx.settings.hotkey)
-        return
-    if sys.platform == "win32":
+    elif sys.platform == "win32":
         ctx.tray.notify(
             APP_NAME,
             f"Kısayol kaydedilemedi: {ctx.settings.hotkey}. "
@@ -264,9 +297,25 @@ def _apply_hotkey(ctx: AppContext) -> None:
             critical=True,
         )
         ctx.tray.set_hotkey_label(ctx.settings.hotkey)
-        return
-    log.info("global kısayol bu platformda yok; '%s' komutuna tuş bağlayın", CLI_TOGGLE_HINT)
-    ctx.tray.set_hotkey_label(CLI_TOGGLE_HINT)
+    else:
+        log.info("global kısayol bu platformda yok; '%s' komutuna tuş bağlayın", CLI_TOGGLE_HINT)
+        ctx.tray.set_hotkey_label(CLI_TOGGLE_HINT)
+    _apply_mode_hotkeys(ctx)
+
+
+def _apply_mode_hotkeys(ctx: AppContext) -> None:
+    """Çeviri/prompt kısayolları isteğe bağlıdır; boşsa kapalı kalır, kaydedilemezse
+    yalnızca günlüğe düşer (ana kısayol gibi kritik değildir, tepsiyi meşgul etmez)."""
+    mode_labels = {"translate": "", "prompt": ""}
+    for hk, spec, name in _mode_hotkeys(ctx):
+        hk.unregister()
+        if not spec or sys.platform != "win32":
+            continue
+        if hk.register(spec):
+            mode_labels[name] = hk.label
+        else:
+            log.warning("%s kısayolu kaydedilemedi: %s", name, spec)
+    ctx.tray.set_mode_labels(mode_labels["translate"], mode_labels["prompt"])
 
 
 def _run_command(message: bytes) -> int:
@@ -278,9 +327,13 @@ def _run_command(message: bytes) -> int:
     return 0
 
 
-def _run_toggle() -> int:
+def _with_mode(base: bytes, mode: str) -> bytes:
+    return base if mode == "correct" else base + b":" + mode.encode("ascii")
+
+
+def _run_toggle(mode: str = "correct") -> int:
     """Çalışan örneğe kayıt başlat/durdur komutu gönderir."""
-    return _run_command(TOGGLE_MESSAGE)
+    return _run_command(_with_mode(TOGGLE_MESSAGE, mode))
 
 
 def _open_settings(ctx: AppContext) -> None:
@@ -316,6 +369,8 @@ def _open_settings(ctx: AppContext) -> None:
 def _quit(ctx: AppContext) -> None:
     ctx.hotkey.unregister()
     ctx.cancel_hotkey.unregister()
+    ctx.hotkey_translate.unregister()
+    ctx.hotkey_prompt.unregister()
     ctx.tray.hide()
     QApplication.instance().quit()
 
@@ -338,12 +393,18 @@ def main(argv: list[str] | None = None) -> int:
         action="store_true",
         help="çalışan örnekte kaydı durdurur (Linux'ta bas-konuş simülasyonu: tuş bırakılınca)",
     )
+    parser.add_argument(
+        "--mode",
+        choices=MODES,
+        default="correct",
+        help="--toggle/--start ile birlikte: sonucu doğrudan bu modda üretir (varsayılan: correct)",
+    )
     parser.add_argument("--version", action="version", version=f"{APP_NAME} {__version__}")
     args = parser.parse_args(argv)
     if args.toggle:
-        return _run_toggle()
+        return _run_toggle(args.mode)
     if args.start:
-        return _run_command(START_MESSAGE)
+        return _run_command(_with_mode(START_MESSAGE, args.mode))
     if args.stop:
         return _run_command(STOP_MESSAGE)
 
@@ -362,7 +423,12 @@ def main(argv: list[str] | None = None) -> int:
 
     settings = load_settings()
     ctx = build_app(settings)
-    if ctx.settings.hotkey != settings.hotkey:  # bozuk kısayol düzeltildi, kalıcı hâle getir
+    hotkeys_sanitized = (
+        ctx.settings.hotkey != settings.hotkey
+        or ctx.settings.hotkey_translate != settings.hotkey_translate
+        or ctx.settings.hotkey_prompt != settings.hotkey_prompt
+    )
+    if hotkeys_sanitized:  # bozuk kısayol(lar) düzeltildi, kalıcı hâle getir
         save_settings(ctx.settings)
     single.activated.connect(ctx.tray.show_requested)
     single.toggle_requested.connect(ctx.controller.toggle)
@@ -373,6 +439,13 @@ def main(argv: list[str] | None = None) -> int:
         ctx.tray.notify(
             APP_NAME,
             f"Ayarlardaki kısayol geçersizdi; '{ctx.settings.hotkey}' kullanılıyor.",
+        )
+    if ctx.settings.hotkey_translate != settings.hotkey_translate or (
+        ctx.settings.hotkey_prompt != settings.hotkey_prompt
+    ):
+        ctx.tray.notify(
+            APP_NAME,
+            "Ayarlardaki çeviri/prompt kısayollarından biri geçersizdi; kapatıldı.",
         )
     _apply_hotkey(ctx)
     set_autostart(settings.autostart)
