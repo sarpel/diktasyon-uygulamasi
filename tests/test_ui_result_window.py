@@ -68,7 +68,7 @@ def test_result_state_shows_window_when_raise_enabled(qtbot):
     w, c = make(qtbot)
     w.raise_on_result = True
     c.state_changed.emit(DictationState.RESULT)
-    assert w.isVisible()
+    qtbot.waitUntil(lambda: w.isVisible(), timeout=1000)
 
 
 def test_close_hides_instead_of_quitting(qtbot):
@@ -109,7 +109,7 @@ def test_window_raised_when_setting_enabled(qtbot):
     w.raise_on_result = True
     w.hide()
     c.state_changed.emit(DictationState.RESULT)
-    assert w.isVisible()
+    qtbot.waitUntil(lambda: w.isVisible(), timeout=1000)
 
 
 def test_identical_changes_are_hidden(qtbot):
@@ -131,6 +131,36 @@ def test_status_bar_shows_duration_and_word_count(qtbot):
     c.session_updated.emit(Session(corrected_text="bir iki üç", duration_s=12.4))
     msg = w.statusBar().currentMessage()
     assert "12 sn" in msg and "3 kelime" in msg
+
+
+def test_session_stats_survive_translation_post_processing(qtbot):
+    w, c = make(qtbot)
+    w._start_pending("translation", "x")
+    c.session_updated.emit(
+        Session(corrected_text="bir iki üç", duration_s=12.4, translation="one two three")
+    )
+    msg = w.statusBar().currentMessage()
+    assert "12 sn" in msg and "3 kelime" in msg
+
+
+def test_session_stats_survive_enhanced_prompt_post_processing(qtbot):
+    w, c = make(qtbot)
+    w._start_pending("enhanced_prompt", "x")
+    c.session_updated.emit(
+        Session(corrected_text="bir iki üç", duration_s=12.4, enhanced_prompt="# Goal")
+    )
+    msg = w.statusBar().currentMessage()
+    assert "12 sn" in msg and "3 kelime" in msg
+
+
+def test_result_state_activation_is_deferred_so_paste_target_is_preserved(qtbot):
+    w, c = make(qtbot)
+    w.raise_on_result = True
+    w.hide()
+    c.state_changed.emit(DictationState.RESULT)
+    # Aktivasyon 0 ms'ye ertelenir; qtbot.waitUntil senkron olmayan gösterimi bekler.
+    qtbot.waitUntil(lambda: w.isVisible(), timeout=1000)
+    assert w.isVisible()
 
 
 def test_status_info_label_shows_model_and_llm(qtbot):
@@ -178,3 +208,22 @@ def test_record_action_label_follows_state(qtbot):
     assert w.record_action.text() == "Durdur" and w.cancel_action.isEnabled()
     c.state_changed.emit(DictationState.IDLE)
     assert w.record_action.text() == "Kaydet" and not w.cancel_action.isEnabled()
+
+
+def test_late_llm_result_does_not_overwrite_loaded_history(qtbot):
+    """Geçmiş yüklendikten sonra gelen (iptal edilmiş) çeviri sonucu ekranı ezmemeli."""
+    w, c = make(qtbot)
+    c.session = Session(raw_text="canlı", corrected_text="Canlı.")
+    w._start_pending("translation", "İngilizce Çeviri")
+    w.load_session(Session(raw_text="eski", corrected_text="Eski."))
+    c.session_updated.emit(Session(id=c.session.id, raw_text="canlı", translation="late"))
+    assert w.raw_pane.text() == "eski" and w.output_pane.text() == ""
+
+
+def test_new_request_after_history_load_is_shown_again(qtbot):
+    w, c = make(qtbot)
+    c.session = Session(raw_text="canlı")
+    w.load_session(Session(raw_text="eski", corrected_text="Eski."))
+    w._start_pending("translation", "İngilizce Çeviri")
+    c.session_updated.emit(Session(id=c.session.id, raw_text="canlı", translation="yeni"))
+    assert w.output_pane.text() == "yeni"

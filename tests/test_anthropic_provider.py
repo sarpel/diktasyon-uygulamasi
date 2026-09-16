@@ -55,3 +55,24 @@ def test_missing_api_key_raises(monkeypatch):
     monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
     with pytest.raises(LlmError, match="ANTHROPIC_API_KEY"):
         AnthropicProvider(LlmSettings(provider="anthropic"), lambda key, timeout: None)
+
+
+def test_missing_optional_key_is_sent_as_empty_not_env_fallback(monkeypatch):
+    """required_key=False iken SDK ANTHROPIC_API_KEY'e düşmemeli: özel uç nokta anahtarı görmesin."""
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "gercek-anahtar")
+    captured = {}
+
+    def factory(api_key, timeout, base_url=None):
+        captured["api_key"] = api_key
+        return FakeClient([])
+
+    AnthropicProvider(
+        LlmSettings(),
+        factory,
+        base_url="http://localhost:8080",
+        model="m",
+        api_key_env="",
+        required_key=False,
+        name="custom-anthropic",
+    )
+    assert captured["api_key"] == ""

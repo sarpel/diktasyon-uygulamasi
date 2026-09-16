@@ -154,8 +154,9 @@ def test_pipeline_is_created_once():
 @pytest.mark.gpu
 def test_real_silence_is_rejected_before_the_model_runs():
     """Sessiz kayıt Whisper'a hiç gitmez; aksi hâlde uydurma altyazı metni üretirdi."""
-    eng = FasterWhisperEngine(SttSettings())
-    eng.load()
+    eng = FasterWhisperEngine(
+        SttSettings(), model_factory=lambda *a, **kw: pytest.fail("sessizlikte model yüklenmemeli")
+    )
     with pytest.raises(SttError, match="Konuşma algılanmadı"):
         eng.transcribe(np.zeros(16000, dtype=np.float32))
 
@@ -193,6 +194,11 @@ def make_engine_with_types(supported, settings=None):
         speech_probe=lambda audio, s: True,
     )
     return eng, created
+
+
+def test_active_model_reflects_construction_settings():
+    eng, _ = make_engine(SttSettings(model="large-v3"))
+    assert eng.active_model == "large-v3"
 
 
 def test_configured_compute_type_is_used_when_supported():

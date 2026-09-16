@@ -7,7 +7,15 @@ from importlib.metadata import PackageNotFoundError, version
 
 from PySide6.QtCore import QUrl
 from PySide6.QtGui import QDesktopServices
-from PySide6.QtWidgets import QFormLayout, QHBoxLayout, QLabel, QPushButton, QVBoxLayout, QWidget
+from PySide6.QtWidgets import (
+    QFormLayout,
+    QHBoxLayout,
+    QLabel,
+    QMessageBox,
+    QPushButton,
+    QVBoxLayout,
+    QWidget,
+)
 
 from dikte import APP_NAME, __version__, paths
 from dikte.config import Settings
@@ -66,9 +74,18 @@ class AboutTab(QWidget):
         lay.addLayout(buttons)
         lay.addStretch(1)
 
-    @staticmethod
-    def _open(path) -> None:
-        QDesktopServices.openUrl(QUrl.fromLocalFile(str(path)))
+    def _open(self, path) -> None:
+        try:
+            opened = QDesktopServices.openUrl(QUrl.fromLocalFile(str(path)))
+        except Exception:  # masaüstü servisi yoksa uygulama durmamalı
+            log.exception("konum açılamadı: %s", path)
+            opened = False
+        if not opened:
+            QMessageBox.warning(
+                self,
+                APP_NAME,
+                f"{path} açılamadı. Konumu dosya yöneticinizden elle açabilirsiniz.",
+            )
 
     def validate(self) -> str | None:
         return None

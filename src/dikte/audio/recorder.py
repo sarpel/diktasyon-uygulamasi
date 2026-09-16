@@ -94,9 +94,12 @@ class AudioRecorder(QObject):
             if frame is not None:
                 self._chunks.append(frame)
                 self._total += frame.shape[0]
+                # Sınırı tam dolduran blok da kaydı hemen bitirir (bir blok gecikmeden).
+                if 0 < limit <= self._total and not self._limit_hit:
+                    first_hit, self._limit_hit = True, True
+        if first_hit:
+            self.limit_reached.emit()
         if frame is None:
-            if first_hit:
-                self.limit_reached.emit()
             return
         self.level_changed.emit(rms(frame))
         self.buckets_changed.emit(bucketize(frame, BUCKETS))

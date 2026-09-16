@@ -12,12 +12,14 @@ from dikte.llm.provider import LlmError
 log = logging.getLogger(__name__)
 
 
-def _default_client_factory(api_key: str):
+def _default_client_factory(api_key: str, timeout_s: float):
     try:
         from google import genai
+        from google.genai import types
     except ImportError as exc:
         raise LlmError('Gemini SDK kurulu değil: uv pip install -e ".[gemini]"') from exc
-    return _GenaiAdapter(genai.Client(api_key=api_key))
+    http_options = types.HttpOptions(timeout=int(timeout_s * 1000))  # SDK milisaniye ister
+    return _GenaiAdapter(genai.Client(api_key=api_key, http_options=http_options))
 
 
 class _GenaiAdapter:
@@ -40,7 +42,7 @@ class GeminiProvider:
     def __init__(self, settings: LlmSettings, client_factory: Callable | None = None):
         self._settings = settings
         api_key = read_api_key(settings.gemini_api_key_env, required=True)
-        self._client = (client_factory or _default_client_factory)(api_key)
+        self._client = (client_factory or _default_client_factory)(api_key, settings.timeout_s)
 
     def complete(
         self,

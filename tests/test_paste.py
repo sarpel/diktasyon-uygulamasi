@@ -1,4 +1,5 @@
 import subprocess
+from types import SimpleNamespace
 
 import pytest
 
@@ -32,7 +33,11 @@ def test_linux_sender_prefers_xdotool(monkeypatch):
         paste.shutil, "which", lambda n: "/usr/bin/xdotool" if n == "xdotool" else None
     )
     ran = []
-    monkeypatch.setattr(paste.subprocess, "run", lambda cmd, **k: ran.append(cmd))
+    monkeypatch.setattr(
+        paste.subprocess,
+        "run",
+        lambda cmd, **k: ran.append(cmd) or SimpleNamespace(returncode=0),
+    )
     assert paste.send_paste_keystroke() is True
     assert ran and ran[0][0] == "/usr/bin/xdotool"
 
@@ -41,7 +46,11 @@ def test_linux_falls_back_to_wtype(monkeypatch):
     monkeypatch.setattr(paste.sys, "platform", "linux")
     monkeypatch.setattr(paste.shutil, "which", lambda n: "/usr/bin/wtype" if n == "wtype" else None)
     ran = []
-    monkeypatch.setattr(paste.subprocess, "run", lambda cmd, **k: ran.append(cmd))
+    monkeypatch.setattr(
+        paste.subprocess,
+        "run",
+        lambda cmd, **k: ran.append(cmd) or SimpleNamespace(returncode=0),
+    )
     assert paste.send_paste_keystroke() is True
     assert ran[0][:2] == ["/usr/bin/wtype", "-M"]
 
@@ -80,3 +89,24 @@ def test_timeout_is_handled(monkeypatch):
 def test_foreground_window_id_is_none_on_linux(monkeypatch):
     monkeypatch.setattr(paste.sys, "platform", "linux")
     assert paste.foreground_window_id() is None
+
+
+def test_failing_xdotool_falls_back_to_wtype(monkeypatch):
+    monkeypatch.setattr(paste.sys, "platform", "linux")
+    monkeypatch.setattr(paste.shutil, "which", lambda n: f"/usr/bin/{n}")
+    ran = []
+
+    def run(cmd, **kwargs):
+        ran.append(cmd[0])
+        return SimpleNamespace(returncode=0 if cmd[0].endswith("wtype") else 1)
+
+    monkeypatch.setattr(paste.subprocess, "run", run)
+    assert paste.send_paste_keystroke() is True
+    assert ran == ["/usr/bin/xdotool", "/usr/bin/wtype"]
+
+
+def test_all_tools_failing_returns_false(monkeypatch):
+    monkeypatch.setattr(paste.sys, "platform", "linux")
+    monkeypatch.setattr(paste.shutil, "which", lambda n: f"/usr/bin/{n}")
+    monkeypatch.setattr(paste.subprocess, "run", lambda cmd, **k: SimpleNamespace(returncode=1))
+    assert paste.send_paste_keystroke() is False

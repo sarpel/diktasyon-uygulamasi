@@ -12,6 +12,10 @@ from dikte.llm.tasks import Change
 log = logging.getLogger(__name__)
 
 
+class HistoryError(RuntimeError):
+    """Geçmiş dosyası yazılamadı; çağıran katman kullanıcıya ne yapacağını söylemeli."""
+
+
 def _to_json(s: Session) -> str:
     d = asdict(s)
     d["created_at"] = s.created_at.isoformat()
@@ -61,5 +65,9 @@ class History:
         try:
             tmp.write_text(content, encoding="utf-8")
             tmp.replace(self._path)
-        except OSError:
+        except OSError as exc:
             log.exception("geçmiş yazılamadı: %s", self._path)
+            raise HistoryError(
+                f"Geçmiş kaydedilemedi ({self._path}): {exc}. Diskte yer olduğunu ve "
+                "klasöre yazma izniniz olduğunu kontrol edin."
+            ) from exc

@@ -20,7 +20,9 @@ def stub_sdks(monkeypatch):
     monkeypatch.setattr(
         anthropic_mod, "_default_client_factory", lambda *a, **k: SimpleNamespace(messages=None)
     )
-    monkeypatch.setattr(gemini_mod, "_default_client_factory", lambda api_key: SimpleNamespace())
+    monkeypatch.setattr(
+        gemini_mod, "_default_client_factory", lambda api_key, timeout_s: SimpleNamespace()
+    )
     monkeypatch.setenv("OPENAI_API_KEY", "k")
     monkeypatch.setenv("ANTHROPIC_API_KEY", "k")
     monkeypatch.setenv("GEMINI_API_KEY", "k")

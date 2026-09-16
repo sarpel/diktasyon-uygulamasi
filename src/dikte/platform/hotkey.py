@@ -6,7 +6,7 @@ import sys
 
 from PySide6.QtCore import QAbstractNativeEventFilter, QCoreApplication, QObject, Signal
 
-from dikte.platform.hotkey_parse import HotkeySpec, parse_hotkey
+from dikte.platform.hotkey_parse import HotkeyParseError, HotkeySpec, parse_hotkey
 
 if sys.platform == "win32":  # MSG yapısı yalnızca Windows'ta gerekli
     import ctypes.wintypes
@@ -40,9 +40,14 @@ class GlobalHotkey(QObject):
         self._filter: _Filter | None = None
         self._spec: HotkeySpec | None = None
 
-    def register(self, spec: str) -> bool:
+    def register(self, spec: str, *, allow_bare: bool = False) -> bool:
+        """allow_bare yalnızca uygulamanın ürettiği tek tuşluk kısayollar (iptal için Esc) içindir."""
+        try:
+            parsed = parse_hotkey(spec, allow_bare=allow_bare)
+        except HotkeyParseError as exc:
+            log.error("kısayol ayrıştırılamadı (%s): %s", spec, exc)
+            return False
         self.unregister()
-        parsed = parse_hotkey(spec, allow_bare=True)
         if sys.platform != "win32":
             log.warning("Global kısayol yalnızca Windows'ta desteklenir (%s)", parsed.label)
             return False

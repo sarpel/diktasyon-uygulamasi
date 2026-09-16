@@ -73,3 +73,10 @@ def test_warm_up_error_is_logged_not_raised(caplog):
     p = OllamaProvider(LlmSettings(), client_factory=lambda host, timeout: c)
     p.warm_up()
     assert "ısındırma" in caplog.text.lower()
+
+
+def test_unload_requests_zero_keep_alive():
+    client = FakeClient()
+    provider = OllamaProvider(LlmSettings(model="m"), client_factory=lambda host, timeout: client)
+    provider.unload()
+    assert client.calls[-1]["keep_alive"] == 0 and client.calls[-1]["model"] == "m"

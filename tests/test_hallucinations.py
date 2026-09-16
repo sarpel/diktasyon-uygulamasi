@@ -28,6 +28,8 @@ def test_known_phrases_detected(text):
         "Teşekkürler, raporu aldım.",
         "Videoyu izlediğiniz için teşekkürler diyen bir e-posta taslağı hazırla lütfen.",
         "Abone sayısını raporda göster.",
+        "Lütfen altyazı ekle",
+        "Çeviriyi gönder",
     ],
 )
 def test_real_sentences_kept(text):
@@ -56,3 +58,21 @@ def test_filter_keeps_everything_when_threshold_is_high():
 def test_filter_returns_new_tuple():
     segments = (Segment(0, 1, "Merhaba", no_speech_prob=0.0),)
     assert filter_segments(segments, no_speech_threshold=0.6) is not segments
+
+
+def test_filter_keeps_high_confidence_segment_despite_no_speech_prob():
+    segments = (
+        Segment(0, 1, "gerçek konuşma", no_speech_prob=0.95, avg_logprob=-0.2),
+    )
+    kept = filter_segments(
+        segments, no_speech_threshold=0.6, log_prob_threshold=-1.0
+    )
+    assert [s.text for s in kept] == ["gerçek konuşma"]
+
+
+def test_filter_drops_high_no_speech_prob_when_log_prob_threshold_is_none():
+    segments = (
+        Segment(0, 1, "gürültü", no_speech_prob=0.95, avg_logprob=-0.2),
+    )
+    kept = filter_segments(segments, no_speech_threshold=0.6)
+    assert kept == ()

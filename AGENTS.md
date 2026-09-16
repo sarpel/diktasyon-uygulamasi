@@ -26,9 +26,9 @@ uv pip install -e ".[dev]"                          # Windows'ta ".[dev,cuda]"
 .venv/bin/python -m pytest -m gpu                   # CUDA gerektirir
 .venv/bin/ruff check src tests scripts              # CI ile aynı kapsam
 .venv/bin/ruff format --check src tests scripts
-python -m dikte                                     # uygulamayı çalıştır
-python scripts/download_models.py                   # Whisper modelini indirir
-python scripts/eval_llm.py --models <model…>        # Türkçe LLM benchmark'ı
+.venv/bin/python -m dikte                           # uygulamayı çalıştır
+.venv/bin/python scripts/download_models.py         # Whisper modelini indirir
+.venv/bin/python scripts/eval_llm.py --models <model…>   # Türkçe LLM benchmark'ı
 ```
 
 Başsız ortamda Qt testleri `QT_QPA_PLATFORM=offscreen` ister (CI bunu ayarlar).
