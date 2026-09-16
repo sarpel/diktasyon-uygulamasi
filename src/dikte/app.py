@@ -175,7 +175,7 @@ def _wire(ctx: AppContext) -> None:
     c.partial_text.connect(ctx.overlay.show_partial)
     c.state_changed.connect(ctx.tray.set_state)
     c.ready_changed.connect(ctx.tray.set_ready)
-    c.ready_changed.connect(lambda ready: ready and _warn_if_downgraded(ctx))
+    c.ready_changed.connect(lambda ready: _warn_if_downgraded(ctx) if ready else None)
     c.error.connect(lambda m: ctx.tray.notify(APP_NAME, m, critical=True))
     c.error.connect(lambda m: _maybe_show_health_dialog_on_error(ctx, m))
     c.state_changed.connect(ctx.sounds.on_state)
@@ -189,9 +189,7 @@ def _wire(ctx: AppContext) -> None:
     ctx.hold.held.connect(lambda: c.start_recording(ctx.hold_mode, profile=ctx.active_profile))
     ctx.hold.released.connect(c.stop_recording)
     ctx.tray.toggle_requested.connect(c.toggle)
-    ctx.tray.show_requested.connect(
-        lambda: (ctx.window.showNormal(), ctx.window.raise_(), ctx.window.activateWindow())
-    )
+    ctx.tray.show_requested.connect(lambda: _show_window(ctx))
     ctx.tray.settings_requested.connect(lambda: _open_settings(ctx))
     ctx.tray.quit_requested.connect(lambda: _quit(ctx))
     c.cancelled.connect(lambda: ctx.tray.notify(APP_NAME, "İptal edildi"))
@@ -217,6 +215,12 @@ def _wire(ctx: AppContext) -> None:
     c.edit_learned.connect(lambda changes: _suggest(ctx, changes))
     c.ready_changed.connect(lambda ready: ready and _refresh_status_info(ctx))
     _refresh_history(ctx)
+
+
+def _show_window(ctx: AppContext) -> None:
+    ctx.window.showNormal()
+    ctx.window.raise_()
+    ctx.window.activateWindow()
 
 
 def _guard_history(ctx: AppContext, action: Callable[[], None]) -> None:
@@ -512,7 +516,9 @@ def _quit(ctx: AppContext) -> None:
     ctx.hotkey_translate.unregister()
     ctx.hotkey_prompt.unregister()
     ctx.tray.hide()
-    QApplication.instance().quit()
+    app = QApplication.instance()
+    if app is not None:
+        app.quit()
 
 
 def main(argv: list[str] | None = None) -> int:

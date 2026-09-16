@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import logging
 from collections.abc import Callable
+from typing import Any
 
 from dikte.config import LlmSettings
 from dikte.llm.keys import read_api_key
@@ -16,10 +17,9 @@ def _default_client_factory(api_key: str | None, timeout: float, base_url: str |
         from anthropic import Anthropic
     except ImportError as exc:
         raise LlmError('Anthropic SDK kurulu değil: uv pip install -e ".[anthropic]"') from exc
-    kwargs = {"api_key": api_key, "timeout": timeout}
     if base_url:
-        kwargs["base_url"] = base_url
-    return Anthropic(**kwargs)
+        return Anthropic(api_key=api_key, timeout=timeout, base_url=base_url)
+    return Anthropic(api_key=api_key, timeout=timeout)
 
 
 class AnthropicProvider:
@@ -43,7 +43,7 @@ class AnthropicProvider:
         # ANTHROPIC_AUTH_TOKEN'a düşer ve kullanıcının gerçek anahtarını özel uç noktaya yollar.
         api_key = read_api_key(api_key_env, required=required_key) or ""
         factory = client_factory or _default_client_factory
-        self._client = (
+        self._client: Any = (
             factory(api_key, settings.timeout_s, base_url)
             if base_url
             else factory(api_key, settings.timeout_s)

@@ -41,7 +41,7 @@ def package_version(name: str) -> str:
 
 def _default_gpu_probe() -> str:
     try:
-        import ctranslate2
+        import ctranslate2  # type: ignore[import-not-found]
 
         if ctranslate2.get_cuda_device_count() < 1:
             return "CUDA aygıtı bulunamadı"

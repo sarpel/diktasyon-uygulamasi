@@ -117,7 +117,11 @@ class TrayIcon(QSystemTrayIcon):
             self.set_ready(self._ready)
 
     def notify(self, title: str, msg: str, critical: bool = False) -> None:
-        icon = QSystemTrayIcon.Critical if critical else QSystemTrayIcon.Information
+        icon = (
+            QSystemTrayIcon.MessageIcon.Critical
+            if critical
+            else QSystemTrayIcon.MessageIcon.Information
+        )
         self.showMessage(title, msg, icon, 4000)
 
     def _refresh_tooltip(self, status: str) -> None:
@@ -125,5 +129,8 @@ class TrayIcon(QSystemTrayIcon):
         self.setToolTip("\n".join(lines))
 
     def _on_activated(self, reason) -> None:
-        if reason in (QSystemTrayIcon.Trigger, QSystemTrayIcon.DoubleClick):
+        if reason in (
+            QSystemTrayIcon.ActivationReason.Trigger,
+            QSystemTrayIcon.ActivationReason.DoubleClick,
+        ):
             self.show_requested.emit()

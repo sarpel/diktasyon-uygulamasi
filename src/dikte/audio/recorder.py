@@ -16,7 +16,7 @@ BUCKETS = 32
 
 
 def _default_stream_factory(**kwargs):
-    import sounddevice as sd
+    import sounddevice as sd  # type: ignore[import-not-found]
 
     return sd.InputStream(**kwargs)
 
@@ -73,7 +73,7 @@ class AudioRecorder(QObject):
         self._chunk_samples = 0
         self._speech_seen, self._silent_samples, self._silence_hit = False, 0, False
         try:
-            self._stream = self._factory(
+            stream = self._factory(
                 callback=self._on_audio,
                 samplerate=self._settings.sample_rate,
                 channels=1,
@@ -81,7 +81,8 @@ class AudioRecorder(QObject):
                 device=self._settings.device_index,
                 blocksize=BLOCK_SIZE,
             )
-            self._stream.start()
+            stream.start()
+            self._stream = stream
         except Exception as exc:  # sounddevice.PortAudioError vb.
             self._stream = None
             log.exception("mikrofon açılamadı")
@@ -106,7 +107,7 @@ class AudioRecorder(QObject):
     def _on_audio(self, indata, frames, time_info, status) -> None:
         if status:
             log.warning("audio status: %s", status)
-        frame = np.asarray(indata, dtype=np.float32).reshape(-1)
+        frame: np.ndarray | None = np.asarray(indata, dtype=np.float32).reshape(-1)
         limit = self._settings.max_seconds * self._settings.sample_rate  # 0 = sınırsız
         first_hit = False
         level = 0.0
