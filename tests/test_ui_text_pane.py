@@ -1,5 +1,6 @@
 from PySide6.QtWidgets import QApplication
 
+from dikte.llm.diff import Change
 from dikte.ui.text_pane import TextPane
 
 
@@ -33,3 +34,14 @@ def test_busy_disables_copy(qtbot):
     qtbot.addWidget(p)
     p.set_busy(True)
     assert not p.copy_btn.isEnabled()
+
+
+def test_highlights_follow_change_offsets(qtbot):
+    p = TextPane("Düzeltilmiş")
+    qtbot.addWidget(p)
+    p.set_text("Hava çok güzel.")
+    p.set_highlights((Change("çuk", "çok", "değiştirildi", 5, 8),))
+    sel = p.editor.extraSelections()
+    assert len(sel) == 1 and sel[0].cursor.selectedText() == "çok"
+    p.set_text("başka")
+    assert p.editor.extraSelections() == []

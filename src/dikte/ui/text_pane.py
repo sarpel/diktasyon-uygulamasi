@@ -1,17 +1,25 @@
 from __future__ import annotations
 
-from PySide6.QtCore import Qt, Signal
+from collections.abc import Sequence
+
+from PySide6.QtCore import QEvent, Qt, Signal
+from PySide6.QtGui import QColor, QTextCursor
 from PySide6.QtWidgets import (
     QApplication,
     QHBoxLayout,
     QLabel,
     QPlainTextEdit,
+    QTextEdit,
     QToolButton,
+    QToolTip,
     QVBoxLayout,
     QWidget,
 )
 
+from dikte.llm.diff import Change
 from dikte.ui.icons import copy_icon
+
+HIGHLIGHT_COLOR = QColor(255, 235, 59, 90)
 
 
 class TextPane(QWidget):
@@ -28,6 +36,9 @@ class TextPane(QWidget):
         self.copy_btn.clicked.connect(self._copy)
         self.editor = QPlainTextEdit()
         self.editor.setPlaceholderText("…")
+        self.editor.setMouseTracking(True)
+        self.editor.viewport().installEventFilter(self)
+        self._changes: tuple[Change, ...] = ()
         header = QHBoxLayout()
         header.addWidget(self.title_label)
         header.addStretch(1)
@@ -40,6 +51,35 @@ class TextPane(QWidget):
     def set_text(self, text: str) -> None:
         if self.editor.toPlainText() != text:
             self.editor.setPlainText(text)
+        self.set_highlights(())
+
+    def set_highlights(self, changes: Sequence[Change]) -> None:
+        self._changes = tuple(c for c in changes if c.start >= 0 and c.end > c.start)
+        selections = []
+        for c in self._changes:
+            cursor = QTextCursor(self.editor.document())
+            cursor.setPosition(c.start)
+            cursor.setPosition(c.end, QTextCursor.KeepAnchor)
+            sel = QTextEdit.ExtraSelection()
+            sel.cursor = cursor
+            sel.format.setBackground(HIGHLIGHT_COLOR)
+            selections.append(sel)
+        self.editor.setExtraSelections(selections)
+
+    def eventFilter(self, obj, event):
+        if obj is self.editor.viewport() and event.type() == QEvent.ToolTip:
+            offset = self.editor.cursorForPosition(event.pos()).position()
+            for c in self._changes:
+                if c.start <= offset < c.end:
+                    QToolTip.showText(
+                        event.globalPos(),
+                        f"‘{c.original}’ → ‘{c.replacement}’ ({c.reason})",
+                        self.editor,
+                    )
+                    return True
+            QToolTip.hideText()
+            return True
+        return super().eventFilter(obj, event)
 
     def text(self) -> str:
         return self.editor.toPlainText()

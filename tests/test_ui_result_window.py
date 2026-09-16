@@ -35,12 +35,13 @@ def test_session_fills_panes_and_changes(qtbot):
     s = Session(
         raw_text="hava çuk güzel",
         corrected_text="Hava çok güzel.",
-        changes=(Change("çuk", "çok", "yazım"),),
+        changes=(Change("çuk", "çok", "yazım", 5, 8),),
     )
     c.session_updated.emit(s)
     assert w.raw_pane.text() == "hava çuk güzel"
     assert w.corrected_pane.text() == "Hava çok güzel."
-    assert w.changes_list.count() == 1 and "çuk" in w.changes_list.item(0).text()
+    sel = w.corrected_pane.editor.extraSelections()
+    assert len(sel) == 1 and sel[0].cursor.selectedText() == "çok"
 
 
 def test_translate_button_sends_current_corrected_text(qtbot):
@@ -127,18 +128,23 @@ def test_window_raised_when_setting_enabled(qtbot):
     qtbot.waitUntil(lambda: w.isVisible(), timeout=1000)
 
 
-def test_identical_changes_are_hidden(qtbot):
+def test_changes_without_offsets_are_not_highlighted(qtbot):
+    """Eski kayıtlardaki (offset'siz) Change'ler vurgu üretmez, yalnızca sessizce yok sayılır."""
     w, c = make(qtbot)
     c.session_updated.emit(
-        Session(
-            changes=(
-                Change("a", "a", "noktalama"),
-                Change(" boşluk ", "boşluk", "boşluk"),
-                Change("promt", "prompt", "yazım"),
-            )
-        )
+        Session(corrected_text="Hava çok güzel.", changes=(Change("çuk", "çok", "yazım"),))
     )
-    assert w.changes_list.count() == 1
+    assert w.corrected_pane.editor.extraSelections() == []
+
+
+def test_output_pane_hidden_until_needed(qtbot):
+    w, c = make(qtbot)
+    w.show()
+    assert not w.output_pane.isVisible()
+    c.session_updated.emit(Session(raw_text="a", corrected_text="A."))
+    assert not w.output_pane.isVisible()
+    w._on_translate()
+    assert w.output_pane.isVisible()
 
 
 def test_status_bar_shows_duration_and_word_count(qtbot):
