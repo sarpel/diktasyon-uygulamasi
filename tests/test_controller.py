@@ -335,6 +335,56 @@ def test_stop_recording_while_recording_transcribes(ctl):
     assert c.state is DictationState.TRANSCRIBING and rec.stopped
 
 
+def test_transcribe_file_reaches_result_with_source_path(qtbot):
+    loaded = []
+
+    def loader(path):
+        loaded.append(path)
+        return np.ones(16000, dtype=np.float32)
+
+    c = DictationController(
+        Settings(),
+        recorder=FakeRecorder(),
+        stt=FakeStt(),
+        llm=FakeLlm(),
+        pool=QThreadPool(),
+        audio_loader=loader,
+    )
+    c.transcribe_file("/tmp/a.wav")
+    qtbot.waitUntil(lambda: c.state is DictationState.RESULT, timeout=3000)
+    assert c.session.source_path == "/tmp/a.wav"
+    assert loaded == ["/tmp/a.wav"]
+
+
+def test_transcribe_file_rejected_while_busy(ctl):
+    c, rec, *_ = ctl
+    c.toggle()  # kayıt başlar, meşgul olur
+    errors = []
+    c.error.connect(errors.append)
+    c.transcribe_file("/tmp/a.wav")
+    assert errors == ["Önce süren işi bitirin."]
+    assert c.state is DictationState.RECORDING
+
+
+def test_transcribe_file_error_emits_message(qtbot):
+    def boom(path):
+        raise OSError("bozuk dosya")
+
+    c = DictationController(
+        Settings(),
+        recorder=FakeRecorder(),
+        stt=FakeStt(),
+        llm=FakeLlm(),
+        pool=QThreadPool(),
+        audio_loader=boom,
+    )
+    errors = []
+    c.error.connect(errors.append)
+    c.transcribe_file("/tmp/bad.wav")
+    qtbot.waitUntil(lambda: bool(errors), timeout=3000)
+    assert "Dosya çözümlenemedi" in errors[0]
+
+
 class BlockingStt(FakeStt):
     """transcribe() serbest bırakılana kadar bekler; geç gelen sonucu test etmek için."""
 

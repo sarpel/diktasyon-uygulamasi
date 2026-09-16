@@ -3,6 +3,7 @@ from __future__ import annotations
 from PySide6.QtCore import Qt, QTimer, Signal
 from PySide6.QtGui import QAction, QKeySequence, QPalette, QShortcut
 from PySide6.QtWidgets import (
+    QFileDialog,
     QHBoxLayout,
     QLabel,
     QMainWindow,
@@ -14,15 +15,24 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-EDIT_DEBOUNCE_MS = 800
-
 from dikte.core.state import BUSY_STATES, DictationState, Session
 from dikte.ui.history_panel import HistoryPanel
 from dikte.ui.text_pane import TextPane
 from dikte.ui.toast import Toast
 
+EDIT_DEBOUNCE_MS = 800
 TITLE_TRANSLATION = "İngilizce Çeviri"
 TITLE_PROMPT = "Agent Prompt (EN)"
+AUDIO_EXTENSIONS = (".wav", ".mp3", ".m4a", ".ogg", ".flac", ".webm", ".mp4", ".opus")
+
+
+def _dropped_audio_path(mime_data) -> str | None:
+    """Tam olarak bir yerel ses dosyası sürüklendiyse yolunu döndürür, aksi hâlde None."""
+    urls = mime_data.urls() if mime_data.hasUrls() else []
+    if len(urls) != 1 or not urls[0].isLocalFile():
+        return None
+    path = urls[0].toLocalFile()
+    return path if path.lower().endswith(AUDIO_EXTENSIONS) else None
 
 
 class ResultWindow(QMainWindow):
@@ -32,11 +42,14 @@ class ResultWindow(QMainWindow):
     text_edited = Signal(str)
     repaste_requested = Signal(str)
     dictionary_add_requested = Signal(str, str)
+    file_requested = Signal(str)
 
-    def __init__(self, parent=None):
+    def __init__(self, parent=None, file_dialog=None):
         super().__init__(parent)
         self.setWindowTitle("Dikte")
         self.resize(1100, 620)
+        self.setAcceptDrops(True)
+        self._file_dialog = file_dialog or QFileDialog.getOpenFileName
         self._controller = None
         self._pending: str | None = None  # "translation" | "enhanced_prompt"
         self._ignored_session_id: str | None = None  # geçmiş görüntülenirken geç gelen sonuç
@@ -131,13 +144,21 @@ class ResultWindow(QMainWindow):
         self.repaste_action.setShortcut(QKeySequence("Ctrl+Return"))
         self.repaste_action.setToolTip("Düzeltilmiş metni yeniden yapıştırır (Ctrl+Enter)")
         self.repaste_action.triggered.connect(self._on_repaste)
+        self.open_file_action = QAction("Dosya aç…", self)
+        self.open_file_action.setToolTip("Bir ses dosyasını çözümler")
+        self.open_file_action.triggered.connect(self._open_file)
         self.history_action = QAction("Geçmiş", self)
         self.history_action.setCheckable(True)
         self.history_action.setToolTip("Geçmiş panelini aç / kapat")
         self.history_action.toggled.connect(self._set_history_visible)
         self.settings_action = QAction("Ayarlar…", self)
         self.settings_action.triggered.connect(self.settings_requested)
-        for action in (self.record_action, self.cancel_action, self.repaste_action):
+        for action in (
+            self.record_action,
+            self.cancel_action,
+            self.repaste_action,
+            self.open_file_action,
+        ):
             self.toolbar.addAction(action)
         self.toolbar.addSeparator()
         for action in (self.history_action, self.settings_action):
@@ -260,6 +281,30 @@ class ResultWindow(QMainWindow):
         if text != self._last_shown_text:
             self._last_shown_text = text
             self.text_edited.emit(text)
+
+    def _open_file(self) -> None:
+        path, _selected_filter = self._file_dialog(
+            self,
+            "Ses dosyası aç",
+            "",
+            "Ses dosyaları (*" + " *".join(AUDIO_EXTENSIONS) + ")",
+        )
+        if path:
+            self.file_requested.emit(path)
+
+    def dragEnterEvent(self, event) -> None:
+        if _dropped_audio_path(event.mimeData()) is not None:
+            event.acceptProposedAction()
+        else:
+            event.ignore()
+
+    def dropEvent(self, event) -> None:
+        path = _dropped_audio_path(event.mimeData())
+        if path is not None:
+            self.file_requested.emit(path)
+            event.acceptProposedAction()
+        else:
+            event.ignore()
 
     def _on_repaste(self) -> None:
         text = self.corrected_pane.text()

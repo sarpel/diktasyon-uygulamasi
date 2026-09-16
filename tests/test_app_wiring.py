@@ -362,6 +362,23 @@ def test_result_ready_copies_to_clipboard_and_pastes(ctx, monkeypatch):
     assert len(pasted) == 1
 
 
+def test_file_sourced_result_is_copied_but_not_pasted(ctx, monkeypatch):
+    from PySide6.QtWidgets import QApplication
+
+    ctx.controller._session = Session(source_path="/tmp/a.wav")
+    pasted = []
+    monkeypatch.setattr(app_mod, "paste_active_window", lambda *a, **k: pasted.append(1) or True)
+    ctx.controller.result_ready.emit("Dosyadan gelen metin.")
+    assert QApplication.clipboard().text() == "Dosyadan gelen metin."
+    assert pasted == []
+
+
+def test_window_file_requested_reaches_controller_transcribe_file(ctx):
+    ctx.window.file_requested.emit("/tmp/a.wav")
+    assert ctx.controller.state is DictationState.TRANSCRIBING
+    assert ctx.controller.session.source_path == "/tmp/a.wav"
+
+
 def test_result_ready_respects_auto_paste_off(ctx, monkeypatch):
     ctx.settings = ctx.settings.model_copy(update={"auto_paste": False})
     pasted = []

@@ -216,6 +216,19 @@ virgül/nokta temizlenir):
 Noktalama komutları ("noktalı virgül" gibi) bilinçli olarak desteklenmez — Türkçede bu
 ifadeler gerçek kelime olarak da geçer, yanlışlıkla komut sanılabilir.
 
+#### Ses dosyası çözümleme
+
+Mikrofonla kayıt dışında, hazır bir ses dosyasını da çözümletebilirsiniz:
+
+- Araç çubuğu → **"Dosya aç…"** ile dosya seçin, veya
+- Bir ses dosyasını doğrudan sonuç penceresinin üzerine **sürükleyip bırakın**
+  (`.wav`, `.mp3`, `.m4a`, `.ogg`, `.flac`, `.webm`, `.mp4`, `.opus`).
+
+Süren bir kayıt/çözümleme varsa yeni bir dosya kabul edilmez. Sonuç, ham metin
+çözümleme adımlarının (sözlük kuralları, sesli komutlar, LLM düzeltmesi) hepsinden
+mikrofon kaydındaki gibi geçer; tek fark **panoya kopyalanır ama otomatik yapıştırılmaz**
+(dosyadan gelen sonucun yapıştırılacağı doğal bir hedef pencere yoktur).
+
 ## Geliştirme
 
 ```bash

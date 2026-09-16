@@ -37,6 +37,7 @@ class Session:
     translation: str = ""
     enhanced_prompt: str = ""
     duration_s: float = 0.0
+    source_path: str = ""  # dosyadan çözümlendiyse kaynak dosyanın yolu; mikrofon kaydında boş
 
     def with_(self, **kwargs) -> Session:
         return replace(self, **kwargs)

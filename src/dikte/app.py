@@ -192,6 +192,7 @@ def _wire(ctx: AppContext) -> None:
     ctx.window.record_requested.connect(c.toggle)
     ctx.window.cancel_requested.connect(c.cancel)
     ctx.window.settings_requested.connect(lambda: _open_settings(ctx))
+    ctx.window.file_requested.connect(c.transcribe_file)
     ctx.window.text_edited.connect(c.apply_edit)
     ctx.window.dictionary_add_requested.connect(
         lambda wrong, term: _add_dictionary_entry(ctx, wrong, term)
@@ -309,6 +310,8 @@ def _on_result_ready(ctx: AppContext, text: str) -> None:
     clipboard = QApplication.clipboard()
     previous = clipboard.text() if ctx.settings.restore_clipboard else ""
     clipboard.setText(text)
+    if ctx.controller.session.source_path:
+        return  # dosyadan çözümlenen sonuç yalnızca panoya kopyalanır, yapıştırılmaz
     if not ctx.settings.auto_paste or ctx.window.isActiveWindow():
         return
     own_ids = {int(ctx.window.winId()), int(ctx.overlay.winId())}
