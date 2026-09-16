@@ -55,12 +55,17 @@ def _vad_options(settings: SttSettings) -> dict:
     }
 
 
-def _default_speech_probe(audio: np.ndarray, settings: SttSettings) -> bool:
-    """Kayıtta hiç konuşma var mı? Silero VAD (faster-whisper içinde gömülü) ile bakılır."""
+def _default_speech_probe(audio: np.ndarray, settings: SttSettings) -> list[dict] | bool:
+    """Kayıttaki konuşma aralıkları (örnek cinsinden). Silero VAD (faster-whisper içinde gömülü) ile bulunur.
+
+    Toplu boru hattının kendi kullandığı max_speech_duration_s=30 ile hesaplanır, böylece
+    aynı zaman damgaları hem "hiç konuşma var mı" ön kontrolünde hem de toplu çözümlemede
+    (VAD'i ikinci kez çalıştırmadan) kullanılabilir.
+    """
     from faster_whisper.vad import VadOptions, get_speech_timestamps
 
-    options = VadOptions(**_vad_options(settings))
-    return bool(get_speech_timestamps(audio.astype(np.float32, copy=False), options))
+    options = VadOptions(**_vad_options(settings), max_speech_duration_s=30)
+    return get_speech_timestamps(audio.astype(np.float32, copy=False), options)
 
 
 def _default_pipeline_factory(model):
@@ -97,7 +102,7 @@ class FasterWhisperEngine:
         pipeline_factory: Callable | None = None,
         cuda_probe: Callable[[], int] | None = None,
         supported_types_probe: Callable[[], set[str]] | None = None,
-        speech_probe: Callable[[np.ndarray, SttSettings], bool] | None = None,
+        speech_probe: Callable[[np.ndarray, SttSettings], list[dict] | bool] | None = None,
     ):
         self._settings = settings
         self._factory = model_factory or _default_model_factory
@@ -219,8 +224,12 @@ class FasterWhisperEngine:
             raise SttError("Ses kaydı boş")
         s = self._settings
         # Tamamen sessiz kayıtta Whisper çağrılmaz: uydurma altyazı metni üretmesini engeller.
-        if s.vad_filter and not self._speech_probe(audio, s):
-            raise SttError("Konuşma algılanmadı; mikrofon ve VAD eşiğini kontrol edin")
+        # Sonda toplu boru hattı için yeniden kullanılabilmesi için sonuç saklanır (VAD iki kez çalışmaz).
+        speech: list[dict] | bool = True
+        if s.vad_filter:
+            speech = self._speech_probe(audio, s)
+            if not speech:
+                raise SttError("Konuşma algılanmadı; mikrofon ve VAD eşiğini kontrol edin")
         if not self.is_loaded:
             self.load()
         lang = language or s.language
@@ -241,6 +250,11 @@ class FasterWhisperEngine:
                 if self._use_batching(audio):
                     target = self._get_pipeline()
                     kwargs["batch_size"] = s.batch_size
+                    if isinstance(speech, list):
+                        kwargs["clip_timestamps"] = [
+                            {"start": t["start"] / SAMPLE_RATE, "end": t["end"] / SAMPLE_RATE}
+                            for t in speech
+                        ]
                 else:
                     target = self._model
                     kwargs["condition_on_previous_text"] = True
