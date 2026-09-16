@@ -36,6 +36,12 @@ class GeneralTab(QWidget):
         )
         self.auto_paste_check.setEnabled(settings.auto_copy)
         self.auto_copy_check.toggled.connect(self.auto_paste_check.setEnabled)
+        self.restore_clipboard_check = QCheckBox(
+            "Yapıştırdıktan sonra eski pano içeriğini geri yükle"
+        )
+        self.restore_clipboard_check.setChecked(settings.restore_clipboard)
+        self.restore_clipboard_check.setEnabled(settings.auto_paste)
+        self.auto_paste_check.toggled.connect(self.restore_clipboard_check.setEnabled)
         self.raise_window_check = QCheckBox("Sonuçta pencereyi öne getir")
         self.raise_window_check.setChecked(settings.raise_window_on_result)
         self.close_after_copy_check = QCheckBox("Kopyaladıktan sonra pencereyi gizle")
@@ -54,6 +60,7 @@ class GeneralTab(QWidget):
             self.autostart_check,
             self.auto_copy_check,
             self.auto_paste_check,
+            self.restore_clipboard_check,
             self.raise_window_check,
             self.close_after_copy_check,
             self.sounds_check,
@@ -74,6 +81,7 @@ class GeneralTab(QWidget):
                 "autostart": self.autostart_check.isChecked(),
                 "auto_copy": self.auto_copy_check.isChecked(),
                 "auto_paste": self.auto_paste_check.isChecked(),
+                "restore_clipboard": self.restore_clipboard_check.isChecked(),
                 "raise_window_on_result": self.raise_window_check.isChecked(),
                 "close_after_copy": self.close_after_copy_check.isChecked(),
                 "sounds_enabled": self.sounds_check.isChecked(),

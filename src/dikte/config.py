@@ -99,6 +99,7 @@ class Settings(BaseModel):
     # Sonuç teslimi: pano her zaman yedektir, yapıştırma aktif pencereye Ctrl+V gönderir.
     auto_copy: bool = True
     auto_paste: bool = True
+    restore_clipboard: bool = False  # yapıştırdıktan sonra panodaki eski içeriği geri yükle
     raise_window_on_result: bool = False  # dikte akışını bozmamak için varsayılan kapalı
     sounds_enabled: bool = True  # başlat/durdur/hata sesleri
     stt: SttSettings = SttSettings()

@@ -23,6 +23,7 @@ _PROXIED = {
         "autostart_check",
         "auto_copy_check",
         "auto_paste_check",
+        "restore_clipboard_check",
         "raise_window_check",
         "close_after_copy_check",
         "sounds_check",
