@@ -11,9 +11,10 @@ ve metni isteğe bağlı olarak İngilizce'ye ya da bir AI agent prompt'una dön
   60 saniyeyi aşan kayıtlarda `BatchedInferencePipeline` devreye girer (ayarlardan kapatılabilir).
   `float16` için Compute Capability ≥ 7.0 (RTX 20xx ve üzeri) gerekir; daha eski kartlarda
   (ör. GTX 970 = CC 5.2) motor otomatik olarak `float32`'ye düşer ve tray'de uyarı gösterir.
-- **Düzeltme / çeviri / prompt:** varsayılan olarak yereldeki Ollama (`qwen3.5:4b`,
-  alternatif `gemma4:e4b-it-qat`); LM Studio, OpenAI, Anthropic, Gemini veya kendi
-  uç noktanız da seçilebilir (bkz. [LLM sağlayıcıları](#llm-sağlayıcıları)).
+- **Düzeltme / çeviri / prompt:** varsayılan olarak yereldeki Ollama (`gemma4:e4b-it-qat`,
+  alternatif `qwen3.5:4b`; karşılaştırma: [docs/llm_benchmark.md](docs/llm_benchmark.md));
+  LM Studio, OpenAI, Anthropic, Gemini veya kendi uç noktanız da seçilebilir
+  (bkz. [LLM sağlayıcıları](#llm-sağlayıcıları)).
   **Tamamen kapatılabilir** (Ayarlar → "LLM ile metin düzeltme"): kapalıyken ham metin
   doğrudan sonuç olarak gösterilir, Ollama hiç çağrılmaz ve ek VRAM kullanılmaz.
   Düşük VRAM'de `keep_alive` değerini `0` yaparak modeli her istekten sonra boşaltabilirsiniz.
@@ -24,7 +25,7 @@ ve metni isteğe bağlı olarak İngilizce'ye ya da bir AI agent prompt'una dön
 ```powershell
 winget install --id Python.Python.3.11 -e
 winget install --id Ollama.Ollama -e
-ollama pull qwen3.5:4b
+ollama pull gemma4:e4b-it-qat
 
 py -3.11 -m venv .venv; .\.venv\Scripts\Activate.ps1
 pip install -U pip uv
@@ -47,7 +48,7 @@ sudo apt install python3.11 python3.11-venv libportaudio2   # Debian/Ubuntu
 sudo apt install xdotool                                    # X11'de otomatik yapıştırma
 # Wayland kullanıyorsanız xdotool yerine: sudo apt install wtype
 curl -fsSL https://ollama.com/install.sh | sh
-ollama pull qwen3.5:4b
+ollama pull gemma4:e4b-it-qat
 
 ./packaging/linux/install.sh      # pipx ile kurar, .desktop + ikon yazar, modeli indirir
 ```
