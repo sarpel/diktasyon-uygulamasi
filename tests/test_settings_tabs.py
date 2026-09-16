@@ -59,6 +59,16 @@ def test_max_seconds_special_text(dlg):
     assert dlg.max_seconds_spin.specialValueText() == "Sınırsız"
 
 
+def test_silence_stop_special_text(dlg):
+    assert dlg.silence_stop_spin.specialValueText() == "Kapalı"
+
+
+def test_silence_stop_round_trip(dlg):
+    dlg.silence_stop_spin.setValue(2.5)
+    s = dlg.result_settings()
+    assert s.audio.silence_stop_s == 2.5
+
+
 def test_warm_up_and_prewarm_round_trip(dlg):
     dlg.warm_up_check.setChecked(False)
     dlg.prewarm_check.setChecked(False)

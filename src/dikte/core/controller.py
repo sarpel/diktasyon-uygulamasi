@@ -48,6 +48,7 @@ class DictationController(QObject):
         recorder.buckets_changed.connect(self.buckets_changed)
         recorder.error.connect(self._on_recorder_error)
         recorder.limit_reached.connect(self._on_limit_reached)
+        recorder.silence_reached.connect(self._on_silence)
 
     # ---- özellikler
     @property
@@ -200,6 +201,11 @@ class DictationController(QObject):
     def _on_limit_reached(self) -> None:
         if self._state is DictationState.RECORDING:
             log.info("kayıt süresi sınırına ulaşıldı, otomatik durduruluyor")
+            self._stop_and_transcribe()
+
+    def _on_silence(self) -> None:
+        if self._state is DictationState.RECORDING:
+            log.info("sessizlik: kayıt otomatik durduruldu")
             self._stop_and_transcribe()
 
     def _on_recorder_error(self, msg: str) -> None:

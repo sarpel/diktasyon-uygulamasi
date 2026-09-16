@@ -15,6 +15,7 @@ class FakeRecorder(QObject):
     level_changed = Signal(float)
     buckets_changed = Signal(object)
     limit_reached = Signal()
+    silence_reached = Signal()
     error = Signal(str)
 
     def __init__(self):
@@ -223,6 +224,14 @@ def test_limit_reached_ignored_when_not_recording(ctl):
     c, rec, *_ = ctl
     rec.limit_reached.emit()
     assert c.state is DictationState.IDLE
+
+
+def test_silence_signal_stops_recording(ctl):
+    c, rec, *_ = ctl
+    c.toggle()
+    assert c.state is DictationState.RECORDING
+    rec.silence_reached.emit()
+    assert c.state is DictationState.TRANSCRIBING and rec.stopped
 
 
 class BlockingStt(FakeStt):

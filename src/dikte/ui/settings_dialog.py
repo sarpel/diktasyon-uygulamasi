@@ -29,7 +29,7 @@ _PROXIED = {
         "sounds_check",
         "history_spin",
     ),
-    "audio": ("device_combo", "max_seconds_spin", "level_bar", "test_btn"),
+    "audio": ("device_combo", "max_seconds_spin", "silence_stop_spin", "level_bar", "test_btn"),
     "stt": (
         "stt_model_edit",
         "compute_combo",

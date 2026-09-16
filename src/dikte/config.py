@@ -88,6 +88,12 @@ class AudioSettings(BaseModel):
     device_index: int | None = None  # None = sistem varsayılanı
     sample_rate: int = 16000
     max_seconds: int = Field(default=0, ge=0)  # 0 = sınırsız
+    silence_stop_s: float = Field(
+        default=0.0, ge=0
+    )  # 0 = kapalı; konuşma sonrası bu kadar sessizlikte kayıt otomatik durur
+    silence_threshold: float = Field(
+        default=0.01, ge=0.0, le=1.0
+    )  # RMS eşiği: bunun altı sessizlik sayılır
 
 
 class Settings(BaseModel):

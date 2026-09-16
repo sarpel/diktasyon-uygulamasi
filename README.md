@@ -168,7 +168,7 @@ Ayarlar penceresi (tepsi menüsü veya araç çubuğu → "Ayarlar…") altı se
 | Sekme | İçerik |
 |---|---|
 | Genel | Kısayol (tuşa basarak yakalanır), geçmiş kayıt sayısı, açılışta başlat, panoya kopyala / yapıştır / pencereyi öne getir |
-| Ses | Mikrofon, kayıt süresi sınırı (0 = sınırsız), canlı seviye testi |
+| Ses | Mikrofon, kayıt süresi sınırı (0 = sınırsız), sessizlikte otomatik durdurma (0 = kapalı), canlı seviye testi |
 | Konuşma Tanıma | Whisper modeli, hassasiyet (compute_type), dil, toplu çözümleme, açılışta ısıtma, "Sessizlik ve halüsinasyon" (VAD eşiği, en kısa sessizlik, konuşma yok eşiği, kara liste) |
 | Metin Düzeltme | LLM aç/kapa, sağlayıcı ve sağlayıcıya özel alanlar, bellekte tutma |
 | Gelişmiş | beam_size, başlangıç promptu, num_ctx, top_p, top_k, zaman aşımı, düşünme modu |
