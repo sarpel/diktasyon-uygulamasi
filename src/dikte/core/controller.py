@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+from collections.abc import Callable
 
 import numpy as np
 from PySide6.QtCore import QObject, QThreadPool, Signal, Slot
@@ -17,6 +18,12 @@ from dikte.text.commands import apply_commands
 from dikte.text.dictionary import apply_rules, hotwords, prompt_terms
 
 log = logging.getLogger(__name__)
+
+
+def _default_audio_loader(path: str) -> np.ndarray:
+    from faster_whisper import decode_audio
+
+    return decode_audio(path, sampling_rate=16000)
 
 
 class DictationController(QObject):
@@ -38,11 +45,13 @@ class DictationController(QObject):
         stt: SttEngine,
         llm: LlmProvider,
         pool: QThreadPool | None = None,
+        audio_loader: Callable[[str], np.ndarray] | None = None,
         parent=None,
     ):
         super().__init__(parent)
         self._settings = settings
         self._recorder, self._stt, self._llm = recorder, stt, llm
+        self._audio_loader = audio_loader or _default_audio_loader
         self._pool = pool or QThreadPool.globalInstance()
         self._state = DictationState.IDLE
         self._session = Session()
@@ -144,6 +153,22 @@ class DictationController(QObject):
             self._stop_and_transcribe()
         else:
             log.debug("stop_recording yok sayıldı (durum: %s)", self._state)
+
+    @Slot(str)
+    def transcribe_file(self, path: str) -> None:
+        """Bir ses dosyasını mikrofon kaydı yerine kaynak olarak çözümler."""
+        if self._state not in (DictationState.IDLE, DictationState.RESULT):
+            self.error.emit("Önce süren işi bitirin.")
+            return
+        self._session = Session(source_path=path)
+        self.session_updated.emit(self._session)
+        self._set_state(DictationState.TRANSCRIBING)
+        lang = self._settings.stt.language
+        self._spawn(
+            lambda: self._stt.transcribe(self._audio_loader(path), lang),
+            self._on_transcribed,
+            lambda e: self.error.emit(f"Dosya çözümlenemedi: {e}"),
+        )
 
     @Slot(str)
     def request_translation(self, text: str) -> None:

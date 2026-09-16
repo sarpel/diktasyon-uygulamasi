@@ -1,4 +1,4 @@
-from PySide6.QtCore import QObject, Signal
+from PySide6.QtCore import QMimeData, QObject, QUrl, Signal
 
 from dikte.core.state import DictationState, Session
 from dikte.llm.tasks import Change
@@ -341,3 +341,79 @@ def test_ctrl_f_opens_history_and_focuses_search(qtbot):
     _shortcut(w, "Ctrl+F").activated.emit()
     assert w.history_panel.isVisible()
     qtbot.waitUntil(lambda: w.history_panel.search_edit.hasFocus(), timeout=1000)
+
+
+class FakeDropEvent:
+    """Gerçek QDropEvent/QDragEnterEvent bu ortamda acceptProposedAction() ile çöküyor
+    (drag kaynağı olmayan elle oluşturulmuş olaylarda); mantığı gerçek Qt event sınıfı
+    olmadan sınamak için minimal bir sahte kullanılır."""
+
+    def __init__(self, path: str):
+        md = QMimeData()
+        md.setUrls([QUrl.fromLocalFile(path)])
+        self._mime_data = md
+        self._accepted = False
+
+    def mimeData(self):
+        return self._mime_data
+
+    def acceptProposedAction(self):
+        self._accepted = True
+
+    def ignore(self):
+        self._accepted = False
+
+    def isAccepted(self) -> bool:
+        return self._accepted
+
+
+def test_drag_enter_accepts_single_audio_file(qtbot):
+    w, c = make(qtbot)
+    event = FakeDropEvent("/tmp/a.wav")
+    w.dragEnterEvent(event)
+    assert event.isAccepted()
+
+
+def test_drag_enter_rejects_non_audio_file(qtbot):
+    w, c = make(qtbot)
+    event = FakeDropEvent("/tmp/a.txt")
+    w.dragEnterEvent(event)
+    assert not event.isAccepted()
+
+
+def test_drop_emits_file_requested_for_audio_file(qtbot):
+    w, c = make(qtbot)
+    got = []
+    w.file_requested.connect(got.append)
+    event = FakeDropEvent("/tmp/a.wav")
+    w.dropEvent(event)
+    assert got == ["/tmp/a.wav"]
+    assert event.isAccepted()
+
+
+def test_drop_ignores_non_audio_file(qtbot):
+    w, c = make(qtbot)
+    got = []
+    w.file_requested.connect(got.append)
+    event = FakeDropEvent("/tmp/a.txt")
+    w.dropEvent(event)
+    assert got == []
+    assert not event.isAccepted()
+
+
+def test_open_file_action_emits_path_from_injected_dialog(qtbot):
+    w = ResultWindow(file_dialog=lambda *a, **k: ("/tmp/a.wav", "Ses dosyaları"))
+    qtbot.addWidget(w)
+    got = []
+    w.file_requested.connect(got.append)
+    w.open_file_action.trigger()
+    assert got == ["/tmp/a.wav"]
+
+
+def test_open_file_action_does_nothing_when_dialog_cancelled(qtbot):
+    w = ResultWindow(file_dialog=lambda *a, **k: ("", ""))
+    qtbot.addWidget(w)
+    got = []
+    w.file_requested.connect(got.append)
+    w.open_file_action.trigger()
+    assert got == []
