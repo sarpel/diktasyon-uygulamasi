@@ -29,7 +29,10 @@ def test_correct_parses_json_reply():
     res = correct(p, "bugün hava çuk güzel")
     assert isinstance(res, CorrectionResult)
     assert res.corrected_text == "Bugün hava çok güzel."
-    assert res.changes[0].replacement == "hava çok"
+    # LLM'in gönderdiği changes yok sayılır; liste difflib ile hesaplanır. İlk değişiklik
+    # cümle başı büyük harfi ("bugün" -> "Bugün"), asıl kelime düzeltmesi ikinci sırada.
+    assert res.changes[1].replacement == "çok"
+    assert res.changes[1].original == "çuk"
     assert p.calls[0]["json_schema"] is not None
     assert "bugün hava çuk güzel" in p.calls[0]["user"]
 
@@ -47,7 +50,7 @@ def test_correct_invalid_json_raises_llm_error():
 
 def test_correct_tolerates_missing_changes():
     res = correct(FakeProvider(json.dumps({"corrected_text": "Merhaba."})), "merhaba")
-    assert res.changes == ()
+    assert res.changes[0].reason == "noktalama/büyük harf"
 
 
 def test_translate_returns_stripped_text():
