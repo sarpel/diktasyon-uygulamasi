@@ -98,3 +98,9 @@
 - [ ] "Bilinen uydurma metinleri ele" kapalıyken sessizlikten gelen metin görünüyor (karşılaştırma).
 - [ ] "Bugün toplantıda altyazı ekleme özelliğini konuştuk" cümlesi **elenmiyor** (yanlış pozitif yok).
 - [ ] VAD kapalıyken uzun kayıt hata vermiyor (toplu çözümleme otomatik devre dışı kalıyor).
+
+## Bas-konuş / tıkla-aç (Windows)
+
+- [ ] Kısayolu 1 sn basılı tut → bırakınca çözümleme başlıyor (bas-konuş).
+- [ ] Kısayola kısa basıp bırak → normal aç/kapat gibi davranıyor (tıkla-aç).
+- [ ] Ayarlar → Genel → "Bas-konuş" kapatılınca kısayol her zaman aç/kapat olarak çalışıyor.

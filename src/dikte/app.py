@@ -18,11 +18,14 @@ from dikte.core.state import BUSY_STATES, DictationState
 from dikte.llm import LlmError, make_provider
 from dikte.logging_setup import setup_logging
 from dikte.platform.autostart import set_autostart
+from dikte.platform.hold_detect import HoldDetector
 from dikte.platform.hotkey import HOTKEY_ID, GlobalHotkey
 from dikte.platform.hotkey_parse import HotkeyParseError, parse_hotkey
 from dikte.platform.paste import paste_active_window
 from dikte.platform.single_instance import (
     DEFAULT_NAME,
+    START_MESSAGE,
+    STOP_MESSAGE,
     TOGGLE_MESSAGE,
     SingleInstance,
     send_command,
@@ -53,6 +56,7 @@ class AppContext:
     history: History
     stt: FasterWhisperEngine
     sounds: SoundPlayer
+    hold: HoldDetector
 
 
 class _NullLlm:
@@ -107,8 +111,19 @@ def build_app(settings: Settings) -> AppContext:
     window = ResultWindow()
     history = History(paths.history_path(), settings.history_limit)
     sounds = SoundPlayer(settings.sounds_enabled)
+    hold = HoldDetector()
     ctx = AppContext(
-        settings, controller, tray, overlay, window, hotkey, cancel_hotkey, history, stt, sounds
+        settings,
+        controller,
+        tray,
+        overlay,
+        window,
+        hotkey,
+        cancel_hotkey,
+        history,
+        stt,
+        sounds,
+        hold,
     )
     _wire(ctx)
     return ctx
@@ -131,7 +146,10 @@ def _wire(ctx: AppContext) -> None:
     c.error.connect(ctx.sounds.on_error)
     c.error.connect(ctx.overlay.show_error)
     c.state_changed.connect(lambda s: s is DictationState.RESULT and _store_session(ctx))
-    ctx.hotkey.activated.connect(c.toggle)
+    ctx.hotkey.activated.connect(lambda: _on_hotkey(ctx))
+    ctx.hold.tapped.connect(c.toggle)
+    ctx.hold.held.connect(c.start_recording)
+    ctx.hold.released.connect(c.stop_recording)
     ctx.tray.toggle_requested.connect(c.toggle)
     ctx.tray.show_requested.connect(
         lambda: (ctx.window.showNormal(), ctx.window.raise_(), ctx.window.activateWindow())
@@ -226,6 +244,14 @@ def _warn_if_downgraded(ctx: AppContext) -> None:
     )
 
 
+def _on_hotkey(ctx: AppContext) -> None:
+    """Kısayola basılınca çağrılır: bas-konuş yalnızca Windows'ta anlamlıdır."""
+    if not ctx.settings.push_to_talk or sys.platform != "win32":
+        ctx.controller.toggle()
+        return
+    ctx.hold.arm(parse_hotkey(ctx.settings.hotkey).vk)
+
+
 def _apply_hotkey(ctx: AppContext) -> None:
     if ctx.hotkey.register(ctx.settings.hotkey):
         ctx.tray.set_hotkey_label(ctx.hotkey.label or ctx.settings.hotkey)
@@ -243,13 +269,18 @@ def _apply_hotkey(ctx: AppContext) -> None:
     ctx.tray.set_hotkey_label(CLI_TOGGLE_HINT)
 
 
-def _run_toggle() -> int:
-    """Çalışan örneğe kayıt başlat/durdur komutu gönderir."""
+def _run_command(message: bytes) -> int:
+    """Çalışan örneğe verilen komutu gönderir (Linux'ta bas-konuş simülasyonu için)."""
     _app = QCoreApplication.instance() or QCoreApplication(sys.argv)
-    if not send_command(DEFAULT_NAME, TOGGLE_MESSAGE):
+    if not send_command(DEFAULT_NAME, message):
         print(f"{APP_NAME} çalışmıyor; önce uygulamayı başlatın.", file=sys.stderr)
         return 1
     return 0
+
+
+def _run_toggle() -> int:
+    """Çalışan örneğe kayıt başlat/durdur komutu gönderir."""
+    return _run_command(TOGGLE_MESSAGE)
 
 
 def _open_settings(ctx: AppContext) -> None:
@@ -297,10 +328,24 @@ def main(argv: list[str] | None = None) -> int:
         action="store_true",
         help="çalışan örnekte kaydı başlat/durdur (Linux kısayolu için)",
     )
+    parser.add_argument(
+        "--start",
+        action="store_true",
+        help="çalışan örnekte kaydı başlatır (Linux'ta bas-konuş simülasyonu: tuşa basınca)",
+    )
+    parser.add_argument(
+        "--stop",
+        action="store_true",
+        help="çalışan örnekte kaydı durdurur (Linux'ta bas-konuş simülasyonu: tuş bırakılınca)",
+    )
     parser.add_argument("--version", action="version", version=f"{APP_NAME} {__version__}")
     args = parser.parse_args(argv)
     if args.toggle:
         return _run_toggle()
+    if args.start:
+        return _run_command(START_MESSAGE)
+    if args.stop:
+        return _run_command(STOP_MESSAGE)
 
     setup_logging()
     app = QApplication(sys.argv)
@@ -321,6 +366,8 @@ def main(argv: list[str] | None = None) -> int:
         save_settings(ctx.settings)
     single.activated.connect(ctx.tray.show_requested)
     single.toggle_requested.connect(ctx.controller.toggle)
+    single.start_requested.connect(ctx.controller.start_recording)
+    single.stop_requested.connect(ctx.controller.stop_recording)
     ctx.tray.show()
     if ctx.settings.hotkey != settings.hotkey:
         ctx.tray.notify(

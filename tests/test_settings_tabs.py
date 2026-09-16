@@ -319,6 +319,11 @@ def test_restore_clipboard_disabled_when_auto_paste_off(dlg):
     assert not dlg.restore_clipboard_check.isEnabled()
 
 
+def test_push_to_talk_round_trip(dlg):
+    dlg.push_to_talk_check.setChecked(False)
+    assert dlg.result_settings().push_to_talk is False
+
+
 def test_open_location_failure_warns_user(dlg, monkeypatch):
     """QDesktopServices açamazsa sessiz kalınmaz; yolu içeren bir uyarı gösterilir."""
     from dikte.ui.settings import about_tab as about_mod

@@ -165,6 +165,21 @@ def test_run_toggle_sends_toggle_message(monkeypatch):
     assert sent["name"] == app_mod.DEFAULT_NAME
 
 
+def test_hotkey_routes_to_toggle_when_ptt_off(ctx):
+    ctx.settings = ctx.settings.model_copy(update={"push_to_talk": False})
+    app_mod._on_hotkey(ctx)
+    assert ctx.controller.state is DictationState.RECORDING
+
+
+def test_hotkey_arms_detector_on_windows(ctx, monkeypatch):
+    monkeypatch.setattr(app_mod.sys, "platform", "win32")
+    ctx.settings = ctx.settings.model_copy(update={"push_to_talk": True})
+    armed = []
+    ctx.hold.arm = lambda vk: armed.append(vk)
+    app_mod._on_hotkey(ctx)
+    assert armed == [app_mod.parse_hotkey(ctx.settings.hotkey).vk]
+
+
 def test_apply_hotkey_falls_back_to_cli_label_off_windows(ctx, monkeypatch):
     monkeypatch.setattr(app_mod.sys, "platform", "linux")
     notifications = []

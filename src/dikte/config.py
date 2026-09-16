@@ -106,6 +106,7 @@ class Settings(BaseModel):
     auto_copy: bool = True
     auto_paste: bool = True
     restore_clipboard: bool = False  # yapıştırdıktan sonra panodaki eski içeriği geri yükle
+    push_to_talk: bool = True  # Windows: kısayolu basılı tutunca kayıt, bırakınca çözümleme
     raise_window_on_result: bool = False  # dikte akışını bozmamak için varsayılan kapalı
     sounds_enabled: bool = True  # başlat/durdur/hata sesleri
     stt: SttSettings = SttSettings()

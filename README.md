@@ -81,6 +81,7 @@ Kullanıcı verileri: `~/.config/Dikte/`, model önbelleği: `~/.cache/Dikte/mod
 | Eylem | Kısayol / yer |
 |---|---|
 | Kaydı başlat / durdur | Windows: `Ctrl+Alt+Space` (ayarlardan değiştirilebilir) · Linux: `dikte --toggle`'a bağladığınız tuş |
+| Bas-konuş (Windows) | Kısayolu basılı tutun, bırakınca çözümlenir; kısa basış aç/kapat olarak çalışır (Ayarlar → Genel → "Bas-konuş"). Linux'ta: `dikte --start` / `dikte --stop` komutlarını tuşa basınca/bırakınca bağlayın |
 | Düzeltilmiş metni kopyala | Pane'in sağ üstündeki kopyala ikonu veya `Ctrl+Shift+C` |
 | İngilizce çeviri | Alt araç çubuğu → "İngilizce'ye Çevir" |
 | Agent prompt'u | Alt araç çubuğu → "Agent Prompt'a Dönüştür" |
@@ -167,7 +168,7 @@ Ayarlar penceresi (tepsi menüsü veya araç çubuğu → "Ayarlar…") altı se
 
 | Sekme | İçerik |
 |---|---|
-| Genel | Kısayol (tuşa basarak yakalanır), geçmiş kayıt sayısı, açılışta başlat, panoya kopyala / yapıştır / pencereyi öne getir |
+| Genel | Kısayol (tuşa basarak yakalanır), bas-konuş (yalnızca Windows), geçmiş kayıt sayısı, açılışta başlat, panoya kopyala / yapıştır / pencereyi öne getir |
 | Ses | Mikrofon, kayıt süresi sınırı (0 = sınırsız), sessizlikte otomatik durdurma (0 = kapalı), canlı seviye testi |
 | Konuşma Tanıma | Whisper modeli, hassasiyet (compute_type), dil, toplu çözümleme, açılışta ısıtma, "Sessizlik ve halüsinasyon" (VAD eşiği, en kısa sessizlik, konuşma yok eşiği, kara liste) |
 | Metin Düzeltme | LLM aç/kapa, sağlayıcı ve sağlayıcıya özel alanlar, bellekte tutma |
