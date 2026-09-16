@@ -86,7 +86,11 @@ Kullanıcı verileri: `~/.config/Dikte/`, model önbelleği: `~/.cache/Dikte/mod
 | İngilizce çeviri | Alt araç çubuğu → "İngilizce'ye Çevir" · veya Ayarlar → Genel'de ayrı bir kısayol tanımlayıp doğrudan çeviri sonucunu yapıştırın (Linux: `dikte --toggle --mode translate`) |
 | Agent prompt'u | Alt araç çubuğu → "Agent Prompt'a Dönüştür" · veya Ayarlar → Genel'de ayrı bir kısayol tanımlayıp doğrudan prompt sonucunu yapıştırın (Linux: `dikte --toggle --mode prompt`) |
 | Kaydı/çözümlemeyi iptal et | `Esc` (Windows'ta global) · overlay ya da araç çubuğunda "Vazgeç" · tray menüsü |
-| Geçmiş panelini aç/kapat | Araç çubuğu → "Geçmiş" |
+| Ayarları aç | Araç çubuğu → "Ayarlar…" veya `Ctrl+,` |
+| Geçmiş panelini aç/kapat | Araç çubuğu → "Geçmiş" veya `Ctrl+H` |
+| Geçmişte ara | `Ctrl+F` (paneli açar ve arama kutusuna odaklanır) |
+| Geçmişi dışa aktar | Geçmiş paneli → "Dışa aktar…" (`.md` → Markdown, `.txt` → düz metin) |
+| Son diktenin metnini kopyala | Tray menüsü → "Son metni kopyala" veya "Son dikteler" alt menüsünden birini seç |
 | Pencereyi gizle | `X` (uygulama tray'de kalır) |
 | Çıkış | Tray menüsü → "Çıkış" |
 

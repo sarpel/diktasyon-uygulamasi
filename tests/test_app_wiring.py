@@ -435,6 +435,48 @@ def test_history_clear_flows_to_storage(ctx):
     assert ctx.history.load() == ()
 
 
+def test_result_state_updates_tray_recent(ctx):
+    ctx.controller._update_session(raw_text="a", corrected_text="A.")
+    ctx.controller.state_changed.emit(DictationState.RESULT)
+    assert len(ctx.tray._recent_menu.actions()) == 1
+
+
+def test_tray_copy_requested_writes_to_clipboard(ctx):
+    from PySide6.QtWidgets import QApplication
+
+    ctx.tray.copy_requested.emit("panoya gidecek metin")
+    assert QApplication.clipboard().text() == "panoya gidecek metin"
+
+
+def test_export_requested_writes_file(ctx, tmp_path):
+    ctx.controller._update_session(raw_text="a", corrected_text="A.")
+    ctx.controller.state_changed.emit(DictationState.RESULT)
+    out = tmp_path / "gecmis.md"
+    ctx.window.history_panel.export_requested.emit(str(out))
+    assert out.exists()
+    assert "A." in out.read_text(encoding="utf-8")
+
+
+def test_export_requested_writes_plain_text_for_txt_extension(ctx, tmp_path):
+    ctx.controller._update_session(raw_text="a", corrected_text="A.")
+    ctx.controller.state_changed.emit(DictationState.RESULT)
+    out = tmp_path / "gecmis.txt"
+    ctx.window.history_panel.export_requested.emit(str(out))
+    content = out.read_text(encoding="utf-8")
+    assert content.startswith("[") and "A." in content
+    assert "# Dikte" not in content
+
+
+def test_export_failure_notifies_tray_instead_of_crashing(ctx, monkeypatch):
+    notified = []
+    monkeypatch.setattr(ctx.tray, "notify", lambda *a, **k: notified.append(a))
+    monkeypatch.setattr(
+        app_mod.Path, "write_text", lambda *a, **k: (_ for _ in ()).throw(OSError("dolu"))
+    )
+    ctx.window.history_panel.export_requested.emit("/gecersiz/yol/x.md")
+    assert notified
+
+
 def test_history_selection_loads_into_window(ctx):
     from dikte.core.state import Session
 

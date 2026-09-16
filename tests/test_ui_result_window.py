@@ -297,3 +297,39 @@ def test_dismiss_suggestion_hides_bar_without_signal(qtbot):
     w.suggest_dismiss_btn.click()
     assert not w.suggest_bar.isVisible()
     assert fired == []
+
+
+def _shortcut(window, sequence: str):
+    from PySide6.QtGui import QKeySequence, QShortcut
+
+    for sc in window.findChildren(QShortcut):
+        if sc.key() == QKeySequence(sequence):
+            return sc
+    raise AssertionError(f"{sequence} kısayolu bulunamadı")
+
+
+def test_ctrl_comma_triggers_settings(qtbot):
+    w, c = make(qtbot)
+    fired = []
+    w.settings_requested.connect(lambda: fired.append(1))
+    _shortcut(w, "Ctrl+,").activated.emit()
+    assert fired == [1]
+
+
+def test_ctrl_h_toggles_history_panel(qtbot):
+    w, c = make(qtbot)
+    w.show()
+    assert not w.history_panel.isVisible()
+    _shortcut(w, "Ctrl+H").activated.emit()
+    assert w.history_panel.isVisible()
+    _shortcut(w, "Ctrl+H").activated.emit()
+    assert not w.history_panel.isVisible()
+
+
+def test_ctrl_f_opens_history_and_focuses_search(qtbot):
+    w, c = make(qtbot)
+    w.show()
+    qtbot.waitExposed(w)
+    _shortcut(w, "Ctrl+F").activated.emit()
+    assert w.history_panel.isVisible()
+    qtbot.waitUntil(lambda: w.history_panel.search_edit.hasFocus(), timeout=1000)
