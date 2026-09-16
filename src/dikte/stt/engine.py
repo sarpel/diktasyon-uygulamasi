@@ -115,6 +115,11 @@ class FasterWhisperEngine:
         self._compute_type = settings.compute_type
         self._downgraded = False
         self._lock = threading.Lock()
+        self._hotwords = ""
+        self._prompt_terms = ""
+
+    def set_dictionary(self, hotwords: str, prompt_terms: str) -> None:
+        self._hotwords, self._prompt_terms = hotwords, prompt_terms
 
     @property
     def is_loaded(self) -> bool:
@@ -262,7 +267,9 @@ class FasterWhisperEngine:
             "log_prob_threshold": s.log_prob_threshold,
             "hallucination_silence_threshold": s.hallucination_silence_threshold_s or None,
             "without_timestamps": True,  # kelime zamanları kullanılmıyor
-            "initial_prompt": s.initial_prompt or None,
+            "initial_prompt": " ".join(p for p in (s.initial_prompt, self._prompt_terms) if p)
+            or None,
+            "hotwords": self._hotwords or None,
         }
         try:
             with self._lock:

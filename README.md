@@ -164,7 +164,7 @@ otomatik olarak `json_object` moduna düşülür.
 
 ### Ayarlar
 
-Ayarlar penceresi (tepsi menüsü veya araç çubuğu → "Ayarlar…") altı sekmeden oluşur:
+Ayarlar penceresi (tepsi menüsü veya araç çubuğu → "Ayarlar…") yedi sekmeden oluşur:
 
 | Sekme | İçerik |
 |---|---|
@@ -172,11 +172,24 @@ Ayarlar penceresi (tepsi menüsü veya araç çubuğu → "Ayarlar…") altı se
 | Ses | Mikrofon, kayıt süresi sınırı (0 = sınırsız), sessizlikte otomatik durdurma (0 = kapalı), canlı seviye testi |
 | Konuşma Tanıma | Whisper modeli, hassasiyet (compute_type), dil, toplu çözümleme, açılışta ısıtma, "Sessizlik ve halüsinasyon" (VAD eşiği, en kısa sessizlik, konuşma yok eşiği, kara liste) |
 | Metin Düzeltme | LLM aç/kapa, sağlayıcı ve sağlayıcıya özel alanlar, bellekte tutma |
+| Sözlük | Özel terimler (doğru yazım + yanlış tanınan biçimler), LLM düzeltmesine ek serbest talimat |
 | Gelişmiş | beam_size, başlangıç promptu, num_ctx, top_p, top_k, zaman aşımı, düşünme modu |
 | Hakkında | Sürümler, GPU ve desteklenen hassasiyetler, log / ayar klasörünü aç |
 
 Model/hassasiyet değişince model arka planda yeniden yüklenir; mikrofon değişikliği sonraki kayıtta geçerlidir. İpucu alanın üstüne gelince görünür.
 `config.json` içindeki kısayol bozuksa uygulama çökmez, varsayılana döner ve bunu bildirir.
+
+#### Özel sözlük
+
+Ayarlar → Sözlük'te eklenen her terim üç katmanda devreye girer:
+
+1. **Whisper hotwords + başlangıç promptu:** Terimler `hotwords` parametresi ve
+   `initial_prompt` sonuna eklenerek modelin doğru yazımı tanıma olasılığını artırır.
+2. **LLM sözlüğü:** Terimler ve "Ek talimat" alanı, metin düzeltme sistemine eklenen bir
+   "Sözlük (doğru yazımlar): …" bloğu olarak LLM'e gönderilir.
+3. **Kural tabanlı düzeltme:** Her terimin "yanlış tanınan biçimler" listesindeki her
+   varyant, ham metinde tam kelime eşleşmesiyle (büyük/küçük harf duyarsız) doğru yazımla
+   değiştirilir — LLM kapalıyken bile çalışır.
 
 Kullanıcı verileri: `%APPDATA%\Dikte\` (config.json, history.jsonl, dikte.log).
 Model önbelleği: `%LOCALAPPDATA%\Dikte\models\`.

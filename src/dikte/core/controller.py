@@ -8,10 +8,11 @@ from PySide6.QtCore import QObject, QThreadPool, Signal, Slot
 from dikte.config import Settings
 from dikte.core.state import DictationState, Session
 from dikte.core.workers import run_in_pool
-from dikte.llm import tasks
+from dikte.llm import prompts, tasks
 from dikte.llm.provider import LlmProvider
 from dikte.stt.engine import SttEngine
 from dikte.stt.result import TranscriptResult
+from dikte.text.dictionary import apply_rules, hotwords, prompt_terms
 
 log = logging.getLogger(__name__)
 
@@ -49,6 +50,7 @@ class DictationController(QObject):
         recorder.error.connect(self._on_recorder_error)
         recorder.limit_reached.connect(self._on_limit_reached)
         recorder.silence_reached.connect(self._on_silence)
+        self._push_dictionary()
 
     # ---- özellikler
     @property
@@ -61,6 +63,7 @@ class DictationController(QObject):
 
     def update_settings(self, settings: Settings) -> None:
         self._settings = settings
+        self._push_dictionary()
 
     def set_llm(self, llm: LlmProvider) -> None:
         """Ayar değişince sağlayıcıyı yeniden başlatmadan değiştirir."""
@@ -160,6 +163,13 @@ class DictationController(QObject):
         )
 
     # ---- iç akış
+    def _push_dictionary(self) -> None:
+        setter = getattr(self._stt, "set_dictionary", None)
+        if setter is None:
+            return
+        entries = self._settings.dictionary.entries
+        setter(hotwords(entries), prompt_terms(entries))
+
     def _require_llm(self) -> bool:
         if self._settings.llm.enabled:
             return True
@@ -186,14 +196,23 @@ class DictationController(QObject):
             self.error.emit("Konuşma algılanamadı, ses boş görünüyor.")
             self._set_state(DictationState.IDLE)
             return
-        self._update_session(raw_text=result.text, duration_s=result.duration_s)
+        entries = self._settings.dictionary.entries
+        text = apply_rules(result.text, entries)
+        self._update_session(raw_text=text, duration_s=result.duration_s)
         if not self._settings.llm.enabled:  # LLM kapalı: ham metin sonuç olarak gösterilir
-            self._update_session(corrected_text=result.text)
+            self._update_session(corrected_text=text)
             self._after_correction()
             return
         self._set_state(DictationState.CORRECTING)
-        raw = result.text
-        self._spawn(lambda: tasks.correct(self._llm, raw), self._on_corrected, self._on_llm_error)
+        raw = text
+        glossary = prompts.glossary_block(
+            [e.term for e in entries], self._settings.dictionary.user_instructions
+        )
+        self._spawn(
+            lambda: tasks.correct(self._llm, raw, glossary=glossary),
+            self._on_corrected,
+            self._on_llm_error,
+        )
 
     def _on_corrected(self, res: tasks.CorrectionResult) -> None:
         self._update_session(

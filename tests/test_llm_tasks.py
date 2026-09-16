@@ -48,6 +48,12 @@ def test_correct_invalid_json_raises_llm_error():
         correct(FakeProvider("not json"), "merhaba")
 
 
+def test_correct_appends_glossary_to_system():
+    p = FakeProvider(json.dumps({"corrected_text": "Merhaba."}))
+    correct(p, "merhaba", glossary="Sözlük: X")
+    assert "Sözlük: X" in p.calls[0]["system"]
+
+
 def test_correct_tolerates_missing_changes():
     res = correct(FakeProvider(json.dumps({"corrected_text": "Merhaba."})), "merhaba")
     assert res.changes[0].reason == "noktalama/büyük harf"

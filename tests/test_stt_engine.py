@@ -80,6 +80,15 @@ def test_update_settings_changes_transcribe_kwargs():
     assert created["model"].calls[0]["beam_size"] == 2
 
 
+def test_set_dictionary_adds_hotwords_and_prompt_terms():
+    eng, created = make_engine()
+    eng.set_dictionary("a, b", "Terimler: a, b")
+    eng.transcribe(np.zeros(16000, dtype=np.float32))
+    call = created["model"].calls[0]
+    assert call["hotwords"] == "a, b"
+    assert call["initial_prompt"].endswith("Terimler: a, b")
+
+
 def test_load_creates_model_with_settings():
     eng, created = make_engine()
     assert not eng.is_loaded

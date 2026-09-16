@@ -1,10 +1,18 @@
 import pytest
 from PySide6.QtGui import QKeySequence
 
-from dikte.config import Settings
+from dikte.config import DictionaryEntry, Settings
 from dikte.ui.settings_dialog import SettingsDialog
 
-TAB_TITLES = ["Genel", "Ses", "Konuşma Tanıma", "Metin Düzeltme", "Gelişmiş", "Hakkında"]
+TAB_TITLES = [
+    "Genel",
+    "Ses",
+    "Konuşma Tanıma",
+    "Metin Düzeltme",
+    "Sözlük",
+    "Gelişmiş",
+    "Hakkında",
+]
 
 
 @pytest.fixture
@@ -370,3 +378,21 @@ def test_microphone_test_failure_resets_button_and_warns(dlg, monkeypatch):
     assert not dlg.test_btn.isChecked()
     assert dlg.test_btn.text() == "Mikrofonu test et"
     assert warned and "cihaz meşgul" in warned[0]
+
+
+def test_dictionary_round_trip(dlg):
+    dlg.dictionary.add_entry_btn.click()
+    row = dlg.dictionary_table.rowCount() - 1
+    dlg.dictionary_table.item(row, 0).setText("Kubernetes")
+    dlg.dictionary_table.item(row, 1).setText("kuber netes, kübernetes")
+    dlg.instructions_edit.setPlainText("Kısa tut")
+    s = dlg.result_settings()
+    assert s.dictionary.entries == (
+        DictionaryEntry(term="Kubernetes", wrong=("kuber netes", "kübernetes")),
+    )
+    assert s.dictionary.user_instructions == "Kısa tut"
+
+
+def test_dictionary_rejects_empty_term(dlg):
+    dlg.dictionary.add_entry_btn.click()
+    assert dlg.dictionary.validate() == "Sözlükte boş terim var"

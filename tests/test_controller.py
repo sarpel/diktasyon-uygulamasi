@@ -5,7 +5,7 @@ import numpy as np
 import pytest
 from PySide6.QtCore import QObject, QThreadPool, Signal
 
-from dikte.config import Settings
+from dikte.config import DictionaryEntry, DictionarySettings, Settings
 from dikte.core.controller import DictationController
 from dikte.core.state import DictationState
 from dikte.stt.result import TranscriptResult
@@ -61,7 +61,7 @@ class FakeLlm:
         self.warmed = True
 
     def complete(self, system, user, *, json_schema=None, temperature=0.2):
-        self.calls.append(user)
+        self.calls.append({"system": system, "user": user})
         if json_schema:
             return json.dumps({"corrected_text": "Merhaba dünya.", "changes": []})
         if "User request" in user:
@@ -240,6 +240,21 @@ def test_mode_with_llm_disabled_emits_error_and_raw(qtbot):
     assert errors and "LLM kapalı" in errors[-1]
     assert results == ["merhaba dünya"]
     assert llm.calls == []
+
+
+def test_dictionary_rules_applied_and_glossary_sent_to_llm(qtbot):
+    entries = (DictionaryEntry(term="Kubernetes", wrong=("kuber netes",)),)
+    settings = Settings(
+        dictionary=DictionarySettings(entries=entries, user_instructions="Kısa tut")
+    )
+    rec, stt, llm = FakeRecorder(), FakeStt(text="kuber netes"), FakeLlm()
+    c = DictationController(settings, recorder=rec, stt=stt, llm=llm, pool=QThreadPool())
+    c.toggle()
+    c.toggle()
+    qtbot.waitUntil(lambda: c.state is DictationState.RESULT, timeout=3000)
+    assert c.session.raw_text == "Kubernetes"
+    assert "Kubernetes" in llm.calls[0]["system"]
+    assert "Kısa tut" in llm.calls[0]["system"]
 
 
 def test_set_llm_replaces_provider(qtbot):

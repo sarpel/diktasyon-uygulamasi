@@ -96,6 +96,18 @@ class AudioSettings(BaseModel):
     )  # RMS eşiği: bunun altı sessizlik sayılır
 
 
+class DictionaryEntry(BaseModel):
+    model_config = ConfigDict(frozen=True)
+    term: str  # doğru yazım, ör. "Kubernetes"
+    wrong: tuple[str, ...] = ()  # STT'nin ürettiği yanlış biçimler, ör. ("kuber netes",)
+
+
+class DictionarySettings(BaseModel):
+    model_config = ConfigDict(frozen=True)
+    entries: tuple[DictionaryEntry, ...] = ()
+    user_instructions: str = ""  # LLM düzeltme talimatına ek serbest metin
+
+
 class Settings(BaseModel):
     model_config = ConfigDict(frozen=True)
     hotkey: str = "ctrl+alt+space"
@@ -114,6 +126,7 @@ class Settings(BaseModel):
     stt: SttSettings = SttSettings()
     llm: LlmSettings = LlmSettings()
     audio: AudioSettings = AudioSettings()
+    dictionary: DictionarySettings = DictionarySettings()
 
 
 def load_settings(path: Path | None = None) -> Settings:

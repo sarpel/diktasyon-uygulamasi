@@ -12,7 +12,15 @@ from PySide6.QtWidgets import (
 )
 
 from dikte.config import Settings
-from dikte.ui.settings import AboutTab, AdvancedTab, AudioTab, GeneralTab, LlmTab, SttTab
+from dikte.ui.settings import (
+    AboutTab,
+    AdvancedTab,
+    AudioTab,
+    DictionaryTab,
+    GeneralTab,
+    LlmTab,
+    SttTab,
+)
 
 log = logging.getLogger(__name__)
 
@@ -81,6 +89,7 @@ _PROXIED = {
         "llm_test_btn",
         "llm_test_status",
     ),
+    "dictionary": ("dictionary_table", "add_entry_btn", "remove_entry_btn", "instructions_edit"),
     "advanced": (
         "beam_spin",
         "initial_prompt_edit",
@@ -121,6 +130,7 @@ class SettingsDialog(QDialog):
         self.audio = AudioTab(settings, devices)
         self.stt = SttTab(settings)
         self.llm = LlmTab(settings)
+        self.dictionary = DictionaryTab(settings)
         self.advanced = AdvancedTab(settings)
         self.about = AboutTab(settings)
         self._tabs_in_order = (
@@ -128,6 +138,7 @@ class SettingsDialog(QDialog):
             self.audio,
             self.stt,
             self.llm,
+            self.dictionary,
             self.advanced,
             self.about,
         )
