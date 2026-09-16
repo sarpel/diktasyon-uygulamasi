@@ -219,7 +219,7 @@ def test_connection_test_button_reports_success(dlg, monkeypatch):
     def fake_run_in_pool(fn, on_result, on_error, pool=None):
         try:
             on_result(fn())
-        except Exception as exc:  # noqa: BLE001 - test double, gerçek hata yolu sınanıyor
+        except Exception as exc:
             on_error(str(exc))
 
     monkeypatch.setattr(llm_tab_mod, "run_in_pool", fake_run_in_pool)
@@ -244,7 +244,7 @@ def test_connection_test_button_reports_failure(dlg, monkeypatch):
     def fake_run_in_pool(fn, on_result, on_error, pool=None):
         try:
             on_result(fn())
-        except Exception as exc:  # noqa: BLE001 - test double, gerçek hata yolu sınanıyor
+        except Exception as exc:
             on_error(str(exc))
 
     monkeypatch.setattr(llm_tab_mod, "run_in_pool", fake_run_in_pool)
