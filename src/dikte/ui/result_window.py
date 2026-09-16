@@ -158,6 +158,12 @@ class ResultWindow(QMainWindow):
         elif self._pending == "enhanced_prompt" and s.enhanced_prompt:
             self.output_pane.set_text(s.enhanced_prompt)
             self._finish_pending()
+        elif self._pending is None and s.mode == "translate" and s.translation:
+            self.output_pane.title_label.setText(TITLE_TRANSLATION)
+            self.output_pane.set_text(s.translation)
+        elif self._pending is None and s.mode == "prompt" and s.enhanced_prompt:
+            self.output_pane.title_label.setText(TITLE_PROMPT)
+            self.output_pane.set_text(s.enhanced_prompt)
         self._show_session_stats(s)  # _finish_pending mesajı temizledikten sonra yazılır
 
     def on_state(self, state: DictationState) -> None:

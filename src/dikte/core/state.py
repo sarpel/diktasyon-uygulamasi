@@ -23,11 +23,14 @@ BUSY_STATES = (
     DictationState.CORRECTING,
 )
 
+MODES = ("correct", "translate", "prompt")
+
 
 @dataclass(frozen=True)
 class Session:
     id: str = field(default_factory=lambda: uuid.uuid4().hex[:12])
     created_at: datetime = field(default_factory=datetime.now)
+    mode: str = "correct"
     raw_text: str = ""
     corrected_text: str = ""
     changes: tuple[Change, ...] = ()
@@ -37,3 +40,12 @@ class Session:
 
     def with_(self, **kwargs) -> Session:
         return replace(self, **kwargs)
+
+    @property
+    def output_text(self) -> str:
+        """Sonucun teslim edileceği metin: mod'a göre çeviri/prompt, yoksa düzeltilmiş metin."""
+        if self.mode == "translate":
+            return self.translation or self.corrected_text
+        if self.mode == "prompt":
+            return self.enhanced_prompt or self.corrected_text
+        return self.corrected_text

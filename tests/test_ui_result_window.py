@@ -53,6 +53,21 @@ def test_translate_button_sends_current_corrected_text(qtbot):
     assert not w.translate_btn.isEnabled()  # bekleme sırasında kilit
 
 
+def test_translate_mode_session_auto_fills_output_without_pending(qtbot):
+    """Çeviri kısayoluyla gelen sonuç, pencere içi düğmeye basılmasa da çıkış paneline yazılır."""
+    w, c = make(qtbot)
+    c.session_updated.emit(Session(mode="translate", corrected_text="a", translation="b"))
+    assert w.output_pane.text() == "b"
+    assert w.output_pane.title_label.text() == "İngilizce Çeviri"
+
+
+def test_prompt_mode_session_auto_fills_output_without_pending(qtbot):
+    w, c = make(qtbot)
+    c.session_updated.emit(Session(mode="prompt", corrected_text="a", enhanced_prompt="# Goal"))
+    assert w.output_pane.text() == "# Goal"
+    assert w.output_pane.title_label.text() == "Agent Prompt (EN)"
+
+
 def test_enhance_button_sends_text_and_result_fills_output(qtbot):
     w, c = make(qtbot)
     w.corrected_pane.set_text("bana todo uygulaması yaz")

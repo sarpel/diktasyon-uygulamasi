@@ -10,6 +10,13 @@ from dikte.platform.hotkey_parse import (
 )
 
 
+def _optional_hotkey(edit: QKeySequenceEdit) -> str:
+    """Boş dizi = kısayol kapalı; from_key_sequence boş girdide hata verir, burada önlenir."""
+    if edit.keySequence().isEmpty():
+        return ""
+    return from_key_sequence(edit.keySequence())
+
+
 class GeneralTab(QWidget):
     """Kısayol, açılış davranışı ve sonucun nasıl teslim edileceği."""
 
@@ -24,6 +31,26 @@ class GeneralTab(QWidget):
             self.hotkey_edit.setKeySequence(to_key_sequence(settings.hotkey))
         except HotkeyParseError:
             self.hotkey_edit.setKeySequence(to_key_sequence(Settings().hotkey))
+
+        self.hotkey_translate_edit = QKeySequenceEdit()
+        self.hotkey_translate_edit.setMaximumSequenceLength(1)
+        self.hotkey_translate_edit.setToolTip("İngilizce'ye çevirip yapıştırır. Boş = kapalı.")
+        if settings.hotkey_translate:
+            try:
+                self.hotkey_translate_edit.setKeySequence(
+                    to_key_sequence(settings.hotkey_translate)
+                )
+            except HotkeyParseError:
+                pass
+
+        self.hotkey_prompt_edit = QKeySequenceEdit()
+        self.hotkey_prompt_edit.setMaximumSequenceLength(1)
+        self.hotkey_prompt_edit.setToolTip("Agent prompt'a dönüştürüp yapıştırır. Boş = kapalı.")
+        if settings.hotkey_prompt:
+            try:
+                self.hotkey_prompt_edit.setKeySequence(to_key_sequence(settings.hotkey_prompt))
+            except HotkeyParseError:
+                pass
 
         self.autostart_check = QCheckBox("Oturum açılışında başlat")
         self.autostart_check.setChecked(settings.autostart)
@@ -60,6 +87,8 @@ class GeneralTab(QWidget):
 
         form = QFormLayout(self)
         form.addRow("Kısayol (başlat/durdur)", self.hotkey_edit)
+        form.addRow("Kısayol (çeviri)", self.hotkey_translate_edit)
+        form.addRow("Kısayol (agent prompt)", self.hotkey_prompt_edit)
         form.addRow("Geçmiş kayıt sayısı", self.history_spin)
         for check in (
             self.autostart_check,
@@ -75,15 +104,25 @@ class GeneralTab(QWidget):
 
     def validate(self) -> str | None:
         try:
-            from_key_sequence(self.hotkey_edit.keySequence())
+            main = from_key_sequence(self.hotkey_edit.keySequence())
         except HotkeyParseError as exc:
             return str(exc)
+        try:
+            translate = _optional_hotkey(self.hotkey_translate_edit)
+            prompt = _optional_hotkey(self.hotkey_prompt_edit)
+        except HotkeyParseError as exc:
+            return str(exc)
+        specs = [s for s in (main, translate, prompt) if s]
+        if len(specs) != len(set(specs)):
+            return "Kısayollar birbirinden farklı olmalı"
         return None
 
     def apply(self, s: Settings) -> Settings:
         return s.model_copy(
             update={
                 "hotkey": from_key_sequence(self.hotkey_edit.keySequence()),
+                "hotkey_translate": _optional_hotkey(self.hotkey_translate_edit),
+                "hotkey_prompt": _optional_hotkey(self.hotkey_prompt_edit),
                 "autostart": self.autostart_check.isChecked(),
                 "auto_copy": self.auto_copy_check.isChecked(),
                 "auto_paste": self.auto_paste_check.isChecked(),

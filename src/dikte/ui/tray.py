@@ -26,6 +26,7 @@ class TrayIcon(QSystemTrayIcon):
     def __init__(self, hotkey_label: str, parent=None):
         super().__init__(make_tray_icon("idle"), parent)
         self._hotkey_label = hotkey_label
+        self._mode_lines: list[str] = []
         self._ready = False
         self._menu = QMenu()
         menu = self._menu
@@ -49,6 +50,18 @@ class TrayIcon(QSystemTrayIcon):
 
     def set_hotkey_label(self, label: str) -> None:
         self._hotkey_label = label
+        self._refresh_tooltip("Hazır" if self._ready else "Model yükleniyor…")
+
+    def set_mode_labels(self, translate: str, prompt: str) -> None:
+        """Çeviri/prompt kısayolları boşsa (kapalıysa) ilgili satır tooltip'te görünmez."""
+        self._mode_lines = [
+            line
+            for line in (
+                f"Çeviri: {translate}" if translate else "",
+                f"Prompt: {prompt}" if prompt else "",
+            )
+            if line
+        ]
         self._refresh_tooltip("Hazır" if self._ready else "Model yükleniyor…")
 
     def set_ready(self, ready: bool) -> None:
@@ -79,7 +92,8 @@ class TrayIcon(QSystemTrayIcon):
         self.showMessage(title, msg, icon, 4000)
 
     def _refresh_tooltip(self, status: str) -> None:
-        self.setToolTip(f"Dikte — {status}\nKısayol: {self._hotkey_label}")
+        lines = [f"Dikte — {status}", f"Kısayol: {self._hotkey_label}", *self._mode_lines]
+        self.setToolTip("\n".join(lines))
 
     def _on_activated(self, reason) -> None:
         if reason in (QSystemTrayIcon.Trigger, QSystemTrayIcon.DoubleClick):
