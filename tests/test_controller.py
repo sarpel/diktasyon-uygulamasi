@@ -257,6 +257,25 @@ def test_dictionary_rules_applied_and_glossary_sent_to_llm(qtbot):
     assert "Kısa tut" in llm.calls[0]["system"]
 
 
+def test_voice_commands_applied_when_enabled(qtbot):
+    rec, stt, llm = FakeRecorder(), FakeStt(text="merhaba yeni satır nasılsın"), FakeLlm()
+    c = DictationController(Settings(), recorder=rec, stt=stt, llm=llm, pool=QThreadPool())
+    c.toggle()
+    c.toggle()
+    qtbot.waitUntil(lambda: c.state is DictationState.RESULT, timeout=3000)
+    assert c.session.raw_text == "merhaba\nNasılsın"
+
+
+def test_voice_commands_left_untouched_when_disabled(qtbot):
+    settings = Settings(voice_commands=False)
+    rec, stt, llm = FakeRecorder(), FakeStt(text="merhaba yeni satır nasılsın"), FakeLlm()
+    c = DictationController(settings, recorder=rec, stt=stt, llm=llm, pool=QThreadPool())
+    c.toggle()
+    c.toggle()
+    qtbot.waitUntil(lambda: c.state is DictationState.RESULT, timeout=3000)
+    assert c.session.raw_text == "merhaba yeni satır nasılsın"
+
+
 def test_set_llm_replaces_provider(qtbot):
     c = DictationController(
         Settings(), recorder=FakeRecorder(), stt=FakeStt(), llm=FakeLlm(), pool=QThreadPool()

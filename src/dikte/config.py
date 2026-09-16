@@ -124,6 +124,7 @@ class Settings(BaseModel):
     raise_window_on_result: bool = False  # dikte akışını bozmamak için varsayılan kapalı
     sounds_enabled: bool = True  # başlat/durdur/hata sesleri
     suggest_dictionary: bool = True  # elle düzenlemeden tek kelimelik sözlük önerisi çıkar
+    voice_commands: bool = True  # "yeni satır", "yeni paragraf", "son cümleyi sil"
     stt: SttSettings = SttSettings()
     llm: LlmSettings = LlmSettings()
     audio: AudioSettings = AudioSettings()

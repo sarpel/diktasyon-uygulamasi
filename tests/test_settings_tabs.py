@@ -46,6 +46,12 @@ def test_hotkey_capture_writes_spec(dlg):
     assert dlg.result_settings().hotkey == "ctrl+shift+d"
 
 
+def test_voice_commands_checkbox_round_trips(dlg):
+    assert dlg.voice_commands_check.isChecked() is True
+    dlg.voice_commands_check.setChecked(False)
+    assert dlg.result_settings().voice_commands is False
+
+
 def test_provider_groups_follow_selection(dlg):
     dlg.provider_combo.setCurrentText("anthropic")
     assert not dlg.ollama_group.isVisibleTo(dlg.llm) and dlg.anthropic_group.isVisibleTo(dlg.llm)

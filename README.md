@@ -201,6 +201,21 @@ Ayarlar → Sözlük'te eklenen her terim üç katmanda devreye girer:
 Kullanıcı verileri: `%APPDATA%\Dikte\` (config.json, history.jsonl, dikte.log).
 Model önbelleği: `%LOCALAPPDATA%\Dikte\models\`.
 
+#### Sesli komutlar
+
+Ham metin, sözlük kurallarından sonra üç sesli komut için taranır (Ayarlar → Genel →
+"Sesli komutları tanı" ile kapatılabilir; büyük/küçük harf duyarsız, komut etrafındaki
+virgül/nokta temizlenir):
+
+- **"yeni satır"** → satır sonu ekler, sonrasındaki ilk harfi büyütür.
+- **"yeni paragraf"** → boş satırla ayrılan yeni bir paragraf başlatır.
+- **"son cümleyi sil"** → komutu ve ondan önceki cümleyi (önceki nokta/ünlem/soru işaretine
+  ya da metin başına kadar) siler.
+
+Örnek: "bugün hava güzel son cümleyi sil yarın yağmur var" → "Yarın yağmur var".
+Noktalama komutları ("noktalı virgül" gibi) bilinçli olarak desteklenmez — Türkçede bu
+ifadeler gerçek kelime olarak da geçer, yanlışlıkla komut sanılabilir.
+
 ## Geliştirme
 
 ```bash

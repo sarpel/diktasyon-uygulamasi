@@ -84,6 +84,10 @@ class GeneralTab(QWidget):
             "Elle düzeltmelerden tek kelimelik sözlük önerisi çıkar"
         )
         self.suggest_dictionary_check.setChecked(settings.suggest_dictionary)
+        self.voice_commands_check = QCheckBox(
+            'Sesli komutları tanı ("yeni satır", "yeni paragraf", "son cümleyi sil")'
+        )
+        self.voice_commands_check.setChecked(settings.voice_commands)
         self.history_spin = QSpinBox()
         self.history_spin.setRange(0, 5000)
         self.history_spin.setSpecialValueText("Kapalı")
@@ -104,6 +108,7 @@ class GeneralTab(QWidget):
             self.sounds_check,
             self.push_to_talk_check,
             self.suggest_dictionary_check,
+            self.voice_commands_check,
         ):
             form.addRow(check)
 
@@ -137,6 +142,7 @@ class GeneralTab(QWidget):
                 "sounds_enabled": self.sounds_check.isChecked(),
                 "push_to_talk": self.push_to_talk_check.isChecked(),
                 "suggest_dictionary": self.suggest_dictionary_check.isChecked(),
+                "voice_commands": self.voice_commands_check.isChecked(),
                 "history_limit": self.history_spin.value(),
             }
         )
