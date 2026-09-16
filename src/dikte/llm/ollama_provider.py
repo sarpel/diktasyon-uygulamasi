@@ -37,6 +37,15 @@ class OllamaProvider:
         else:
             log.info("Ollama modeli ısındırıldı: %s", self._settings.model)
 
+    def unload(self) -> None:
+        """Modeli VRAM'den düşürür (keep_alive=0); ölçüm/karşılaştırma senaryoları içindir."""
+        try:
+            self._client.chat(model=self._settings.model, messages=[], keep_alive=0)
+        except Exception as exc:  # noqa: BLE001 - boşaltma başarısızlığı akışı durdurmaz
+            log.warning("Ollama modeli boşaltılamadı (%s): %s", self._settings.model, exc)
+        else:
+            log.info("Ollama modeli boşaltıldı: %s", self._settings.model)
+
     def complete(
         self,
         system: str,

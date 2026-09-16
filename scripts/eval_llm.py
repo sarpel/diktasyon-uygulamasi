@@ -2,7 +2,7 @@
 """Türkçe STT düzeltme benchmark'ı: bilerek yerleştirilmiş hatalar ve bağlam testleri.
 
 Puanlama saf fonksiyonlardan oluşur (Ollama gerekmez); testler bunları doğrudan çağırır.
-Çalıştırma:  python scripts/eval_llm.py --models qwen3.5:4b gemma4:e4b-it-qat
+Çalıştırma:  .venv/bin/python scripts/eval_llm.py --models qwen3.5:4b gemma4:e4b-it-qat
 """
 
 from __future__ import annotations
@@ -98,7 +98,7 @@ def score_case(case: Case, result: CorrectionResult | None, latency_s: float) ->
     text = result.corrected_text
     passed = sum(1 for expected in case.must_contain if _matches(expected, text))
     violations = tuple(f"yasak: {f}" for f in case.must_not_contain if _matches(f, text))
-    if case.expect_no_changes and result.changes:
+    if case.expect_no_changes and (result.changes or text.strip() != case.raw.strip()):
         violations += ("gereksiz değişiklik",)
     over_edited = _change_ratio(case.raw, text) > case.max_change_ratio
     contains_ratio = passed / len(case.must_contain) if case.must_contain else 1.0
@@ -141,20 +141,47 @@ def aggregate(scores: Sequence[CaseScore]) -> dict:
 def run_model(
     model: str, cases: Sequence[Case], provider_factory: Callable[[str], object], runs: int = 1
 ) -> dict:
-    from dikte.llm.tasks import correct
-
     provider = provider_factory(model)
     scores: list[CaseScore] = []
+    try:
+        _run_cases(model, provider, cases, scores, runs)
+    finally:
+        _unload(provider)
+    return aggregate(scores) | {"scores": scores}
+
+
+def _unload(provider: object) -> None:
+    """Sıradaki aday için VRAM'i boşaltır; sağlayıcı desteklemiyorsa sessizce geçilir."""
+    unload = getattr(provider, "unload", None)
+    if not callable(unload):
+        return
+    try:
+        unload()
+    except Exception as exc:  # noqa: BLE001 - boşaltma başarısızlığı ölçümü durdurmaz
+        print(f"  ! model boşaltılamadı: {exc}", file=sys.stderr)
+
+
+def _run_cases(
+    model: str,
+    provider: object,
+    cases: Sequence[Case],
+    scores: list[CaseScore],
+    runs: int,
+) -> None:
+    from dikte.llm.tasks import correct
+
     for _ in range(runs):
         for case in cases:
             started = time.perf_counter()
             try:
                 result = correct(provider, case.raw)
             except Exception as exc:  # noqa: BLE001 - sağlayıcı hatası 0 puandır, tur sürer
-                print(f"  ! {case.id}: {exc}", file=sys.stderr)
+                print(
+                    f"  ! {model}/{case.id}: {exc} (Ollama çalışıyor mu, model adı doğru mu?)",
+                    file=sys.stderr,
+                )
                 result = None
             scores.append(score_case(case, result, time.perf_counter() - started))
-    return aggregate(scores) | {"scores": scores}
 
 
 def run(
@@ -192,15 +219,28 @@ def _ollama_factory(host: str, keep_alive: str) -> Callable[[str], object]:
     return factory
 
 
+def _positive_int(value: str) -> int:
+    number = int(value)
+    if number < 1:
+        raise argparse.ArgumentTypeError("tur sayısı en az 1 olmalı")
+    return number
+
+
 def main(argv: list[str] | None = None) -> int:
     from dikte.config import LlmSettings
 
     parser = argparse.ArgumentParser(prog="eval_llm")
     parser.add_argument("--models", nargs="+", required=True, help="Ollama model adları")
-    parser.add_argument("--runs", type=int, default=1, help="her örneğin kaç kez sorulacağı")
+    parser.add_argument(
+        "--runs", type=_positive_int, default=1, help="her örneğin kaç kez sorulacağı (≥ 1)"
+    )
     parser.add_argument("--out", type=Path, default=DEFAULT_OUT)
     parser.add_argument("--host", default=LlmSettings().ollama_host)
-    parser.add_argument("--keep-alive", default="0", help="'0' = her modelden sonra VRAM boşalsın")
+    parser.add_argument(
+        "--keep-alive",
+        default="5m",
+        help="model tur boyunca yüklü kalsın; her modelin sonunda yine de boşaltılır",
+    )
     args = parser.parse_args(argv)
 
     cases = load_cases()
@@ -208,13 +248,29 @@ def main(argv: list[str] | None = None) -> int:
     results = run(args.models, cases, _ollama_factory(args.host, args.keep_alive), args.runs)
     table = render_markdown(results)
     print("\n" + table)
-    args.out.parent.mkdir(parents=True, exist_ok=True)
-    args.out.write_text(
-        f"# Türkçe LLM düzeltme benchmark'ı\n\n{len(cases)} örnek · {args.runs} tur\n\n{table}\n",
-        encoding="utf-8",
-    )
+    _write_results(args.out, len(cases), args.runs, table)
     print(f"\nyazıldı: {args.out}")
     return 0
+
+
+RESULTS_BEGIN, RESULTS_END = "<!-- RESULTS:BEGIN -->", "<!-- RESULTS:END -->"
+
+
+def _write_results(path: Path, n_cases: int, runs: int, table: str) -> None:
+    """Yalnız işaretli sonuç bölümünü değiştirir; yöntem/kural metnine dokunmaz."""
+    block = f"{RESULTS_BEGIN}\n\n{n_cases} örnek · {runs} tur\n\n{table}\n\n{RESULTS_END}"
+    if path.exists():
+        text = path.read_text(encoding="utf-8")
+        if RESULTS_BEGIN in text and RESULTS_END in text:
+            before, rest = text.split(RESULTS_BEGIN, 1)
+            _, after = rest.split(RESULTS_END, 1)
+            text = before + block + after
+        else:
+            text = text.rstrip() + "\n\n" + block + "\n"
+    else:
+        text = f"# Türkçe LLM düzeltme benchmark'ı\n\n{block}\n"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(text, encoding="utf-8")
 
 
 if __name__ == "__main__":

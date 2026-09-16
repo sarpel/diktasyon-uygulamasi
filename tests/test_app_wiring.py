@@ -176,7 +176,7 @@ def test_apply_hotkey_falls_back_to_cli_label_off_windows(ctx, monkeypatch):
 
 def test_apply_hotkey_notifies_on_windows_failure(ctx, monkeypatch):
     monkeypatch.setattr(app_mod.sys, "platform", "win32")
-    ctx.hotkey.register = lambda _spec: False
+    ctx.hotkey.register = lambda _spec, **kw: False
     notifications = []
     ctx.tray.notify = lambda *a, **k: notifications.append(a)
     app_mod._apply_hotkey(ctx)
@@ -257,11 +257,11 @@ def test_escape_hides_window_when_idle(ctx, qtbot):
 
 def test_cancel_hotkey_registered_only_while_busy(ctx):
     calls = []
-    ctx.cancel_hotkey.register = lambda spec: calls.append(("reg", spec)) or True
+    ctx.cancel_hotkey.register = lambda spec, **kw: calls.append(("reg", spec, kw)) or True
     ctx.cancel_hotkey.unregister = lambda: calls.append(("unreg", None))
     ctx.controller.state_changed.emit(DictationState.RECORDING)
     ctx.controller.state_changed.emit(DictationState.IDLE)
-    assert calls == [("reg", "escape"), ("unreg", None)]
+    assert calls == [("reg", "escape", {"allow_bare": True}), ("unreg", None)]
 
 
 def test_overlay_and_tray_cancel_reach_controller(ctx):
@@ -307,6 +307,17 @@ def test_result_ready_respects_auto_copy_off(ctx, monkeypatch):
     assert QApplication.clipboard().text() == "eski"
 
 
+def test_paste_still_happens_when_raise_on_result_activates_window(ctx, qtbot, monkeypatch):
+    """result_ready, RESULT durumuna geçiş penceresini aktive etmeden önce işlenmeli
+    (aktivasyon artık ertelenmiş); aksi halde yapıştırma hedefi kaybolur."""
+    ctx.window.raise_on_result = True
+    pasted = []
+    monkeypatch.setattr(app_mod, "paste_active_window", lambda ids, **k: pasted.append(ids) or True)
+    ctx.controller.state_changed.emit(DictationState.RESULT)
+    ctx.controller.result_ready.emit("Merhaba.")
+    assert len(pasted) == 1
+
+
 def test_history_panel_refreshes_on_result(ctx):
     ctx.controller._update_session(raw_text="a", corrected_text="A.")
     ctx.controller.state_changed.emit(DictationState.RESULT)
@@ -342,6 +353,16 @@ def test_status_info_set_when_ready(ctx):
     assert "float16" in ctx.window.status_info.text()
 
 
+def test_status_info_shows_actually_loaded_model_not_pending_setting(ctx):
+    ctx.controller.ready_changed.emit(True)
+    assert ctx.stt.active_model in ctx.window.status_info.text()
+    ctx.settings = ctx.settings.model_copy(
+        update={"stt": ctx.settings.stt.model_copy(update={"model": "farkli-model-henuz-yuklenmedi"})}
+    )
+    ctx.controller.ready_changed.emit(True)
+    assert "farkli-model-henuz-yuklenmedi" not in ctx.window.status_info.text()
+
+
 def test_window_toolbar_reaches_controller(ctx):
     ctx.window.record_action.trigger()
     assert ctx.controller.state is DictationState.RECORDING
@@ -364,3 +385,20 @@ def test_valid_hotkey_is_left_alone():
 
     s = S(hotkey="ctrl+shift+d")
     assert app_mod._safe_hotkey(s) is s
+
+
+def test_history_write_failure_notifies_user(ctx, monkeypatch):
+    """Geçmiş yazılamazsa uygulama çökmez; tepsi bildirimiyle uyarır."""
+    from dikte.core.history import HistoryError
+
+    notified = []
+    monkeypatch.setattr(
+        ctx.tray, "notify", lambda title, msg, critical=False: notified.append((msg, critical))
+    )
+
+    def boom(_session):
+        raise HistoryError("Geçmiş kaydedilemedi (…): disk dolu.")
+
+    monkeypatch.setattr(ctx.history, "append", boom)
+    ctx.controller.state_changed.emit(DictationState.RESULT)
+    assert notified and notified[-1][1] is True and "Geçmiş kaydedilemedi" in notified[-1][0]

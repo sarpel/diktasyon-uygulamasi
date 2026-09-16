@@ -97,3 +97,16 @@ def test_limit_emits_signal_once_and_keeps_everything_up_to_limit(qtbot):
         s.push(np.ones(1600, dtype=np.float32) * 0.1)
     assert fired == [True]
     assert rec.stop().shape[0] == 16_000
+
+
+def test_block_that_exactly_fills_the_limit_stops_recording_immediately(qtbot):
+    """16 000. örneği getiren blok sınırı tam doldurur; sinyal bir sonraki bloğu beklemez."""
+    rec = AudioRecorder(AudioSettings(max_seconds=1), stream_factory=FakeStream)
+    fired = []
+    rec.limit_reached.connect(lambda: fired.append(True))
+    rec.start()
+    s = FakeStream.instances[-1]
+    for _ in range(10):  # 10 × 1600 = 16 000 örnek = tam sınır
+        s.push(np.ones(1600, dtype=np.float32) * 0.1)
+    assert fired == [True]
+    assert rec.stop().shape[0] == 16_000

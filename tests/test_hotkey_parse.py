@@ -96,3 +96,25 @@ def test_to_key_sequence_rejects_invalid_spec():
 
     with pytest.raises(HotkeyParseError):
         to_key_sequence("ctrl+")
+
+
+def test_register_rejects_bare_key_by_default():
+    """Kullanıcı kısayolu en az bir değiştirici istemeli; 'a' tek başına kaydedilmemeli."""
+    from dikte.platform.hotkey import GlobalHotkey
+
+    assert GlobalHotkey().register("a") is False
+
+
+def test_register_allows_bare_key_when_explicitly_permitted(monkeypatch):
+    """İptal kısayolu (Esc) uygulamanın kendi ürettiği kısayoldur; çıplak tuşa izin verilir."""
+    from dikte.platform import hotkey as hotkey_mod
+
+    seen = []
+
+    def spy(spec, *, allow_bare=False):
+        seen.append(allow_bare)
+        return parse_hotkey(spec, allow_bare=allow_bare)
+
+    monkeypatch.setattr(hotkey_mod, "parse_hotkey", spy)
+    hotkey_mod.GlobalHotkey().register("escape", allow_bare=True)
+    assert seen == [True]

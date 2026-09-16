@@ -40,6 +40,9 @@ _PROXIED = {
         "vad_threshold_spin",
         "vad_min_silence_spin",
         "no_speech_spin",
+        "vad_speech_pad_spin",
+        "log_prob_spin",
+        "hallucination_silence_spin",
         "hallucination_filter_check",
     ),
     "llm": (
@@ -70,6 +73,8 @@ _PROXIED = {
         "gemini_group",
         "custom_group",
         "privacy_label",
+        "llm_test_btn",
+        "llm_test_status",
     ),
     "advanced": (
         "beam_spin",

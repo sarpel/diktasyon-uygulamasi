@@ -10,8 +10,8 @@
 
   {"id": "baglam-01", "category": "baglam", "raw": "toplantıda karar verdik yarın sabah gel cek", "must_contain": ["gelecek"], "must_not_contain": ["gel cek"], "max_change_ratio": 0.35},
   {"id": "baglam-02", "category": "baglam", "raw": "dosyayı silmeden önce yedek al mayı unutma", "must_contain": ["almayı"], "must_not_contain": ["al mayı"], "max_change_ratio": 0.3},
-  {"id": "baglam-03", "category": "baglam", "raw": "sunumu bitirince ışıkları yak", "must_contain": ["ışıkları yak"], "must_not_contain": ["ışıkları yaz", "ışıkları bak"], "max_change_ratio": 0.25},
-  {"id": "baglam-04", "category": "baglam", "raw": "kredi kartı ekstresini bu ay ödemeyi unuttum galiba", "must_contain": ["ekstre"], "must_not_contain": ["extra"], "max_change_ratio": 0.3},
+  {"id": "baglam-03", "category": "baglam", "raw": "sunumu bitirince ışıkları yaz", "must_contain": ["ışıkları yak"], "must_not_contain": ["ışıkları yaz", "ışıkları bak"], "max_change_ratio": 0.25},
+  {"id": "baglam-04", "category": "baglam", "raw": "kredi kartı extra sini bu ay ödemeyi unuttum galiba", "must_contain": ["ekstre"], "must_not_contain": ["extra"], "max_change_ratio": 0.3},
   {"id": "baglam-05", "category": "baglam", "raw": "sunucu çöktü ğü için istekler zaman aşımına uğradı", "must_contain": ["çöktüğü"], "must_not_contain": ["çöktü ğü"], "max_change_ratio": 0.3},
   {"id": "baglam-06", "category": "baglam", "raw": "banka şubesine gidip hesap açtır mam lazım", "must_contain": ["açtırmam"], "must_not_contain": ["açtır mam"], "max_change_ratio": 0.3},
   {"id": "baglam-07", "category": "baglam", "raw": "çocuğu okuldan al dıktan sonra markete uğrayalım", "must_contain": ["aldıktan"], "must_not_contain": ["al dıktan"], "max_change_ratio": 0.3},

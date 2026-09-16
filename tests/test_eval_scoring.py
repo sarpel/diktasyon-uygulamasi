@@ -1,13 +1,10 @@
-import sys
-from pathlib import Path
-
 import pytest
-
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "scripts"))
-
 from eval_llm import (
     CATEGORIES,
+    RESULTS_BEGIN,
+    RESULTS_END,
     Case,
+    _write_results,
     aggregate,
     load_cases,
     render_markdown,
@@ -135,3 +132,70 @@ def test_run_scores_zero_when_provider_fails():
     cases = (Case("a", "yazim", "çuk", ("çok",)),)
     results = run(("sahte",), cases, lambda model: BrokenProvider())
     assert results["sahte"]["score_10"] == 0.0 and results["sahte"]["failures"] == 1
+
+
+def test_rewrite_without_declared_changes_is_still_a_violation():
+    """Model metni değiştirip 'changes' listesini boş bırakırsa da ihlal sayılır."""
+    c = Case(
+        "x",
+        "bos_degisiklik",
+        "Bugün hava çok güzel.",
+        ("Bugün hava",),
+        max_change_ratio=0.9,
+        expect_no_changes=True,
+    )
+    s = score_case(c, CorrectionResult("Bugün hava fena değil.", ()), 1.0)
+    assert "gereksiz değişiklik" in s.violations
+
+
+def test_model_is_unloaded_after_its_turn():
+    class FakeProvider:
+        def __init__(self):
+            self.unloaded = 0
+
+        def complete(self, system, user, *, json_schema=None, temperature=0.2):
+            return '{"corrected_text": "çok", "changes": []}'
+
+        def unload(self):
+            self.unloaded += 1
+
+    created: list[FakeProvider] = []
+
+    def factory(model):
+        created.append(FakeProvider())
+        return created[-1]
+
+    run(("a", "b"), (Case("x", "yazim", "çuk", ("çok",)),), factory)
+    assert [p.unloaded for p in created] == [1, 1]
+
+
+def test_runs_below_one_is_rejected():
+    import eval_llm
+
+    with pytest.raises(SystemExit):
+        eval_llm.main(["--models", "m", "--runs", "0"])
+
+
+def test_write_results_replaces_only_marked_section(tmp_path):
+    path = tmp_path / "llm_benchmark.md"
+    path.write_text(
+        f"# Yöntem\n\nBu bölüm silinmemeli.\n\n"
+        f"{RESULTS_BEGIN}\n\neski sonuç\n\n{RESULTS_END}\n\n"
+        f"## Aday seçimi\n\nBu da silinmemeli.\n",
+        encoding="utf-8",
+    )
+    _write_results(path, 5, 2, "| Model | Puan |\n|---|---|\n")
+    text = path.read_text(encoding="utf-8")
+    assert "Bu bölüm silinmemeli." in text
+    assert "Bu da silinmemeli." in text
+    assert "eski sonuç" not in text
+    assert "5 örnek · 2 tur" in text
+
+
+def test_write_results_appends_markers_when_missing(tmp_path):
+    path = tmp_path / "llm_benchmark.md"
+    path.write_text("# Yöntem\n\nKorunmalı.\n", encoding="utf-8")
+    _write_results(path, 3, 1, "| Model |\n|---|\n")
+    text = path.read_text(encoding="utf-8")
+    assert "Korunmalı." in text
+    assert RESULTS_BEGIN in text and RESULTS_END in text

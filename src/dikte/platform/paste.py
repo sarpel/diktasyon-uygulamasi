@@ -40,21 +40,21 @@ def _send_windows() -> bool:
 
 
 def _send_linux() -> bool:
-    xdotool = shutil.which("xdotool")
-    if xdotool:
-        subprocess.run(
-            [xdotool, "key", "--clearmodifiers", "ctrl+v"],
-            check=False,
-            timeout=_PASTE_TIMEOUT_S,
-        )
-        return True
-    wtype = shutil.which("wtype")
-    if wtype:
-        subprocess.run(
-            [wtype, "-M", "ctrl", "v", "-m", "ctrl"], check=False, timeout=_PASTE_TIMEOUT_S
-        )
-        return True
-    if not _warned["tools"]:
+    """Önce xdotool (X11), başarısız olursa wtype (Wayland) denenir."""
+    found_tool = False
+    for name, args in (
+        ("xdotool", ["key", "--clearmodifiers", "ctrl+v"]),
+        ("wtype", ["-M", "ctrl", "v", "-m", "ctrl"]),
+    ):
+        path = shutil.which(name)
+        if not path:
+            continue
+        found_tool = True
+        result = subprocess.run([path, *args], check=False, timeout=_PASTE_TIMEOUT_S)
+        if result.returncode == 0:
+            return True
+        log.warning("%s yapıştırma komutu başarısız (çıkış kodu %s)", name, result.returncode)
+    if not found_tool and not _warned["tools"]:
         log.warning(
             "otomatik yapıştırma için xdotool (X11) veya wtype (Wayland) gerekli; metin panoda kaldı"
         )

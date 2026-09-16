@@ -180,10 +180,10 @@ Model önbelleği: `%LOCALAPPDATA%\Dikte\models\`.
 ```bash
 uv venv --python 3.11 .venv
 uv pip install -e ".[dev]"      # Windows'ta: ".[dev,cuda]"
-pytest -q --cov=src --cov-report=term-missing   # GPU ve Windows testleri yoksa atlanır
-pytest -m gpu                                   # CUDA gerektirir
-ruff check src tests scripts                    # CI ile aynı kapsam
-ruff format --check src tests scripts
+.venv/bin/python -m pytest -q --cov=src --cov-report=term-missing   # GPU/Windows testleri atlanır
+.venv/bin/python -m pytest -m gpu               # CUDA gerektirir
+.venv/bin/ruff check src tests scripts          # CI ile aynı kapsam
+.venv/bin/ruff format --check src tests scripts
 ```
 
 Başsız (headless) ortamda Qt testleri için `QT_QPA_PLATFORM=offscreen` gerekir; CI bunu
@@ -192,7 +192,7 @@ ortam değişkeni olarak ayarlar.
 - Ayrıntılı plan: [`implementation_plan.md`](implementation_plan.md)
 - İyileştirme planı ve durumu: [`improvement_plan.md`](improvement_plan.md)
 - Windows manuel test listesi: [`docs/manual_test_checklist.md`](docs/manual_test_checklist.md)
-- LLM model karşılaştırması: `python scripts/eval_llm.py --models <model…>` (Ollama çalışır durumda olmalı) · yöntem ve puanlama: [`docs/llm_benchmark.md`](docs/llm_benchmark.md)
+- LLM model karşılaştırması: `.venv/bin/python scripts/eval_llm.py --models <model…>` (Ollama çalışır durumda olmalı) · yöntem ve puanlama: [`docs/llm_benchmark.md`](docs/llm_benchmark.md)
 
 ## Paketleme (Windows)
 

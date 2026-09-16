@@ -20,7 +20,9 @@ class FakeGenai:
 
 def make(monkeypatch, fake, **settings_kwargs):
     monkeypatch.setenv("GEMINI_API_KEY", "k")
-    return GeminiProvider(LlmSettings(**settings_kwargs), client_factory=lambda api_key: fake)
+    return GeminiProvider(
+        LlmSettings(**settings_kwargs), client_factory=lambda api_key, timeout_s: fake
+    )
 
 
 def test_schema_goes_to_response_json_schema(monkeypatch):
@@ -43,7 +45,7 @@ def test_plain_text_when_no_schema(monkeypatch):
 def test_missing_key_raises(monkeypatch):
     monkeypatch.delenv("GEMINI_API_KEY", raising=False)
     with pytest.raises(LlmError, match="GEMINI_API_KEY"):
-        GeminiProvider(LlmSettings(), client_factory=lambda api_key: FakeGenai())
+        GeminiProvider(LlmSettings(), client_factory=lambda api_key, timeout_s: FakeGenai())
 
 
 def test_custom_key_env_name_is_used(monkeypatch):
@@ -52,7 +54,7 @@ def test_custom_key_env_name_is_used(monkeypatch):
     seen = {}
     GeminiProvider(
         LlmSettings(gemini_api_key_env="MY_KEY"),
-        client_factory=lambda api_key: seen.setdefault("key", api_key) and FakeGenai(),
+        client_factory=lambda api_key, timeout_s: seen.setdefault("key", api_key) and FakeGenai(),
     )
     assert seen["key"] == "v"
 
@@ -65,3 +67,15 @@ def test_empty_response_raises(monkeypatch):
 def test_api_failure_wrapped(monkeypatch):
     with pytest.raises(LlmError, match="Gemini"):
         make(monkeypatch, FakeGenai(fail=RuntimeError("429"))).complete("s", "u")
+
+
+def test_timeout_is_forwarded_to_client_factory(monkeypatch):
+    monkeypatch.setenv("GEMINI_API_KEY", "k")
+    captured = {}
+
+    def factory(api_key, timeout_s):
+        captured["api_key"], captured["timeout_s"] = api_key, timeout_s
+        return FakeGenai()
+
+    GeminiProvider(LlmSettings(timeout_s=42.0), client_factory=factory)
+    assert captured == {"api_key": "k", "timeout_s": 42.0}

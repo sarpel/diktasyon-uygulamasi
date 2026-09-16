@@ -180,12 +180,88 @@ def test_vad_group_fields_round_trip(dlg):
     assert s.stt.no_speech_threshold == 0.8 and s.stt.hallucination_filter is False
 
 
+def test_advanced_stt_thresholds_round_trip(dlg):
+    dlg.vad_speech_pad_spin.setValue(450)
+    dlg.log_prob_spin.setValue(-0.8)
+    dlg.hallucination_silence_spin.setValue(3.5)
+    s = dlg.result_settings()
+    assert s.stt.vad_speech_pad_ms == 450
+    assert s.stt.log_prob_threshold == -0.8
+    assert s.stt.hallucination_silence_threshold_s == 3.5
+
+
 def test_vad_checkbox_lives_only_on_the_stt_tab(dlg):
     """Tek kaynak: VAD kutusu yalnızca Konuşma Tanıma sekmesinde."""
     assert dlg.vad_check is dlg.stt.vad_check
     assert not hasattr(dlg.advanced, "vad_check")
     dlg.vad_check.setChecked(False)
     assert dlg.result_settings().stt.vad_filter is False
+
+
+def test_openai_requires_base_url(dlg):
+    dlg.provider_combo.setCurrentText("openai")
+    dlg.openai_model_edit.setText("gpt-5.5")
+    dlg.openai_base_url_edit.setText("   ")
+    dlg.accept()
+    assert "base URL" in dlg.error_label.text()
+    assert dlg.tabs.currentWidget() is dlg.llm
+
+
+def test_connection_test_button_reports_success(dlg, monkeypatch):
+    import dikte.ui.settings.llm_tab as llm_tab_mod
+
+    class FakeProvider:
+        def complete(self, system, user):
+            return "OK"
+
+    monkeypatch.setattr(llm_tab_mod, "make_provider", lambda settings: FakeProvider())
+
+    def fake_run_in_pool(fn, on_result, on_error, pool=None):
+        try:
+            on_result(fn())
+        except Exception as exc:  # noqa: BLE001 - test double, gerçek hata yolu sınanıyor
+            on_error(str(exc))
+
+    monkeypatch.setattr(llm_tab_mod, "run_in_pool", fake_run_in_pool)
+
+    dlg.provider_combo.setCurrentText("ollama")
+    dlg.llm_model_edit.setText("qwen3.5:4b")
+    dlg.llm_test_btn.click()
+    assert "✓" in dlg.llm_test_status.text()
+    assert dlg.llm_test_btn.isEnabled()
+
+
+def test_connection_test_button_reports_failure(dlg, monkeypatch):
+    import dikte.ui.settings.llm_tab as llm_tab_mod
+    from dikte.llm.provider import LlmError
+
+    class FailingProvider:
+        def complete(self, system, user):
+            raise LlmError("bağlantı yok")
+
+    monkeypatch.setattr(llm_tab_mod, "make_provider", lambda settings: FailingProvider())
+
+    def fake_run_in_pool(fn, on_result, on_error, pool=None):
+        try:
+            on_result(fn())
+        except Exception as exc:  # noqa: BLE001 - test double, gerçek hata yolu sınanıyor
+            on_error(str(exc))
+
+    monkeypatch.setattr(llm_tab_mod, "run_in_pool", fake_run_in_pool)
+
+    dlg.provider_combo.setCurrentText("ollama")
+    dlg.llm_model_edit.setText("qwen3.5:4b")
+    dlg.llm_test_btn.click()
+    assert "✗" in dlg.llm_test_status.text()
+    assert "bağlantı yok" in dlg.llm_test_status.text()
+
+
+def test_connection_test_button_blocks_on_invalid_settings(dlg):
+    dlg.provider_combo.setCurrentText("openai")
+    dlg.openai_model_edit.setText("gpt-5.5")
+    dlg.openai_base_url_edit.setText("   ")
+    dlg.llm_test_btn.click()
+    assert "✗" in dlg.llm_test_status.text()
 
 
 def test_lmstudio_group_round_trip(dlg):
@@ -215,3 +291,35 @@ def test_empty_ollama_host_blocks_accept(dlg):
     dlg.ollama_host_edit.setText("  ")
     dlg.accept()
     assert "host" in dlg.error_label.text().lower()
+
+
+def test_open_location_failure_warns_user(dlg, monkeypatch):
+    """QDesktopServices açamazsa sessiz kalınmaz; yolu içeren bir uyarı gösterilir."""
+    from dikte.ui.settings import about_tab as about_mod
+
+    monkeypatch.setattr(about_mod.QDesktopServices, "openUrl", staticmethod(lambda _url: False))
+    warned = []
+    monkeypatch.setattr(
+        about_mod.QMessageBox, "warning", staticmethod(lambda *a: warned.append(a[2]))
+    )
+    dlg.about.open_log_btn.click()
+    assert warned and "açılamadı" in warned[0]
+
+
+def test_microphone_test_failure_resets_button_and_warns(dlg, monkeypatch):
+    """Cihaz açılamazsa test düğmesi basılı kalmaz ve kullanıcı yönlendirilir."""
+    from dikte.ui.settings import audio_tab as audio_mod
+
+    warned = []
+    monkeypatch.setattr(
+        audio_mod.QMessageBox, "warning", staticmethod(lambda *a: warned.append(a[2]))
+    )
+
+    def boom():
+        raise OSError("cihaz meşgul")
+
+    dlg.audio._recorder_factory = boom
+    dlg.test_btn.setChecked(True)
+    assert not dlg.test_btn.isChecked()
+    assert dlg.test_btn.text() == "Mikrofonu test et"
+    assert warned and "cihaz meşgul" in warned[0]

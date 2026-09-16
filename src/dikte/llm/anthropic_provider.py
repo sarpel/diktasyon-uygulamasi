@@ -39,7 +39,9 @@ class AnthropicProvider:
         self.name = name
         self._settings = settings
         self._model = model or settings.anthropic_model
-        api_key = read_api_key(api_key_env, required=required_key)
+        # Anahtar yoksa boş değer verilir: SDK aksi hâlde ANTHROPIC_API_KEY /
+        # ANTHROPIC_AUTH_TOKEN'a düşer ve kullanıcının gerçek anahtarını özel uç noktaya yollar.
+        api_key = read_api_key(api_key_env, required=required_key) or ""
         factory = client_factory or _default_client_factory
         self._client = (
             factory(api_key, settings.timeout_s, base_url)
