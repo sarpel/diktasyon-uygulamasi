@@ -234,6 +234,33 @@ def test_silence_signal_stops_recording(ctl):
     assert c.state is DictationState.TRANSCRIBING and rec.stopped
 
 
+def test_start_recording_from_idle_starts(ctl):
+    c, rec, *_ = ctl
+    c.start_recording()
+    assert c.state is DictationState.RECORDING and rec.started
+
+
+def test_start_recording_while_recording_is_a_no_op(ctl):
+    c, rec, *_ = ctl
+    c.start_recording()
+    rec.started = False
+    c.start_recording()
+    assert c.state is DictationState.RECORDING and not rec.started
+
+
+def test_stop_recording_while_idle_is_a_no_op(ctl):
+    c, rec, *_ = ctl
+    c.stop_recording()
+    assert c.state is DictationState.IDLE and not rec.stopped
+
+
+def test_stop_recording_while_recording_transcribes(ctl):
+    c, rec, *_ = ctl
+    c.start_recording()
+    c.stop_recording()
+    assert c.state is DictationState.TRANSCRIBING and rec.stopped
+
+
 class BlockingStt(FakeStt):
     """transcribe() serbest bırakılana kadar bekler; geç gelen sonucu test etmek için."""
 

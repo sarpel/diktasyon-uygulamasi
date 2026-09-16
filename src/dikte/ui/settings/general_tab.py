@@ -48,6 +48,11 @@ class GeneralTab(QWidget):
         self.close_after_copy_check.setChecked(settings.close_after_copy)
         self.sounds_check = QCheckBox("Başlat/durdur/hata seslerini çal")
         self.sounds_check.setChecked(settings.sounds_enabled)
+        self.push_to_talk_check = QCheckBox("Bas-konuş (kısayolu basılı tutunca kaydet)")
+        self.push_to_talk_check.setChecked(settings.push_to_talk)
+        self.push_to_talk_check.setToolTip(
+            "Yalnızca Windows'ta etkindir; kısa basış her zaman aç/kapat olarak çalışır."
+        )
         self.history_spin = QSpinBox()
         self.history_spin.setRange(0, 5000)
         self.history_spin.setSpecialValueText("Kapalı")
@@ -64,6 +69,7 @@ class GeneralTab(QWidget):
             self.raise_window_check,
             self.close_after_copy_check,
             self.sounds_check,
+            self.push_to_talk_check,
         ):
             form.addRow(check)
 
@@ -85,6 +91,7 @@ class GeneralTab(QWidget):
                 "raise_window_on_result": self.raise_window_check.isChecked(),
                 "close_after_copy": self.close_after_copy_check.isChecked(),
                 "sounds_enabled": self.sounds_check.isChecked(),
+                "push_to_talk": self.push_to_talk_check.isChecked(),
                 "history_limit": self.history_spin.value(),
             }
         )

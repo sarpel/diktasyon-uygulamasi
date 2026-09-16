@@ -9,6 +9,8 @@ log = logging.getLogger(__name__)
 DEFAULT_NAME = "dikte-single-instance"
 SHOW_MESSAGE = b"show"
 TOGGLE_MESSAGE = b"toggle"
+START_MESSAGE = b"start"
+STOP_MESSAGE = b"stop"
 ACK = b"ok"
 _TIMEOUT_MS = 2000
 
@@ -56,6 +58,8 @@ def send_command(name: str, message: bytes, timeout_ms: int = _TIMEOUT_MS) -> bo
 class SingleInstance(QObject):
     activated = Signal()
     toggle_requested = Signal()
+    start_requested = Signal()
+    stop_requested = Signal()
 
     def __init__(self, name: str = DEFAULT_NAME, parent=None):
         super().__init__(parent)
@@ -91,6 +95,10 @@ class SingleInstance(QObject):
             return
         if payload.startswith(TOGGLE_MESSAGE):
             self.toggle_requested.emit()
+        elif payload.startswith(START_MESSAGE):
+            self.start_requested.emit()
+        elif payload.startswith(STOP_MESSAGE):
+            self.stop_requested.emit()
         elif payload.startswith(SHOW_MESSAGE):
             self.activated.emit()
         else:

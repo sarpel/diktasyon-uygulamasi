@@ -115,11 +115,27 @@ class DictationController(QObject):
     @Slot()
     def toggle(self) -> None:
         if self._state in (DictationState.IDLE, DictationState.RESULT):
-            self._start_recording()
+            self.start_recording()
         elif self._state is DictationState.RECORDING:
-            self._stop_and_transcribe()
+            self.stop_recording()
         else:
             log.debug("toggle yok sayıldı (durum: %s)", self._state)
+
+    @Slot()
+    def start_recording(self) -> None:
+        """Bas-konuş: tuş basılı tutulmaya başlayınca çağrılır."""
+        if self._state in (DictationState.IDLE, DictationState.RESULT):
+            self._start_recording()
+        else:
+            log.debug("start_recording yok sayıldı (durum: %s)", self._state)
+
+    @Slot()
+    def stop_recording(self) -> None:
+        """Bas-konuş: tuş bırakılınca çağrılır."""
+        if self._state is DictationState.RECORDING:
+            self._stop_and_transcribe()
+        else:
+            log.debug("stop_recording yok sayıldı (durum: %s)", self._state)
 
     @Slot(str)
     def request_translation(self, text: str) -> None:
