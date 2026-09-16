@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import contextlib
+
 from PySide6.QtWidgets import QCheckBox, QFormLayout, QKeySequenceEdit, QSpinBox, QWidget
 
 from dikte.config import Settings
@@ -36,21 +38,17 @@ class GeneralTab(QWidget):
         self.hotkey_translate_edit.setMaximumSequenceLength(1)
         self.hotkey_translate_edit.setToolTip("İngilizce'ye çevirip yapıştırır. Boş = kapalı.")
         if settings.hotkey_translate:
-            try:
+            with contextlib.suppress(HotkeyParseError):
                 self.hotkey_translate_edit.setKeySequence(
                     to_key_sequence(settings.hotkey_translate)
                 )
-            except HotkeyParseError:
-                pass
 
         self.hotkey_prompt_edit = QKeySequenceEdit()
         self.hotkey_prompt_edit.setMaximumSequenceLength(1)
         self.hotkey_prompt_edit.setToolTip("Agent prompt'a dönüştürüp yapıştırır. Boş = kapalı.")
         if settings.hotkey_prompt:
-            try:
+            with contextlib.suppress(HotkeyParseError):
                 self.hotkey_prompt_edit.setKeySequence(to_key_sequence(settings.hotkey_prompt))
-            except HotkeyParseError:
-                pass
 
         self.autostart_check = QCheckBox("Oturum açılışında başlat")
         self.autostart_check.setChecked(settings.autostart)
@@ -59,7 +57,8 @@ class GeneralTab(QWidget):
         self.auto_paste_check = QCheckBox("Sonucu aktif pencereye yapıştır (Ctrl+V)")
         self.auto_paste_check.setChecked(settings.auto_paste)
         self.auto_paste_check.setToolTip(
-            "Linux'ta xdotool (X11) veya wtype (Wayland) gerekir; yoksa metin yalnızca panoda kalır."
+            "Linux'ta xdotool (X11) veya wtype (Wayland) gerekir; "
+            "yoksa metin yalnızca panoda kalır."
         )
         self.auto_paste_check.setEnabled(settings.auto_copy)
         self.auto_copy_check.toggled.connect(self.auto_paste_check.setEnabled)

@@ -11,8 +11,25 @@ if ! command -v pipx >/dev/null 2>&1; then
   exit 1
 fi
 
-echo "1/3 Uygulama kuruluyor…"
-pipx install --force "$ROOT"
+# pipx her zaman kendi yalıtılmış ortamını kurar; etkin sanal ortamı değil, kendi varsayılan
+# yorumlayıcısını kullanır. Bu yüzden pyproject'in istediği sürüm açıkça seçilir.
+PYTHON="${DIKTE_PYTHON:-}"
+if [ -z "$PYTHON" ]; then
+  for candidate in python3.12 python3.11; do
+    if command -v "$candidate" >/dev/null 2>&1; then
+      PYTHON="$candidate"
+      break
+    fi
+  done
+fi
+if [ -z "$PYTHON" ]; then
+  echo "Python 3.11 veya 3.12 bulunamadı (pyproject: >=3.11,<3.13)." >&2
+  echo "Kurulum: sudo apt install python3.12-venv  — ya da DIKTE_PYTHON=/yol/python ile belirtin." >&2
+  exit 1
+fi
+
+echo "1/3 Uygulama kuruluyor… ($PYTHON)"
+pipx install --python "$PYTHON" --force "$ROOT"
 
 echo "2/3 Masaüstü kaydı yazılıyor…"
 mkdir -p "$APPS" "$ICONS"

@@ -71,7 +71,7 @@ def parse_hotkey(spec: str, *, allow_bare: bool = False) -> HotkeySpec:
     else:
         raise HotkeyParseError(f"Bilinmeyen tuş: {key}")
     labels = [_MOD_LABEL[b] for b in (MOD_CONTROL, MOD_ALT, MOD_SHIFT, MOD_WIN) if modifiers & b]
-    label = "+".join(labels + [key.capitalize() if len(key) > 1 else key.upper()])
+    label = "+".join([*labels, key.capitalize() if len(key) > 1 else key.upper()])
     return HotkeySpec(modifiers | MOD_NOREPEAT, vk, label)
 
 

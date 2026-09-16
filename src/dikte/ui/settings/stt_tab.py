@@ -158,7 +158,9 @@ class SttTab(QWidget):
                         "no_speech_threshold": self.no_speech_spin.value(),
                         "vad_speech_pad_ms": self.vad_speech_pad_spin.value(),
                         "log_prob_threshold": self.log_prob_spin.value(),
-                        "hallucination_silence_threshold_s": self.hallucination_silence_spin.value(),
+                        "hallucination_silence_threshold_s": (
+                            self.hallucination_silence_spin.value()
+                        ),
                         "hallucination_filter": self.hallucination_filter_check.isChecked(),
                     }
                 )

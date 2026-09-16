@@ -122,8 +122,9 @@ def test_active_model_follows_provider():
     base = LlmSettings(lmstudio_model="lm-4b", custom_model="öz-model")
     assert base.active_model == "gemma4:e4b-it-qat"
     assert base.model_copy(update={"provider": "lmstudio"}).active_model == "lm-4b"
-    assert base.model_copy(update={"provider": "openai"}).active_model == "gpt-5.5"
-    assert base.model_copy(update={"provider": "gemini"}).active_model == "gemini-3.5-flash"
+    # Model adları sürüm çıktıkça değişir; test eşlemeyi doğrular, sabit adı değil.
+    assert base.model_copy(update={"provider": "openai"}).active_model == base.openai_model
+    assert base.model_copy(update={"provider": "gemini"}).active_model == base.gemini_model
     assert base.model_copy(update={"provider": "custom"}).active_model == "öz-model"
 
 

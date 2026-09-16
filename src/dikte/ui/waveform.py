@@ -31,7 +31,7 @@ class WaveformWidget(QWidget):
         idx = np.linspace(0, src.size - 1, BAR_COUNT)
         resampled = np.interp(idx, np.arange(src.size), src)
         # yeni değer mevcut değerden büyükse hemen yükselt, değilse tick decay'e bırak
-        self._bars = tuple(max(float(n), o) for n, o in zip(resampled, self._bars))
+        self._bars = tuple(max(float(n), o) for n, o in zip(resampled, self._bars, strict=True))
         self.update()
 
     def clear(self) -> None:

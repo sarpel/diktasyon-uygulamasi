@@ -48,7 +48,7 @@ def load_cases(manifest: Path = DEFAULT_MANIFEST) -> tuple[Case, ...]:
 
 
 def _normalize(text: str) -> list[str]:
-    """casefold + aksan/noktalama işaretlerini sil + ı→i (WER diyakritiğe duyarsız karşılaştırır)."""
+    """casefold + aksan/noktalama sil + ı→i (WER diyakritiğe duyarsız karşılaştırır)."""
     text = text.casefold().replace("ı", "i")
     text = unicodedata.normalize("NFKD", text)
     text = "".join(ch for ch in text if unicodedata.category(ch) != "Mn")

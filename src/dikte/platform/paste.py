@@ -111,7 +111,8 @@ def _send_linux(combo: KeyCombo = "ctrl+v") -> bool:
         log.warning("%s yapıştırma komutu başarısız (çıkış kodu %s)", name, result.returncode)
     if not found_tool and not _warned["tools"]:
         log.warning(
-            "otomatik yapıştırma için xdotool (X11) veya wtype (Wayland) gerekli; metin panoda kaldı"
+            "otomatik yapıştırma için xdotool (X11) veya wtype (Wayland) gerekli; "
+            "metin panoda kaldı"
         )
         _warned["tools"] = True
     return False

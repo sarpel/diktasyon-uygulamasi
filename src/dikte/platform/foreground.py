@@ -16,8 +16,8 @@ def _win32_probe() -> str:
     hwnd = ctypes.windll.user32.GetForegroundWindow()
     pid = wintypes.DWORD()
     ctypes.windll.user32.GetWindowThreadProcessId(hwnd, ctypes.byref(pid))
-    PROCESS_QUERY_LIMITED_INFORMATION = 0x1000
-    handle = ctypes.windll.kernel32.OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, False, pid.value)
+    query_limited_information = 0x1000  # PROCESS_QUERY_LIMITED_INFORMATION
+    handle = ctypes.windll.kernel32.OpenProcess(query_limited_information, False, pid.value)
     if not handle:
         return ""
     try:

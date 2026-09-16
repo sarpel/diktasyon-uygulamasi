@@ -41,7 +41,7 @@ class GlobalHotkey(QObject):
         self._spec: HotkeySpec | None = None
 
     def register(self, spec: str, *, allow_bare: bool = False) -> bool:
-        """allow_bare yalnızca uygulamanın ürettiği tek tuşluk kısayollar (iptal için Esc) içindir."""
+        """allow_bare yalnızca uygulamanın ürettiği tek tuşluk kısayollar (Esc) içindir."""
         try:
             parsed = parse_hotkey(spec, allow_bare=allow_bare)
         except HotkeyParseError as exc:

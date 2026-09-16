@@ -286,7 +286,7 @@ def _suggest(ctx: AppContext, changes) -> None:
 
 
 def _add_dictionary_entry(ctx: AppContext, wrong: str, term: str) -> None:
-    entries = ctx.settings.dictionary.entries + (DictionaryEntry(term=term, wrong=(wrong,)),)
+    entries = (*ctx.settings.dictionary.entries, DictionaryEntry(term=term, wrong=(wrong,)))
     new_dictionary = ctx.settings.dictionary.model_copy(update={"entries": entries})
     new_settings = ctx.settings.model_copy(update={"dictionary": new_dictionary})
     save_settings(new_settings)
@@ -503,7 +503,8 @@ def _open_settings(ctx: AppContext) -> None:
             QMessageBox.information(
                 ctx.window,
                 APP_NAME,
-                "Model değişikliği süren iş bittikten sonra Ayarlar'ı yeniden kaydedince uygulanır.",
+                "Model değişikliği süren iş bittikten sonra "
+                "Ayarlar'ı yeniden kaydedince uygulanır.",
             )
         else:
             ctx.controller.ready_changed.emit(False)

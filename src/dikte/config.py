@@ -64,9 +64,10 @@ class LlmSettings(BaseModel):
     gemini_api_key_env: str = "GEMINI_API_KEY"
     # Özel uç nokta: OpenAI-uyumlu veya Anthropic-uyumlu iki yaygın formattan biri.
     custom_format: Literal["openai", "anthropic"] = "openai"
-    custom_base_url: str = "https://api.z.ai/api/coding/paas/v4"
-    custom_model: str = "glm-5.3"
-    custom_api_key_env: str = "ZAI_API_KEY"  # boş = anahtar gönderilmez (yerel sunucu)
+    # Kişiye özel uç nokta bilgileri config.json'a yazılır; kod içinde varsayılan tutulmaz.
+    custom_base_url: str = ""
+    custom_model: str = ""
+    custom_api_key_env: str = ""  # boş = anahtar gönderilmez (yerel sunucu)
     timeout_s: float = Field(default=120.0, gt=0)
     think: bool = False  # Qwen3.5 varsayılan olarak düşünür; kapalı tutulur
     num_ctx: int = Field(default=8192, ge=2048)  # KV cache'i küçük tut (VRAM)
