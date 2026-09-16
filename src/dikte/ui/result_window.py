@@ -14,6 +14,8 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+EDIT_DEBOUNCE_MS = 800
+
 from dikte.core.state import BUSY_STATES, DictationState, Session
 from dikte.ui.history_panel import HistoryPanel
 from dikte.ui.text_pane import TextPane
@@ -27,6 +29,9 @@ class ResultWindow(QMainWindow):
     record_requested = Signal()
     cancel_requested = Signal()
     settings_requested = Signal()
+    text_edited = Signal(str)
+    repaste_requested = Signal(str)
+    dictionary_add_requested = Signal(str, str)
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -37,11 +42,31 @@ class ResultWindow(QMainWindow):
         self._ignored_session_id: str | None = None  # geçmiş görüntülenirken geç gelen sonuç
         self.close_after_copy = False
         self.raise_on_result = False
+        self._last_shown_text = ""
+        self._pending_suggestion: tuple[str, str] | None = None
+        self._edit_timer = QTimer(self)
+        self._edit_timer.setSingleShot(True)
+        self._edit_timer.setInterval(EDIT_DEBOUNCE_MS)
+        self._edit_timer.timeout.connect(self._emit_text_edited)
 
         self.raw_pane = TextPane("Ham")
         self.corrected_pane = TextPane("Düzeltilmiş")
         self.output_pane = TextPane(TITLE_TRANSLATION)
         self.output_pane.setVisible(False)
+        self.corrected_pane.editor.textChanged.connect(self._on_corrected_text_changed)
+
+        self.suggest_bar = QWidget()
+        self.suggest_label = QLabel("")
+        self.suggest_add_btn = QPushButton("Sözlüğe ekle")
+        self.suggest_dismiss_btn = QPushButton("Yok say")
+        suggest_layout = QHBoxLayout(self.suggest_bar)
+        suggest_layout.setContentsMargins(0, 0, 0, 0)
+        suggest_layout.addWidget(self.suggest_label, 1)
+        suggest_layout.addWidget(self.suggest_add_btn)
+        suggest_layout.addWidget(self.suggest_dismiss_btn)
+        self.suggest_add_btn.clicked.connect(self._on_suggestion_accepted)
+        self.suggest_dismiss_btn.clicked.connect(self._dismiss_suggestion)
+        self.suggest_bar.setVisible(False)
 
         self.translate_btn = QPushButton("İngilizce'ye Çevir")
         self.enhance_btn = QPushButton("Agent Prompt'a Dönüştür")
@@ -70,6 +95,7 @@ class ResultWindow(QMainWindow):
         rl = QVBoxLayout(root)
         rl.setContentsMargins(12, 12, 12, 12)
         rl.addWidget(split, 1)
+        rl.addWidget(self.suggest_bar)
         rl.addLayout(buttons)
         self.setCentralWidget(root)
 
@@ -98,13 +124,17 @@ class ResultWindow(QMainWindow):
         self.cancel_action.setToolTip("Süren işi iptal et (Esc)")
         self.cancel_action.setEnabled(False)
         self.cancel_action.triggered.connect(self.cancel_requested)
+        self.repaste_action = QAction("Yeniden yapıştır", self)
+        self.repaste_action.setShortcut(QKeySequence("Ctrl+Return"))
+        self.repaste_action.setToolTip("Düzeltilmiş metni yeniden yapıştırır (Ctrl+Enter)")
+        self.repaste_action.triggered.connect(self._on_repaste)
         self.history_action = QAction("Geçmiş", self)
         self.history_action.setCheckable(True)
         self.history_action.setToolTip("Geçmiş panelini aç / kapat")
         self.history_action.toggled.connect(self._set_history_visible)
         self.settings_action = QAction("Ayarlar…", self)
         self.settings_action.triggered.connect(self.settings_requested)
-        for action in (self.record_action, self.cancel_action):
+        for action in (self.record_action, self.cancel_action, self.repaste_action):
             self.toolbar.addAction(action)
         self.toolbar.addSeparator()
         for action in (self.history_action, self.settings_action):
@@ -147,6 +177,7 @@ class ResultWindow(QMainWindow):
             return
         self.raw_pane.set_text(s.raw_text)
         self.corrected_pane.set_text(s.corrected_text)
+        self._last_shown_text = s.corrected_text
         self.corrected_pane.set_highlights(s.changes)
         if self._pending == "translation" and s.translation:
             self.output_pane.set_text(s.translation)
@@ -192,6 +223,7 @@ class ResultWindow(QMainWindow):
         self.output_pane.set_busy(False)
         self.raw_pane.set_text(s.raw_text)
         self.corrected_pane.set_text(s.corrected_text)
+        self._last_shown_text = s.corrected_text
         self.output_pane.set_text(s.translation or s.enhanced_prompt)
         self.output_pane.title_label.setText(
             TITLE_PROMPT if (s.enhanced_prompt and not s.translation) else TITLE_TRANSLATION
@@ -216,6 +248,35 @@ class ResultWindow(QMainWindow):
             return
         self._start_pending("enhanced_prompt", TITLE_PROMPT)
         self._controller.request_enhanced_prompt(text)
+
+    def _on_corrected_text_changed(self) -> None:
+        self._edit_timer.start()  # her tuş vuruşunda yeniden başlar (debounce)
+
+    def _emit_text_edited(self) -> None:
+        text = self.corrected_pane.text()
+        if text != self._last_shown_text:
+            self._last_shown_text = text
+            self.text_edited.emit(text)
+
+    def _on_repaste(self) -> None:
+        text = self.corrected_pane.text()
+        if text:
+            self.repaste_requested.emit(text)
+
+    def show_suggestion(self, wrong: str, term: str) -> None:
+        self._pending_suggestion = (wrong, term)
+        self.suggest_label.setText(f"'{wrong}' yerine '{term}' mi demek istediniz?")
+        self.suggest_bar.setVisible(True)
+
+    def _on_suggestion_accepted(self) -> None:
+        if self._pending_suggestion is not None:
+            wrong, term = self._pending_suggestion
+            self.dictionary_add_requested.emit(wrong, term)
+        self._dismiss_suggestion()
+
+    def _dismiss_suggestion(self) -> None:
+        self._pending_suggestion = None
+        self.suggest_bar.setVisible(False)
 
     def _start_pending(self, kind: str, title: str) -> None:
         self._pending = kind

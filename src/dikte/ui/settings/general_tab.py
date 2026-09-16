@@ -80,6 +80,10 @@ class GeneralTab(QWidget):
         self.push_to_talk_check.setToolTip(
             "Yalnızca Windows'ta etkindir; kısa basış her zaman aç/kapat olarak çalışır."
         )
+        self.suggest_dictionary_check = QCheckBox(
+            "Elle düzeltmelerden tek kelimelik sözlük önerisi çıkar"
+        )
+        self.suggest_dictionary_check.setChecked(settings.suggest_dictionary)
         self.history_spin = QSpinBox()
         self.history_spin.setRange(0, 5000)
         self.history_spin.setSpecialValueText("Kapalı")
@@ -99,6 +103,7 @@ class GeneralTab(QWidget):
             self.close_after_copy_check,
             self.sounds_check,
             self.push_to_talk_check,
+            self.suggest_dictionary_check,
         ):
             form.addRow(check)
 
@@ -131,6 +136,7 @@ class GeneralTab(QWidget):
                 "close_after_copy": self.close_after_copy_check.isChecked(),
                 "sounds_enabled": self.sounds_check.isChecked(),
                 "push_to_talk": self.push_to_talk_check.isChecked(),
+                "suggest_dictionary": self.suggest_dictionary_check.isChecked(),
                 "history_limit": self.history_spin.value(),
             }
         )

@@ -248,3 +248,52 @@ def test_new_request_after_history_load_is_shown_again(qtbot):
     w._start_pending("translation", "İngilizce Çeviri")
     c.session_updated.emit(Session(id=c.session.id, raw_text="canlı", translation="yeni"))
     assert w.output_pane.text() == "yeni"
+
+
+def test_editing_corrected_text_emits_debounced_text_edited(qtbot):
+    w, c = make(qtbot)
+    c.session_updated.emit(Session(raw_text="a", corrected_text="Merhaba."))
+    w.corrected_pane.editor.setPlainText("Merhaba dünya.")
+    with qtbot.waitSignal(w.text_edited, timeout=2000) as blocker:
+        pass
+    assert blocker.args == ["Merhaba dünya."]
+
+
+def test_programmatic_session_update_does_not_emit_text_edited(qtbot):
+    w, c = make(qtbot)
+    fired = []
+    w.text_edited.connect(fired.append)
+    c.session_updated.emit(Session(raw_text="a", corrected_text="Merhaba."))
+    qtbot.wait(900)
+    assert fired == []
+
+
+def test_repaste_action_emits_current_corrected_text(qtbot):
+    w, c = make(qtbot)
+    w.corrected_pane.set_text("Yeniden yapıştırılacak metin.")
+    with qtbot.waitSignal(w.repaste_requested) as blocker:
+        w.repaste_action.trigger()
+    assert blocker.args == ["Yeniden yapıştırılacak metin."]
+
+
+def test_show_suggestion_and_add_to_dictionary(qtbot):
+    w, c = make(qtbot)
+    w.show()
+    assert not w.suggest_bar.isVisible()
+    w.show_suggestion("çuk", "çok")
+    assert w.suggest_bar.isVisible()
+    with qtbot.waitSignal(w.dictionary_add_requested) as blocker:
+        w.suggest_add_btn.click()
+    assert blocker.args == ["çuk", "çok"]
+    assert not w.suggest_bar.isVisible()
+
+
+def test_dismiss_suggestion_hides_bar_without_signal(qtbot):
+    w, c = make(qtbot)
+    w.show()
+    w.show_suggestion("çuk", "çok")
+    fired = []
+    w.dictionary_add_requested.connect(lambda *a: fired.append(a))
+    w.suggest_dismiss_btn.click()
+    assert not w.suggest_bar.isVisible()
+    assert fired == []

@@ -11,7 +11,7 @@ from PySide6.QtWidgets import QApplication, QDialog, QMessageBox, QSystemTrayIco
 
 from dikte import APP_NAME, __version__, paths
 from dikte.audio.recorder import AudioRecorder
-from dikte.config import Settings, load_settings, save_settings
+from dikte.config import DictionaryEntry, Settings, load_settings, save_settings
 from dikte.core.controller import DictationController
 from dikte.core.history import History, HistoryError
 from dikte.core.state import BUSY_STATES, MODES, DictationState
@@ -187,6 +187,13 @@ def _wire(ctx: AppContext) -> None:
     ctx.window.record_requested.connect(c.toggle)
     ctx.window.cancel_requested.connect(c.cancel)
     ctx.window.settings_requested.connect(lambda: _open_settings(ctx))
+    ctx.window.text_edited.connect(c.apply_edit)
+    ctx.window.dictionary_add_requested.connect(
+        lambda wrong, term: _add_dictionary_entry(ctx, wrong, term)
+    )
+    ctx.window.repaste_requested.connect(lambda text: _repaste(ctx, text))
+    c.session_updated.connect(lambda s: _sync_history_on_edit(ctx, s))
+    c.edit_learned.connect(lambda changes: _suggest(ctx, changes))
     c.ready_changed.connect(lambda ready: ready and _refresh_status_info(ctx))
     _refresh_history(ctx)
 
@@ -217,6 +224,41 @@ def _delete_session(ctx: AppContext, session_id: str) -> None:
 def _clear_history(ctx: AppContext) -> None:
     _guard_history(ctx, ctx.history.clear)
     _refresh_history(ctx)
+
+
+def _sync_history_on_edit(ctx: AppContext, session) -> None:
+    """Sonuç ekranındayken (elle düzenleme, çeviri vb.) oturum değişirse geçmiş güncellenir."""
+    if ctx.controller.state is not DictationState.RESULT:
+        return
+    _guard_history(ctx, lambda: ctx.history.update(session))
+    _refresh_history(ctx)
+
+
+def _suggest(ctx: AppContext, changes) -> None:
+    """Elle düzenlemeden çıkan tek kelimelik değişiklikler için sözlük önerisi gösterir."""
+    if not ctx.settings.suggest_dictionary:
+        return
+    for change in changes:
+        if change.reason != "değiştirildi":
+            continue
+        if " " in change.original or " " in change.replacement:
+            continue
+        ctx.window.show_suggestion(change.original, change.replacement)
+        return
+
+
+def _add_dictionary_entry(ctx: AppContext, wrong: str, term: str) -> None:
+    entries = ctx.settings.dictionary.entries + (DictionaryEntry(term=term, wrong=(wrong,)),)
+    new_dictionary = ctx.settings.dictionary.model_copy(update={"entries": entries})
+    new_settings = ctx.settings.model_copy(update={"dictionary": new_dictionary})
+    save_settings(new_settings)
+    ctx.settings = new_settings
+    ctx.controller.update_settings(new_settings)
+
+
+def _repaste(ctx: AppContext, text: str) -> None:
+    ctx.window.hide()
+    QTimer.singleShot(200, lambda: _on_result_ready(ctx, text))
 
 
 def _refresh_status_info(ctx: AppContext) -> None:

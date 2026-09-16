@@ -9,6 +9,7 @@ from dikte.config import Settings
 from dikte.core.state import DictationState, Session
 from dikte.core.workers import run_in_pool
 from dikte.llm import prompts, tasks
+from dikte.llm.diff import word_changes
 from dikte.llm.provider import LlmProvider
 from dikte.stt.engine import SttEngine
 from dikte.stt.result import TranscriptResult
@@ -26,6 +27,7 @@ class DictationController(QObject):
     ready_changed = Signal(bool)
     cancelled = Signal()
     result_ready = Signal(str)
+    edit_learned = Signal(object)
 
     def __init__(
         self,
@@ -161,6 +163,18 @@ class DictationController(QObject):
             lambda out: self._update_session(enhanced_prompt=out),
             lambda e: self.error.emit(f"Prompt oluşturma başarısız: {e}"),
         )
+
+    @Slot(str)
+    def apply_edit(self, text: str) -> None:
+        """Kullanıcının sonuç penceresinde elle yaptığı düzenlemeyi oturuma yazar;
+        RESULT dışında yok sayılır. Öğrenilebilir değişiklikler edit_learned ile bildirilir."""
+        if self._state is not DictationState.RESULT:
+            return
+        before = self._session.corrected_text
+        self._update_session(corrected_text=text)
+        changes = word_changes(before, text)
+        if changes:
+            self.edit_learned.emit(changes)
 
     # ---- iç akış
     def _push_dictionary(self) -> None:

@@ -104,6 +104,9 @@ Kayıt bitip metin hazır olduğunda üç şey birden olur:
    pano önceki içeriğine döndürülebilir.
 3. Oturum **geçmişe** yazılır.
 
+Düzeltilmiş metni elle düzenleyip Ctrl+Enter ile yeniden yapıştırabilirsiniz; düzeltmeniz
+geçmişe yazılır ve sözlüğe eklemeniz önerilir.
+
 Sonuç penceresi varsayılan olarak öne gelmez; odağınız çalıştığınız uygulamada kalır.
 İsterseniz Ayarlar → "Sonuçta pencereyi öne getir" ile açabilirsiniz.
 
@@ -168,7 +171,7 @@ Ayarlar penceresi (tepsi menüsü veya araç çubuğu → "Ayarlar…") yedi sek
 
 | Sekme | İçerik |
 |---|---|
-| Genel | Kısayol (tuşa basarak yakalanır) + isteğe bağlı ayrı çeviri/agent-prompt kısayolları, bas-konuş (yalnızca Windows), geçmiş kayıt sayısı, açılışta başlat, panoya kopyala / yapıştır / pencereyi öne getir |
+| Genel | Kısayol (tuşa basarak yakalanır) + isteğe bağlı ayrı çeviri/agent-prompt kısayolları, bas-konuş (yalnızca Windows), geçmiş kayıt sayısı, açılışta başlat, panoya kopyala / yapıştır / pencereyi öne getir, elle düzeltmelerden sözlük önerisi çıkarma |
 | Ses | Mikrofon, kayıt süresi sınırı (0 = sınırsız), sessizlikte otomatik durdurma (0 = kapalı), canlı seviye testi |
 | Konuşma Tanıma | Whisper modeli, hassasiyet (compute_type), dil, toplu çözümleme, açılışta ısıtma, "Sessizlik ve halüsinasyon" (VAD eşiği, en kısa sessizlik, konuşma yok eşiği, kara liste) |
 | Metin Düzeltme | LLM aç/kapa, sağlayıcı ve sağlayıcıya özel alanlar, bellekte tutma |
