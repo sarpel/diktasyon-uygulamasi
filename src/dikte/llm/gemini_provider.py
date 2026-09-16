@@ -42,6 +42,7 @@ class GeminiProvider:
     def __init__(self, settings: LlmSettings, client_factory: Callable | None = None):
         self._settings = settings
         api_key = read_api_key(settings.gemini_api_key_env, required=True)
+        assert api_key is not None
         self._client = (client_factory or _default_client_factory)(api_key, settings.timeout_s)
 
     def complete(

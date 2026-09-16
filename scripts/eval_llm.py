@@ -19,6 +19,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Literal
 
 if TYPE_CHECKING:
+    from dikte.llm.provider import LlmProvider
     from dikte.llm.tasks import CorrectionResult
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
@@ -139,7 +140,10 @@ def aggregate(scores: Sequence[CaseScore]) -> dict:
 
 
 def run_model(
-    model: str, cases: Sequence[Case], provider_factory: Callable[[str], object], runs: int = 1
+    model: str,
+    cases: Sequence[Case],
+    provider_factory: Callable[[str], LlmProvider],
+    runs: int = 1,
 ) -> dict:
     provider = provider_factory(model)
     scores: list[CaseScore] = []
@@ -150,7 +154,7 @@ def run_model(
     return aggregate(scores) | {"scores": scores}
 
 
-def _unload(provider: object) -> None:
+def _unload(provider: LlmProvider) -> None:
     """Sıradaki aday için VRAM'i boşaltır; sağlayıcı desteklemiyorsa sessizce geçilir."""
     unload = getattr(provider, "unload", None)
     if not callable(unload):
@@ -163,7 +167,7 @@ def _unload(provider: object) -> None:
 
 def _run_cases(
     model: str,
-    provider: object,
+    provider: LlmProvider,
     cases: Sequence[Case],
     scores: list[CaseScore],
     runs: int,
@@ -187,7 +191,7 @@ def _run_cases(
 def run(
     models: Sequence[str],
     cases: Sequence[Case],
-    provider_factory: Callable[[str], object],
+    provider_factory: Callable[[str], LlmProvider],
     runs: int = 1,
 ) -> dict[str, dict]:
     return {model: run_model(model, cases, provider_factory, runs) for model in models}
@@ -207,7 +211,7 @@ def render_markdown(results: dict[str, dict]) -> str:
     return "\n".join(lines)
 
 
-def _ollama_factory(host: str, keep_alive: str) -> Callable[[str], object]:
+def _ollama_factory(host: str, keep_alive: str) -> Callable[[str], LlmProvider]:
     from dikte.config import LlmSettings
     from dikte.llm.ollama_provider import OllamaProvider
 

@@ -38,7 +38,7 @@ def send_command(name: str, message: bytes, timeout_ms: int = _TIMEOUT_MS) -> bo
         sock.flush()
 
     sock.connected.connect(on_connected)
-    sock.readyRead.connect(lambda: finish(sock.readAll().data().startswith(ACK)))
+    sock.readyRead.connect(lambda: finish(bytes(sock.readAll().data()).startswith(ACK)))
     sock.errorOccurred.connect(lambda _err: finish(False))
     sock.disconnected.connect(lambda: finish(False))
 
@@ -82,6 +82,8 @@ class SingleInstance(QObject):
         return True
 
     def _on_connection(self) -> None:
+        if self._server is None:
+            return
         conn = self._server.nextPendingConnection()
         if conn is None:
             return
@@ -90,7 +92,7 @@ class SingleInstance(QObject):
             self._handle(conn)
 
     def _handle(self, conn: QLocalSocket) -> None:
-        payload = conn.readAll().data()
+        payload = bytes(conn.readAll().data())
         if not payload:
             return
         if payload.startswith(TOGGLE_MESSAGE):

@@ -42,7 +42,7 @@ class TextPane(QWidget):
         header = QHBoxLayout()
         header.addWidget(self.title_label)
         header.addStretch(1)
-        header.addWidget(self.copy_btn, alignment=Qt.AlignRight)
+        header.addWidget(self.copy_btn, alignment=Qt.AlignmentFlag.AlignRight)
         lay = QVBoxLayout(self)
         lay.setContentsMargins(0, 0, 0, 0)
         lay.addLayout(header)

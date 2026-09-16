@@ -44,7 +44,7 @@ def _default_model_factory(*args, **kwargs):
     from dikte.cuda_dlls import register_nvidia_dll_dirs
 
     register_nvidia_dll_dirs()
-    from faster_whisper import WhisperModel
+    from faster_whisper import WhisperModel  # type: ignore[import-not-found]
 
     return WhisperModel(*args, **kwargs)
 
@@ -71,13 +71,13 @@ def _default_speech_probe(audio: np.ndarray, settings: SttSettings) -> list[dict
 
 
 def _default_pipeline_factory(model):
-    from faster_whisper import BatchedInferencePipeline
+    from faster_whisper import BatchedInferencePipeline  # type: ignore[import-not-found]
 
     return BatchedInferencePipeline(model=model)
 
 
 def _default_supported_types_probe() -> set[str]:
-    import ctranslate2
+    import ctranslate2  # type: ignore[import-not-found]
 
     return set(ctranslate2.get_supported_compute_types("cuda"))
 
@@ -88,7 +88,7 @@ def _default_cuda_probe() -> int:
 
     register_nvidia_dll_dirs()
     try:
-        import ctranslate2
+        import ctranslate2  # type: ignore[import-not-found]
 
         return int(ctranslate2.get_cuda_device_count())
     except (ImportError, RuntimeError, OSError) as exc:  # sürücü/kütüphane eksik
@@ -222,6 +222,7 @@ class FasterWhisperEngine:
         audio = (rng.standard_normal(int(SAMPLE_RATE * WARM_UP_SECONDS)) * 0.01).astype(np.float32)
         try:
             with self._lock:
+                assert self._model is not None
                 seg_iter, _info = self._model.transcribe(
                     audio, language=self._settings.language, beam_size=1, vad_filter=False
                 )
@@ -243,6 +244,7 @@ class FasterWhisperEngine:
         if self._pipeline is None:
             self._pipeline = self._pipeline_factory(self._model)
             log.info("Toplu çözümleme açıldı (batch_size=%s)", self._settings.batch_size)
+        assert self._pipeline is not None
         return self._pipeline
 
     def transcribe(
@@ -288,6 +290,7 @@ class FasterWhisperEngine:
                             for t in speech
                         ]
                 else:
+                    assert self._model is not None
                     target = self._model
                     kwargs["condition_on_previous_text"] = True
                 seg_iter, info = target.transcribe(audio.astype(np.float32, copy=False), **kwargs)

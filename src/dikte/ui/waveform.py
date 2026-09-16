@@ -45,11 +45,11 @@ class WaveformWidget(QWidget):
 
     def paintEvent(self, event) -> None:
         p = QPainter(self)
-        p.setRenderHint(QPainter.Antialiasing)
+        p.setRenderHint(QPainter.RenderHint.Antialiasing)
         w, h = self.width(), self.height()
         gap = 2.0
         bw = max(1.0, (w - gap * (BAR_COUNT - 1)) / BAR_COUNT)
-        p.setPen(Qt.NoPen)
+        p.setPen(Qt.PenStyle.NoPen)
         p.setBrush(self._color)
         for i, v in enumerate(self._bars):
             bh = max(2.0, v * h)
