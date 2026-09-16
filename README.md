@@ -299,8 +299,8 @@ uv pip install -e ".[dev]"      # Windows'ta: ".[dev,cuda]"
 Başsız (headless) ortamda Qt testleri için `QT_QPA_PLATFORM=offscreen` gerekir; CI bunu
 ortam değişkeni olarak ayarlar.
 
-- Ayrıntılı plan: [`implementation_plan.md`](implementation_plan.md)
-- İyileştirme planı ve durumu: [`improvement_plan.md`](improvement_plan.md)
+- Ayrıntılı plan: [`docs/implementation_plan.md`](docs/implementation_plan.md)
+- İyileştirme planı ve durumu: [`docs/improvement_plan.md`](docs/improvement_plan.md)
 - Windows manuel test listesi: [`docs/manual_test_checklist.md`](docs/manual_test_checklist.md)
 - LLM model karşılaştırması: `.venv/bin/python scripts/eval_llm.py --models <model…>` (Ollama çalışır durumda olmalı) · yöntem ve puanlama: [`docs/llm_benchmark.md`](docs/llm_benchmark.md)
 

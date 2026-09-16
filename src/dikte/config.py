@@ -55,18 +55,18 @@ class LlmSettings(BaseModel):
     lmstudio_base_url: str = "http://127.0.0.1:1234/v1"
     lmstudio_model: str = ""  # LM Studio'daki model kimliği (ör. qwen3.5-4b)
     lmstudio_api_key_env: str = ""  # boş = anahtar gönderilmez
-    openai_model: str = "gpt-5.5"
+    openai_model: str = "gpt-5.6-terra"
     openai_base_url: str = "https://api.openai.com/v1"
     openai_api_key_env: str = "OPENAI_API_KEY"
     anthropic_model: str = "claude-sonnet-5"
     anthropic_api_key_env: str = "ANTHROPIC_API_KEY"
-    gemini_model: str = "gemini-3.5-flash"
+    gemini_model: str = "gemini-3.8-flash"
     gemini_api_key_env: str = "GEMINI_API_KEY"
     # Özel uç nokta: OpenAI-uyumlu veya Anthropic-uyumlu iki yaygın formattan biri.
     custom_format: Literal["openai", "anthropic"] = "openai"
-    custom_base_url: str = ""
-    custom_model: str = ""
-    custom_api_key_env: str = ""  # boş = anahtar gönderilmez (yerel sunucu)
+    custom_base_url: str = "https://api.z.ai/api/coding/paas/v4"
+    custom_model: str = "glm-5.3"
+    custom_api_key_env: str = "ZAI_API_KEY"  # boş = anahtar gönderilmez (yerel sunucu)
     timeout_s: float = Field(default=120.0, gt=0)
     think: bool = False  # Qwen3.5 varsayılan olarak düşünür; kapalı tutulur
     num_ctx: int = Field(default=8192, ge=2048)  # KV cache'i küçük tut (VRAM)

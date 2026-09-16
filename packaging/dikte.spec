@@ -22,6 +22,9 @@ for pkg in (
     datas += d
     binaries += b
     hiddenimports += h
+# collect_all paketlerin kendi test paketlerini de toplar (ör. google.genai.tests);
+# bunlar pytest'i pakete sürükler ve boyutu gereksiz büyütür.
+hiddenimports = [m for m in hiddenimports if ".tests" not in m and not m.endswith(".tests")]
 for pkg in ("nvidia.cublas", "nvidia.cudnn"):
     binaries += collect_dynamic_libs(pkg)
 
@@ -31,7 +34,15 @@ a = Analysis(
     binaries=binaries,
     datas=datas,
     hiddenimports=hiddenimports + ["dikte.app", "PySide6.QtNetwork"],
-    excludes=["tkinter", "matplotlib", "PySide6.QtWebEngineCore", "PySide6.Qt3DCore"],
+    excludes=[
+        "tkinter",
+        "matplotlib",
+        "PySide6.QtWebEngineCore",
+        "PySide6.Qt3DCore",
+        "pytest",
+        "_pytest",
+        "py",
+    ],
     noarchive=False,
 )
 pyz = PYZ(a.pure)
