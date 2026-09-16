@@ -115,6 +115,14 @@ def test_empty_history_shows_hint(qtbot):
     assert p.list_widget.count() == 0 and p.empty_label.isVisibleTo(p)
 
 
+def test_empty_label_uses_system_palette_not_hardcoded_gray(qtbot):
+    from PySide6.QtGui import QPalette
+
+    p = _panel(qtbot)
+    assert "#888" not in p.empty_label.styleSheet()
+    assert p.empty_label.foregroundRole() == QPalette.ColorRole.PlaceholderText
+
+
 def test_search_ignores_missing_diacritics(qtbot):
     p = _panel(qtbot)
     p.set_sessions((Session(corrected_text="Toplantısı erteledik"),))
