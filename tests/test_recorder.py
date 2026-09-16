@@ -110,3 +110,30 @@ def test_block_that_exactly_fills_the_limit_stops_recording_immediately(qtbot):
         s.push(np.ones(1600, dtype=np.float32) * 0.1)
     assert fired == [True]
     assert rec.stop().shape[0] == 16_000
+
+
+def test_silence_stop_fires_once_after_speech(qtbot):
+    rec = AudioRecorder(AudioSettings(silence_stop_s=1.0), stream_factory=FakeStream)
+    fired = []
+    rec.silence_reached.connect(lambda: fired.append(True))
+    rec.start()
+    s = FakeStream.instances[-1]
+    for _ in range(15):  # 1,5 sn sessizlik ama henüz konuşma yok → sinyal yok
+        s.push(np.zeros(1600, dtype=np.float32))
+    assert fired == []
+    s.push(np.ones(1600, dtype=np.float32) * 0.2)  # konuşma
+    for _ in range(12):  # 1,2 sn sessizlik
+        s.push(np.zeros(1600, dtype=np.float32))
+    assert fired == [True]
+
+
+def test_silence_stop_disabled_by_default(qtbot):
+    rec = AudioRecorder(AudioSettings(), stream_factory=FakeStream)
+    fired = []
+    rec.silence_reached.connect(lambda: fired.append(True))
+    rec.start()
+    s = FakeStream.instances[-1]
+    s.push(np.ones(1600, dtype=np.float32) * 0.2)
+    for _ in range(100):
+        s.push(np.zeros(1600, dtype=np.float32))
+    assert fired == []

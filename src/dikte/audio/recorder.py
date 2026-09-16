@@ -25,6 +25,7 @@ class AudioRecorder(QObject):
     level_changed = Signal(float)
     buckets_changed = Signal(object)
     limit_reached = Signal()
+    silence_reached = Signal()
     error = Signal(str)
 
     def __init__(
@@ -37,6 +38,9 @@ class AudioRecorder(QObject):
         self._chunks: list[np.ndarray] = []
         self._total = 0
         self._limit_hit = False
+        self._speech_seen = False
+        self._silent_samples = 0
+        self._silence_hit = False
         self._lock = threading.Lock()
 
     @property
@@ -47,6 +51,7 @@ class AudioRecorder(QObject):
         if self._stream is not None:
             return
         self._chunks, self._total, self._limit_hit = [], 0, False
+        self._speech_seen, self._silent_samples, self._silence_hit = False, 0, False
         try:
             self._stream = self._factory(
                 callback=self._on_audio,
@@ -101,5 +106,21 @@ class AudioRecorder(QObject):
             self.limit_reached.emit()
         if frame is None:
             return
-        self.level_changed.emit(rms(frame))
+        level = rms(frame)
+        self._track_silence(level, frame.shape[0])
+        self.level_changed.emit(level)
         self.buckets_changed.emit(bucketize(frame, BUCKETS))
+
+    def _track_silence(self, level: float, n: int) -> None:
+        stop_s, thr = self._settings.silence_stop_s, self._settings.silence_threshold
+        if stop_s <= 0 or self._silence_hit:
+            return
+        if level > thr * 3:
+            self._speech_seen, self._silent_samples = True, 0
+            return
+        if not self._speech_seen:
+            return
+        self._silent_samples += n
+        if self._silent_samples >= stop_s * self._settings.sample_rate:
+            self._silence_hit = True
+            self.silence_reached.emit()
