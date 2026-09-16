@@ -14,6 +14,13 @@ from dikte import APP_NAME, __version__, paths
 from dikte.audio.recorder import AudioRecorder
 from dikte.config import DictionaryEntry, Settings, load_settings, save_settings
 from dikte.core.controller import DictationController
+from dikte.core.health import (
+    HealthItem,
+    check_health,
+    default_cuda_probe,
+    default_llm_probe,
+    default_model_probe,
+)
 from dikte.core.history import History, HistoryError
 from dikte.core.history_export import to_markdown, to_text
 from dikte.core.state import BUSY_STATES, MODES, DictationState
@@ -33,7 +40,9 @@ from dikte.platform.single_instance import (
     SingleInstance,
     send_command,
 )
+from dikte.stt.download import download_model
 from dikte.stt.engine import FasterWhisperEngine
+from dikte.ui.health_dialog import HealthDialog
 from dikte.ui.overlay import RecordingOverlay
 from dikte.ui.result_window import ResultWindow
 from dikte.ui.settings_dialog import SettingsDialog, list_input_devices
@@ -64,6 +73,7 @@ class AppContext:
     sounds: SoundPlayer
     hold: HoldDetector
     hold_mode: str = "correct"  # hold'un hangi kısayol için silahlandığını taşır
+    health_dialog: HealthDialog | None = None  # ilk çalıştırmada/STT hatasında gösterilir
 
 
 class _NullLlm:
@@ -163,6 +173,7 @@ def _wire(ctx: AppContext) -> None:
     c.ready_changed.connect(ctx.tray.set_ready)
     c.ready_changed.connect(lambda ready: ready and _warn_if_downgraded(ctx))
     c.error.connect(lambda m: ctx.tray.notify(APP_NAME, m, critical=True))
+    c.error.connect(lambda m: _maybe_show_health_dialog_on_error(ctx, m))
     c.state_changed.connect(ctx.sounds.on_state)
     c.error.connect(ctx.sounds.on_error)
     c.error.connect(ctx.overlay.show_error)
@@ -329,6 +340,33 @@ def _sync_cancel_hotkey(ctx: AppContext, state: DictationState) -> None:
             log.info("global Esc kaydedilemedi; pencere, overlay veya tepsiden iptal edilebilir")
     else:
         ctx.cancel_hotkey.unregister()
+
+
+def _maybe_show_health_dialog_on_error(ctx: AppContext, message: str) -> None:
+    normalized = message.casefold()
+    if "model" in normalized and "yüklenemedi" in normalized:
+        _show_health_dialog(ctx)
+
+
+def _show_health_dialog(ctx: AppContext, items: tuple[HealthItem, ...] | None = None) -> None:
+    if items is None:
+        items = check_health(
+            ctx.settings,
+            cuda_probe=default_cuda_probe,
+            model_probe=default_model_probe,
+            llm_probe=default_llm_probe,
+        )
+    ctx.health_dialog = HealthDialog(
+        items,
+        on_download=lambda progress: _download_model_for_ctx(ctx, progress),
+        parent=ctx.window,
+    )
+    ctx.health_dialog.setModal(False)
+    ctx.health_dialog.show()
+
+
+def _download_model_for_ctx(ctx: AppContext, progress: Callable[[int, int], None]) -> None:
+    download_model(ctx.settings.stt.model, paths.models_dir(), progress)
 
 
 def _warn_if_downgraded(ctx: AppContext) -> None:
@@ -505,6 +543,7 @@ def main(argv: list[str] | None = None) -> int:
         QMessageBox.critical(None, APP_NAME, "Sistem tepsisi bulunamadı.")
         return 1
 
+    first_run = not paths.config_path().exists()
     settings = load_settings()
     ctx = build_app(settings)
     hotkeys_sanitized = (
@@ -534,6 +573,14 @@ def main(argv: list[str] | None = None) -> int:
     _apply_hotkey(ctx)
     set_autostart(settings.autostart)
     ctx.controller.warm_up()
+    items = check_health(
+        ctx.settings,
+        cuda_probe=default_cuda_probe,
+        model_probe=default_model_probe,
+        llm_probe=default_llm_probe,
+    )
+    if first_run or any(not i.ok for i in items):
+        _show_health_dialog(ctx, items)
     if not args.minimized:
         ctx.window.show()
     log.info("%s %s başladı", APP_NAME, __version__)

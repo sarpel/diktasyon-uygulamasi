@@ -625,6 +625,26 @@ def test_error_shows_on_overlay(ctx):
     assert "Konuşma" in ctx.overlay._status.text()
 
 
+def test_stt_model_load_error_shows_health_dialog(ctx, monkeypatch):
+    from dikte.core.health import HealthItem
+
+    fake_items = (
+        HealthItem("GPU", True, "1 CUDA aygıtı", ""),
+        HealthItem("Whisper modeli", False, "indirilmemiş", "indirin"),
+        HealthItem("LLM", True, "kapalı", ""),
+    )
+    monkeypatch.setattr(app_mod, "check_health", lambda *a, **k: fake_items)
+    assert ctx.health_dialog is None
+    ctx.controller.error.emit("STT modeli yüklenemedi: dosya bulunamadı")
+    assert ctx.health_dialog is not None
+    assert len(ctx.health_dialog._labels) == 3
+
+
+def test_unrelated_error_does_not_show_health_dialog(ctx):
+    ctx.controller.error.emit("Konuşma algılanmadı")
+    assert ctx.health_dialog is None
+
+
 def test_history_write_failure_notifies_user(ctx, monkeypatch):
     """Geçmiş yazılamazsa uygulama çökmez; tepsi bildirimiyle uyarır."""
     from dikte.core.history import HistoryError

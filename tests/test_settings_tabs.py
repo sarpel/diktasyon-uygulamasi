@@ -116,6 +116,10 @@ def test_about_tab_lists_versions(dlg):
     assert "Dikte" in texts and dlg.gpu_label.text()
 
 
+def test_about_tab_has_health_check_button(dlg):
+    assert dlg.health_btn.text() == "Durum kontrolü…"
+
+
 def test_about_tab_uses_injected_gpu_and_vram_probes(qtbot):
     from dikte.ui.settings.about_tab import AboutTab
 
