@@ -89,6 +89,8 @@ Kullanıcı verileri: `~/.config/Dikte/`, model önbelleği: `~/.cache/Dikte/mod
 | Pencereyi gizle | `X` (uygulama tray'de kalır) |
 | Çıkış | Tray menüsü → "Çıkış" |
 
+Başlat/durdur/hata sesleri Ayarlar → Genel'den kapatılabilir.
+
 ### Sonuç nasıl teslim edilir
 
 Kayıt bitip metin hazır olduğunda üç şey birden olur:

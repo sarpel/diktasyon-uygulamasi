@@ -357,7 +357,9 @@ def test_status_info_shows_actually_loaded_model_not_pending_setting(ctx):
     ctx.controller.ready_changed.emit(True)
     assert ctx.stt.active_model in ctx.window.status_info.text()
     ctx.settings = ctx.settings.model_copy(
-        update={"stt": ctx.settings.stt.model_copy(update={"model": "farkli-model-henuz-yuklenmedi"})}
+        update={
+            "stt": ctx.settings.stt.model_copy(update={"model": "farkli-model-henuz-yuklenmedi"})
+        }
     )
     ctx.controller.ready_changed.emit(True)
     assert "farkli-model-henuz-yuklenmedi" not in ctx.window.status_info.text()
@@ -385,6 +387,12 @@ def test_valid_hotkey_is_left_alone():
 
     s = S(hotkey="ctrl+shift+d")
     assert app_mod._safe_hotkey(s) is s
+
+
+def test_error_shows_on_overlay(ctx):
+    ctx.controller.error.emit("Konuşma algılanmadı")
+    assert ctx.overlay.isVisible()
+    assert "Konuşma" in ctx.overlay._status.text()
 
 
 def test_history_write_failure_notifies_user(ctx, monkeypatch):

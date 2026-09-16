@@ -35,3 +35,20 @@ def test_cancel_button_visible_while_recording_and_busy(qtbot):
     assert o.cancel_btn.isVisible()
     o.on_state(DictationState.TRANSCRIBING)
     assert o.cancel_btn.isVisible()
+
+
+def test_show_error_is_visible_then_hides(qtbot):
+    o = RecordingOverlay()
+    qtbot.addWidget(o)
+    o.show_error("Konuşma algılanmadı", ms=50)
+    assert o.isVisible() and o._status.text().startswith("✗")
+    qtbot.waitUntil(lambda: not o.isVisible(), timeout=1000)
+
+
+def test_error_hide_does_not_cancel_new_recording(qtbot):
+    o = RecordingOverlay()
+    qtbot.addWidget(o)
+    o.show_error("x", ms=30)
+    o.on_state(DictationState.RECORDING)
+    qtbot.wait(80)
+    assert o.isVisible() and o._wave.isVisible()

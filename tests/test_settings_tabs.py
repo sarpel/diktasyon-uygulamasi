@@ -293,6 +293,11 @@ def test_empty_ollama_host_blocks_accept(dlg):
     assert "host" in dlg.error_label.text().lower()
 
 
+def test_sounds_check_unchecked_disables_sounds(dlg):
+    dlg.sounds_check.setChecked(False)
+    assert dlg.result_settings().sounds_enabled is False
+
+
 def test_open_location_failure_warns_user(dlg, monkeypatch):
     """QDesktopServices açamazsa sessiz kalınmaz; yolu içeren bir uyarı gösterilir."""
     from dikte.ui.settings import about_tab as about_mod

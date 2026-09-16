@@ -100,6 +100,7 @@ class Settings(BaseModel):
     auto_copy: bool = True
     auto_paste: bool = True
     raise_window_on_result: bool = False  # dikte akışını bozmamak için varsayılan kapalı
+    sounds_enabled: bool = True  # başlat/durdur/hata sesleri
     stt: SttSettings = SttSettings()
     llm: LlmSettings = LlmSettings()
     audio: AudioSettings = AudioSettings()
