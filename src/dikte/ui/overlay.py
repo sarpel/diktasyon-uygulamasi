@@ -20,6 +20,8 @@ class RecordingOverlay(QWidget):
         super().__init__(parent, Qt.Tool | Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint)
         self.setAttribute(Qt.WA_TranslucentBackground)
         self.setAttribute(Qt.WA_ShowWithoutActivating)
+        # Bilerek koyu: yarı saydam, her masaüstü arka planının üzerinde okunaklı kalması gereken
+        # bir HUD panelidir; sistem temasına bağlamak kontrastı öngörülemez kılar.
         self.setStyleSheet(
             "QWidget#panel{background:rgba(20,20,20,225);border-radius:14px;}"
             "QLabel{color:white;font-size:14px;}"

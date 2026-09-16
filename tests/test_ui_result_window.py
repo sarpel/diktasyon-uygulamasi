@@ -191,6 +191,14 @@ def test_status_info_label_shows_model_and_llm(qtbot):
     assert "large-v3-turbo" in text and "float16" in text and "qwen3.5:4b" in text
 
 
+def test_status_info_uses_system_palette_not_hardcoded_gray(qtbot):
+    from PySide6.QtGui import QPalette
+
+    w, _ = make(qtbot)
+    assert "#888" not in w.status_info.styleSheet()
+    assert w.status_info.foregroundRole() == QPalette.ColorRole.PlaceholderText
+
+
 def test_history_action_toggles_dock(qtbot):
     w, _ = make(qtbot)
     w.show()

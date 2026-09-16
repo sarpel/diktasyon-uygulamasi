@@ -1,5 +1,6 @@
 from PySide6.QtCore import QRectF, Qt
 from PySide6.QtGui import QColor, QIcon, QPainter, QPen, QPixmap
+from PySide6.QtWidgets import QApplication
 
 _COLORS = {"idle": QColor("#4A90E2"), "recording": QColor("#E53935"), "busy": QColor("#F5A623")}
 
@@ -25,7 +26,8 @@ def copy_icon(size: int = 32) -> QIcon:
     pm.fill(Qt.transparent)
     p = QPainter(pm)
     p.setRenderHint(QPainter.Antialiasing)
-    p.setPen(QPen(QColor("#666"), 2))
+    text_color = QApplication.palette().text().color()  # koyu/açık temaya uyum sağlar
+    p.setPen(QPen(text_color, 2))
     p.drawRoundedRect(QRectF(size * 0.35, size * 0.35, size * 0.45, size * 0.5), 3, 3)
     p.drawRoundedRect(QRectF(size * 0.2, size * 0.15, size * 0.45, size * 0.5), 3, 3)
     p.end()

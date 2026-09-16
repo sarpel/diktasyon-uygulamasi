@@ -5,6 +5,7 @@ from PySide6.QtWidgets import QLabel, QWidget
 class Toast(QLabel):
     def __init__(self, parent: QWidget, text: str, ms: int = 1500):
         super().__init__(text, parent)
+        # Bilerek koyu: kısa ömürlü bir bildirim, sistem temasından bağımsız sabit kontrast ister.
         self.setStyleSheet(
             "background:rgba(30,30,30,220);color:white;padding:8px 14px;border-radius:8px;"
         )

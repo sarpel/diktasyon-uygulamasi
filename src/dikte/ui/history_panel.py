@@ -3,6 +3,7 @@ from __future__ import annotations
 import unicodedata
 
 from PySide6.QtCore import Qt, Signal
+from PySide6.QtGui import QPalette
 from PySide6.QtWidgets import (
     QDockWidget,
     QFileDialog,
@@ -57,7 +58,7 @@ class HistoryPanel(QDockWidget):
         self.list_widget.setAlternatingRowColors(True)
         self.empty_label = QLabel("Henüz kayıt yok.")
         self.empty_label.setAlignment(Qt.AlignCenter)
-        self.empty_label.setStyleSheet("color:#888;")
+        self.empty_label.setForegroundRole(QPalette.ColorRole.PlaceholderText)
         self.copy_btn = QPushButton("Kopyala")
         self.delete_btn = QPushButton("Sil")
         self.clear_btn = QPushButton("Tümünü temizle")

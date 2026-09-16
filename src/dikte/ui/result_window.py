@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from PySide6.QtCore import Qt, QTimer, Signal
-from PySide6.QtGui import QAction, QKeySequence, QShortcut
+from PySide6.QtGui import QAction, QKeySequence, QPalette, QShortcut
 from PySide6.QtWidgets import (
     QHBoxLayout,
     QLabel,
@@ -147,7 +147,7 @@ class ResultWindow(QMainWindow):
     def _build_status_bar(self) -> None:
         self.setStatusBar(QStatusBar())
         self.status_info = QLabel("")
-        self.status_info.setStyleSheet("color:#888;")
+        self.status_info.setForegroundRole(QPalette.ColorRole.PlaceholderText)
         self.statusBar().addPermanentWidget(self.status_info)
 
     # ---- bağlama
