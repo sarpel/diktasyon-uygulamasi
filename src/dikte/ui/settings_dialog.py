@@ -25,6 +25,7 @@ _PROXIED = {
         "auto_paste_check",
         "raise_window_check",
         "close_after_copy_check",
+        "sounds_check",
         "history_spin",
     ),
     "audio": ("device_combo", "max_seconds_spin", "level_bar", "test_btn"),

@@ -31,6 +31,7 @@ from dikte.stt.engine import FasterWhisperEngine
 from dikte.ui.overlay import RecordingOverlay
 from dikte.ui.result_window import ResultWindow
 from dikte.ui.settings_dialog import SettingsDialog, list_input_devices
+from dikte.ui.sounds import SoundPlayer
 from dikte.ui.tray import TrayIcon
 
 log = logging.getLogger(__name__)
@@ -49,6 +50,7 @@ class AppContext:
     cancel_hotkey: GlobalHotkey
     history: History
     stt: FasterWhisperEngine
+    sounds: SoundPlayer
 
 
 class _NullLlm:
@@ -102,8 +104,9 @@ def build_app(settings: Settings) -> AppContext:
     overlay = RecordingOverlay()
     window = ResultWindow()
     history = History(paths.history_path(), settings.history_limit)
+    sounds = SoundPlayer(settings.sounds_enabled)
     ctx = AppContext(
-        settings, controller, tray, overlay, window, hotkey, cancel_hotkey, history, stt
+        settings, controller, tray, overlay, window, hotkey, cancel_hotkey, history, stt, sounds
     )
     _wire(ctx)
     return ctx
@@ -122,6 +125,9 @@ def _wire(ctx: AppContext) -> None:
     c.ready_changed.connect(ctx.tray.set_ready)
     c.ready_changed.connect(lambda ready: ready and _warn_if_downgraded(ctx))
     c.error.connect(lambda m: ctx.tray.notify(APP_NAME, m, critical=True))
+    c.state_changed.connect(ctx.sounds.on_state)
+    c.error.connect(ctx.sounds.on_error)
+    c.error.connect(ctx.overlay.show_error)
     c.state_changed.connect(lambda s: s is DictationState.RESULT and _store_session(ctx))
     ctx.hotkey.activated.connect(c.toggle)
     ctx.tray.toggle_requested.connect(c.toggle)
@@ -252,6 +258,7 @@ def _open_settings(ctx: AppContext) -> None:
     ctx.window.set_llm_enabled(new.llm.enabled)
     ctx.window.close_after_copy = new.close_after_copy
     ctx.window.raise_on_result = new.raise_window_on_result
+    ctx.sounds.set_enabled(new.sounds_enabled)
     ctx.history = History(paths.history_path(), new.history_limit)
     _refresh_history(ctx)
     _refresh_status_info(ctx)
