@@ -19,6 +19,14 @@ from PySide6.QtWidgets import (
 
 from dikte import APP_NAME, __version__, paths
 from dikte.config import Settings
+from dikte.core.health import (
+    check_health,
+    default_cuda_probe,
+    default_llm_probe,
+    default_model_probe,
+)
+from dikte.stt.download import download_model
+from dikte.ui.health_dialog import HealthDialog
 
 log = logging.getLogger(__name__)
 PACKAGES = ("PySide6", "faster-whisper", "ctranslate2", "pydantic", "ollama")
@@ -63,6 +71,7 @@ class AboutTab(QWidget):
         parent=None,
     ):
         super().__init__(parent)
+        self._settings = settings
         form = QFormLayout()
         form.addRow("Uygulama", QLabel(f"{APP_NAME} {__version__}"))
         form.addRow("Python", QLabel(sys.version.split()[0]))
@@ -78,9 +87,12 @@ class AboutTab(QWidget):
         self.open_log_btn.clicked.connect(lambda: self._open(paths.log_path()))
         self.open_config_btn = QPushButton("Ayar klasörünü aç")
         self.open_config_btn.clicked.connect(lambda: self._open(paths.config_path().parent))
+        self.health_btn = QPushButton("Durum kontrolü…")
+        self.health_btn.clicked.connect(self._open_health_dialog)
         buttons = QHBoxLayout()
         buttons.addWidget(self.open_log_btn)
         buttons.addWidget(self.open_config_btn)
+        buttons.addWidget(self.health_btn)
         buttons.addStretch(1)
 
         lay = QVBoxLayout(self)
@@ -100,6 +112,19 @@ class AboutTab(QWidget):
                 APP_NAME,
                 f"{path} açılamadı. Konumu dosya yöneticinizden elle açabilirsiniz.",
             )
+
+    def _open_health_dialog(self) -> None:
+        items = check_health(
+            self._settings,
+            cuda_probe=default_cuda_probe,
+            model_probe=default_model_probe,
+            llm_probe=default_llm_probe,
+        )
+        dlg = HealthDialog(items, on_download=self._download_model, parent=self)
+        dlg.exec()
+
+    def _download_model(self, progress) -> None:
+        download_model(self._settings.stt.model, paths.models_dir(), progress)
 
     def validate(self) -> str | None:
         return None

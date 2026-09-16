@@ -76,6 +76,15 @@ açık değilse hata verip 1 döner. Otomatik başlatma ayarı Linux'ta
 
 Kullanıcı verileri: `~/.config/Dikte/`, model önbelleği: `~/.cache/Dikte/models/`.
 
+### İlk açılışta durum kontrolü
+
+Config dosyası henüz yoksa (ilk çalıştırma) veya GPU/Whisper modeli/LLM bağlantısından
+biri sorunluysa, uygulama açılışta **modal olmayan** bir "Durum kontrolü" penceresi
+gösterir: her öğe için ✓/✗ ve bir ipucu satırı, Whisper modeli önbellekte değilse
+ilerleme çubuklu bir "Modeli indir" düğmesi. Aynı pencereyi istediğiniz zaman
+Ayarlar → Hakkında → **"Durum kontrolü…"** ile de açabilirsiniz. STT modeli sonradan
+(ör. dosya bozulması) yüklenemezse pencere otomatik olarak yeniden açılır.
+
 ## Kullanım
 
 | Eylem | Kısayol / yer |
