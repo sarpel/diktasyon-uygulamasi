@@ -1,6 +1,7 @@
 # Dikte — QOL · Performans · Yeni Özellik Raporu (v2)
 
-**Tarih:** 2026-09-16 · **Temel:** `main` @ `65ec30b` (356 test) · **Durum:** inceleme, kod değişikliği yok.
+**Tarih:** 2026-09-16 · **Temel:** `main` @ `65ec30b` (356 test) · **Durum:** ✅ tamamlandı —
+`feat/qol-v2` dalında 20 görevin tamamı uygulandı (579 test, `docs/superpowers/plans/2026-09-16-qol-v2.md`).
 
 İlk iyileştirme planı (T1–T9) tamamlandı: iptal, yapıştırma, geçmiş, sekmeli ayarlar, altı
 sağlayıcı, VAD/halüsinasyon filtresi ve ölçülmüş varsayılan LLM (gemma4 9,02/10). Bu rapor
@@ -9,24 +10,24 @@ tahminini (S < 2 sa · M ½–1 gün · L 1–3 gün) içerir.
 
 ## 0. Özet — önce bunlar
 
-| # | Öneri | Tür | Etki | Efor |
-|---|---|---|---|---|
-| 1 | **Bas-konuş (push-to-talk) + tıkla-aç melez kısayol** | Özellik | Çok yüksek | M |
-| 2 | **Özel sözlük**: Whisper `hotwords` + LLM sözlüğü + kullanıcı düzeltmelerinden öğrenme | Özellik | Çok yüksek | M |
-| 3 | **Mod kısayolları**: ikinci kısayol = "çevir ve yapıştır" / "agent prompt'u yapıştır" | Özellik | Yüksek | M |
-| 4 | **`changes` listesini LLM'den değil difflib'den üret** → daha az çıktı token'ı, daha güvenilir liste | Perf | Yüksek | S |
-| 5 | **Ayar değişikliğinde yeniden başlatma şartını kaldır** (15 STT alanından yalnızca 2'si model yüklemesi ister) | QOL | Yüksek | S–M |
-| 6 | **Overlay'de hata durumu + ses geri bildirimi** (balon 4 sn'de kaybolmasın) | QOL | Yüksek | S |
-| 7 | **Sessizlikte otomatik durdurma** (eller serbest akış) | QOL | Orta | S |
-| 8 | **Kayıt sırasında parça parça çözümleme** (uzun diktede bekleme ~sabit) | Perf | Yüksek | L |
-| 9 | **Panoyu koru** (yapıştırma sonrası eski pano içeriği geri gelsin) | QOL | Orta | S |
-| 10 | **Ses dosyası çözümleme** (sürükle-bırak toplantı kaydı) | Özellik | Orta | M |
+| # | Öneri | Tür | Etki | Efor | Durum |
+|---|---|---|---|---|---|
+| 1 | **Bas-konuş (push-to-talk) + tıkla-aç melez kısayol** | Özellik | Çok yüksek | M | ✅ Task 6 |
+| 2 | **Özel sözlük**: Whisper `hotwords` + LLM sözlüğü + kullanıcı düzeltmelerinden öğrenme | Özellik | Çok yüksek | M | ✅ Task 9 |
+| 3 | **Mod kısayolları**: ikinci kısayol = "çevir ve yapıştır" / "agent prompt'u yapıştır" | Özellik | Yüksek | M | ✅ Task 7 |
+| 4 | **`changes` listesini LLM'den değil difflib'den üret** → daha az çıktı token'ı, daha güvenilir liste | Perf | Yüksek | S | ✅ Task 1 |
+| 5 | **Ayar değişikliğinde yeniden başlatma şartını kaldır** (15 STT alanından yalnızca 2'si model yüklemesi ister) | QOL | Yüksek | S–M | ✅ Task 8 |
+| 6 | **Overlay'de hata durumu + ses geri bildirimi** (balon 4 sn'de kaybolmasın) | QOL | Yüksek | S | ✅ Task 2 |
+| 7 | **Sessizlikte otomatik durdurma** (eller serbest akış) | QOL | Orta | S | ✅ Task 4 |
+| 8 | **Kayıt sırasında parça parça çözümleme** (uzun diktede bekleme ~sabit) | Perf | Yüksek | L | ✅ Task 19 |
+| 9 | **Panoyu koru** (yapıştırma sonrası eski pano içeriği geri gelsin) | QOL | Orta | S | ✅ Task 3 |
+| 10 | **Ses dosyası çözümleme** (sürükle-bırak toplantı kaydı) | Özellik | Orta | M | ✅ Task 16 |
 
 ---
 
 ## 1. QOL — kullanıcı akışı ve arayüz
 
-### 1.1 Hatalar kullanıcının baktığı yerde görünmüyor
+### 1.1 Hatalar kullanıcının baktığı yerde görünmüyor — ✅ uygulandı (Task 2)
 - **Bugün:** hata tepsi balonunda 4 sn (`ui/tray.py:79`), durum çubuğunda 8 sn
   (`ui/result_window.py:270`). Pencere gizliyken yalnızca balon kalır; "Konuşma algılanmadı"
   gibi sık hatalar kaçar.
@@ -36,7 +37,7 @@ tahminini (S < 2 sa · M ½–1 gün · L 1–3 gün) içerir.
   Tam ekran uygulamada overlay görünmezken tek geri bildirim budur.
 - Efor: S (≈ 1,5 sa + testler).
 
-### 1.2 "Yeniden başlatınca etkin olur" gereksiz yere geniş
+### 1.2 "Yeniden başlatınca etkin olur" gereksiz yere geniş — ✅ uygulandı (Task 8)
 - **Bugün:** `app.py:244` — `stt` veya `audio` bloğundaki **her** alan değişince restart uyarısı.
   Oysa VAD eşikleri, beam_size, initial_prompt, batch ayarları `engine.py:220`'de her
   çözümlemede `self._settings`'ten okunuyor; mikrofon `recorder.py:51`'de her başlatmada.
@@ -45,7 +46,7 @@ tahminini (S < 2 sa · M ½–1 gün · L 1–3 gün) içerir.
   (`controller.warm_up()` zaten var; `ready_changed(False)` → tray "Model yükleniyor…").
 - Efor: S–M.
 
-### 1.3 Sonuç penceresi: üçüncü sütun boş, değişiklikler ayrı listede
+### 1.3 Sonuç penceresi: üçüncü sütun boş, değişiklikler ayrı listede — ✅ uygulandı (Task 10a/10b)
 - **Bugün:** üç sabit panel (`result_window.py:64-67`); çeviri/prompt paneli çoğu zaman boş.
   Değişiklikler ayrı `QListWidget`'ta (`:45`), metinle bağlantısız.
 - **Öneri:**
@@ -56,7 +57,7 @@ tahminini (S < 2 sa · M ½–1 gün · L 1–3 gün) içerir.
      diyebilsin; düzenleme geçmişe de yazılsın. Bugün düzenleme hiçbir yere gitmiyor.
 - Efor: M.
 
-### 1.4 Pano ve yapıştırma
+### 1.4 Pano ve yapıştırma — ✅ uygulandı (Task 3; yapıştırma tuşu profile bağlanması Task 18)
 - **Panoyu koru:** `app.py:185` panoyu ezer. Seçenek: eski içeriği sakla, yapıştırmadan
   ~300 ms sonra geri yükle (yapıştırma asenkron okur). Efor: S.
 - **`keybd_event` yerine `SendInput`** (`platform/paste.py:35`): eski API, bazı uygulamalar
@@ -65,19 +66,19 @@ tahminini (S < 2 sa · M ½–1 gün · L 1–3 gün) içerir.
 - **Yapıştırma başarısızsa yazarak gönder** (`SendInput` Unicode) — pano kilitliyse yedek.
   Efor: S.
 
-### 1.5 Tepsi ve pencere kısayolları
+### 1.5 Tepsi ve pencere kısayolları — ✅ uygulandı (Task 12)
 - Tepsi menüsüne **"Son metni kopyala"** ve son 5 diktenin alt menüsü (`ui/tray.py:42`).
 - Pencerede `Ctrl+,` ayarlar, `Ctrl+H` geçmiş, `Ctrl+F` geçmişte arama odağı.
 - Geçmiş paneli: **dışa aktar** (txt/md), tarihe göre gruplama, sabitleme. Efor: S–M.
 
-### 1.6 İlk çalıştırma ve model indirme
+### 1.6 İlk çalıştırma ve model indirme — ✅ uygulandı (Task 17)
 - **Bugün:** ilk açılışta ~1,6 GB model, tray tooltip'inde "Model yükleniyor…" dışında
   gösterge yok (`engine.py:169`). Ollama modeli yoksa ilk dikte "Ollama'ya ulaşılamadı" der.
 - **Öneri:** ilk çalıştırma denetimi (GPU var mı · Whisper modeli var mı · Ollama ayakta mı ·
   model çekilmiş mi) + ilerleme çubuklu indirme diyaloğu (`huggingface_hub.snapshot_download`
   `tqdm_class` ile). Efor: M.
 
-### 1.7 Tema
+### 1.7 Tema — ✅ uygulandı (Task 13)
 - Qt 6.11'in `windows11` stili sistem koyu temasını büyük olasılıkla zaten izliyor; sorun
   sabit renkler: `color:#888` (`result_window.py:121`, `history_panel.py:57`), toast ve overlay
   sabit koyu. **Palete bağla** (`palette().placeholderText()`), gerçek makinede koyu temada
@@ -87,7 +88,7 @@ tahminini (S < 2 sa · M ½–1 gün · L 1–3 gün) içerir.
 
 ## 2. Performans
 
-### 2.1 `changes` listesini LLM üretmesin (en ucuz kazanç)
+### 2.1 `changes` listesini LLM üretmesin (en ucuz kazanç) — ✅ uygulandı (Task 1)
 - **Bugün:** `llm/prompts.py:11-29` şeması her değişikliği `original/replacement/reason`
   ile istiyor → çıktı token'ı düzeltilmiş metnin **üstüne** yaklaşık %30–60 daha. UI zaten
   özdeş çiftleri eliyor (`result_window.py:236`), yani liste güvenilir değil.
@@ -97,7 +98,7 @@ tahminini (S < 2 sa · M ½–1 gün · L 1–3 gün) içerir.
   (`scripts/eval_llm.py` zaten gecikme sütunu veriyor).
 - Efor: S. Beklenti: LLM adımı ~%25–40 kısalır.
 
-### 2.2 VAD iki kez çalışıyor
+### 2.2 VAD iki kez çalışıyor — ✅ uygulandı (Task 5)
 - **Bugün:** `engine.py:222` ön kontrol tüm kaydı Silero'dan geçiriyor; `:231` `vad_filter=True`
   aynı işi faster-whisper içinde tekrarlıyor. Silero CPU'da ~gerçek zamanın %1–3'ü: 5 dk
   kayıtta 3–9 sn ek bekleme.
@@ -106,7 +107,7 @@ tahminini (S < 2 sa · M ½–1 gün · L 1–3 gün) içerir.
   `transcribe.py:343`). 60 sn altı (toplu olmayan) yolda ikinci geçiş ucuz, olduğu gibi kalsın.
 - Efor: S.
 
-### 2.3 Kayıt sırasında parça parça çözümleme (en büyük kazanç, en büyük iş)
+### 2.3 Kayıt sırasında parça parça çözümleme (en büyük kazanç, en büyük iş) — ✅ uygulandı (Task 19)
 - **Bugün:** çözümleme durdurulduktan sonra başlıyor; 5 dk dikte → ~10–20 sn bekleme.
 - **Öneri:** kayıt sürerken her ~20–30 sn'de VAD'ın bulduğu bir sessizlik sınırında parçayı
   havuza gönder; `initial_prompt`'a önceki parçanın son cümlesini ekle (Whisper'ın bağlam
@@ -116,7 +117,7 @@ tahminini (S < 2 sa · M ½–1 gün · L 1–3 gün) içerir.
   metin bittikten sonra tek seferde yapılmalı (parça başına düzeltme tutarsız olur).
 - Efor: L.
 
-### 2.4 STT varsayılanlarını ölç
+### 2.4 STT varsayılanlarını ölç — ✅ uygulandı (Task 11)
 - `beam_size=5` (`config.py:21`) turbo modelde 1–2'ye göre ~1,5–2× yavaş; kalite farkı
   Türkçede ölçülmedi. `condition_on_previous_text=True` (`engine.py:246`) uzun kayıtta
   tekrar döngülerine açık.
@@ -125,12 +126,12 @@ tahminini (S < 2 sa · M ½–1 gün · L 1–3 gün) içerir.
   LLM benchmark'ında yaptığınız gibi varsayılanı ölçüme bağlayın.
 - Efor: M (veri toplama dahil).
 
-### 2.5 VRAM görünürlüğü
+### 2.5 VRAM görünürlüğü — ✅ uygulandı (Task 14)
 - 8 GB kartta Whisper fp16 (~1,6 GB) + gemma4 e4b + CUDA bağlamı sınırda; `keep_alive=30m`.
   Hakkında sekmesine **kullanılan/boş VRAM** (nvidia-smi sorgusu, ek bağımlılık yok) ve boş
   VRAM < model boyutuysa durum çubuğunda uyarı. Efor: S.
 
-### 2.6 Küçük şeyler (gerekmedikçe dokunma)
+### 2.6 Küçük şeyler (gerekmedikçe dokunma) — ⏭️ bilinçli olarak yapılmadı (plan: "200 kayıtta gereksiz")
 - Geçmiş: her diktede dosyanın tamamı okunup yazılıyor (`core/history.py:52`); liste her
   seferinde sıfırdan kuruluyor; arama her tuşta tüm oturumları normalize ediyor
   (`history_panel.py:96`). 200 kayıtta fark edilmez; limit 5000'e çıkarsa normalize edilmiş
@@ -142,7 +143,7 @@ tahminini (S < 2 sa · M ½–1 gün · L 1–3 gün) içerir.
 
 ## 3. Yeni özellikler
 
-### 3.1 Bas-konuş + tıkla-aç melez (kanca gerektirmeden)
+### 3.1 Bas-konuş + tıkla-aç melez (kanca gerektirmeden) — ✅ uygulandı (Task 6)
 - **Neden:** diktede en doğal akış "tuşu basılı tut, konuş, bırak". Plan bunu "klavye kancası
   gerekir" diye ertelemişti.
 - **Kancasız yol:** `RegisterHotKey` basışı veriyor (`platform/hotkey.py:28`). Basış gelince
@@ -152,7 +153,7 @@ tahminini (S < 2 sa · M ½–1 gün · L 1–3 gün) içerir.
   "basınca/bırakınca" bağlamasına bırak.
 - Efor: M (Windows'ta gerçek makinede test şart; `docs/manual_test_checklist.md`'ye madde).
 
-### 3.2 Özel sözlük (doğruluğa en çok katkı)
+### 3.2 Özel sözlük (doğruluğa en çok katkı) — ✅ uygulandı (Task 9, öğrenme döngüsü Task 10b)
 - **Üç katman, tek liste:**
   1. **Whisper:** `hotwords="…"` parametresi (faster-whisper 1.2.1 destekliyor,
      `transcribe.py:296`) + `initial_prompt`'a terimleri ekle (`engine.py:237`). Özel isimler
@@ -165,7 +166,7 @@ tahminini (S < 2 sa · M ½–1 gün · L 1–3 gün) içerir.
 - Ayarlar → yeni "Sözlük" sekmesi; `config.json`'da `dictionary: tuple[Entry, ...]`.
 - Efor: M.
 
-### 3.3 Mod kısayolları
+### 3.3 Mod kısayolları — ✅ uygulandı (Task 7)
 - **Bugün:** tek akış: kayıt → düzelt → yapıştır. Çeviri ve agent prompt'u pencereden düğmeyle
   (`result_window.py:49-50`); `result_ready` yalnızca `corrected_text` yayar
   (`controller.py:194`).
@@ -175,32 +176,32 @@ tahminini (S < 2 sa · M ½–1 gün · L 1–3 gün) içerir.
 - Sizin kullanımınız için (agent prompt'ları) en çok zaman kazandıran madde.
 - Efor: M.
 
-### 3.4 Uygulama profilleri
+### 3.4 Uygulama profilleri — ✅ uygulandı (Task 18)
 - Ön plandaki `.exe` (Windows: `GetWindowThreadProcessId` + `QueryFullProcessImageName`,
   ek bağımlılık yok) → profil: varsayılan mod, yapıştırma tuşu (Ctrl+V / Ctrl+Shift+V),
   sondaki boşluk/yeni satır, LLM aç/kapa (terminalde ham metin).
 - `paste.py:77 paste_active_window` zaten ön plan penceresini alıyor; profil eşlemesi oraya eklenir.
 - Efor: M–L. §3.3'ten sonra.
 
-### 3.5 Sessizlikte otomatik durdurma
+### 3.5 Sessizlikte otomatik durdurma — ✅ uygulandı (Task 4)
 - `recorder.py:104` her 100 ms RMS veriyor. Konuşma başladıktan sonra N sn (varsayılan 2,5)
   eşik altı → `limit_reached` benzeri `silence_reached` sinyali → `controller` durdurur.
   Ayar: "Sessizlikte durdur (sn), 0 = kapalı". Gürültü tabanı için ilk 300 ms'yi referans al.
 - Efor: S.
 
-### 3.6 Ses dosyası çözümleme
+### 3.6 Ses dosyası çözümleme — ✅ uygulandı (Task 16)
 - Pencereye sürükle-bırak veya araç çubuğu "Dosya aç…" → `faster_whisper.decode_audio(path)`
   (PyAV zaten bağımlılık) → mevcut `_stop_and_transcribe` yoluna ver. Uzun dosyada toplu
   boru hattı devreye girer. Toplantı kayıtları için ilk adım.
 - Efor: M.
 
-### 3.7 Sesli komutlar (temkinli)
+### 3.7 Sesli komutlar (temkinli) — ✅ uygulandı (Task 15)
 - "yeni satır" / "yeni paragraf" güvenli. "nokta", "virgül" gibi kelimeler Türkçede gerçek
   sözcük ("bu nokta önemli") → yalnızca cümle sonunda ve ayarla açık olsun. "Son cümleyi sil"
   ham metin üzerinde deterministik. LLM'e bırakılmamalı (tutarsız).
 - Efor: S–M.
 
-### 3.8 Daha sonra
+### 3.8 Daha sonra — ⏭️ kapsam dışı bırakıldı, bu turda yapılmadı
 - Kullanıcı tanımlı LLM görevleri (kendi sistem prompt'u + kısayol) → §3.3'ün genellemesi;
   `Session.translation/enhanced_prompt` sabit alanları `outputs: dict` olmalı.
 - Otomatik dil algılama modu (`language=None`) / İngilizce dikte modu.
