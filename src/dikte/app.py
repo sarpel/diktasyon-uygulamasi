@@ -5,6 +5,7 @@ import logging
 import sys
 from collections.abc import Callable
 from dataclasses import dataclass
+from pathlib import Path
 
 from PySide6.QtCore import QCoreApplication, QThreadPool, QTimer
 from PySide6.QtWidgets import QApplication, QDialog, QMessageBox, QSystemTrayIcon
@@ -14,6 +15,7 @@ from dikte.audio.recorder import AudioRecorder
 from dikte.config import DictionaryEntry, Settings, load_settings, save_settings
 from dikte.core.controller import DictationController
 from dikte.core.history import History, HistoryError
+from dikte.core.history_export import to_markdown, to_text
 from dikte.core.state import BUSY_STATES, MODES, DictationState
 from dikte.llm import LlmError, make_provider
 from dikte.logging_setup import setup_logging
@@ -184,6 +186,8 @@ def _wire(ctx: AppContext) -> None:
     c.result_ready.connect(lambda text: _on_result_ready(ctx, text))
     ctx.window.history_panel.delete_requested.connect(lambda sid: _delete_session(ctx, sid))
     ctx.window.history_panel.clear_requested.connect(lambda: _clear_history(ctx))
+    ctx.window.history_panel.export_requested.connect(lambda path: _export_history(ctx, path))
+    ctx.tray.copy_requested.connect(lambda text: QApplication.clipboard().setText(text))
     ctx.window.record_requested.connect(c.toggle)
     ctx.window.cancel_requested.connect(c.cancel)
     ctx.window.settings_requested.connect(lambda: _open_settings(ctx))
@@ -213,7 +217,9 @@ def _store_session(ctx: AppContext) -> None:
 
 
 def _refresh_history(ctx: AppContext) -> None:
-    ctx.window.history_panel.set_sessions(ctx.history.load())
+    sessions = ctx.history.load()
+    ctx.window.history_panel.set_sessions(sessions)
+    ctx.tray.set_recent(sessions)
 
 
 def _delete_session(ctx: AppContext, session_id: str) -> None:
@@ -224,6 +230,17 @@ def _delete_session(ctx: AppContext, session_id: str) -> None:
 def _clear_history(ctx: AppContext) -> None:
     _guard_history(ctx, ctx.history.clear)
     _refresh_history(ctx)
+
+
+def _export_history(ctx: AppContext, path: str) -> None:
+    """Geçmişi dosyaya yazar; uzantı `.md` ise Markdown, aksi hâlde düz metin kullanılır."""
+    sessions = ctx.history.load()
+    content = to_markdown(sessions) if path.lower().endswith(".md") else to_text(sessions)
+    try:
+        Path(path).write_text(content, encoding="utf-8")
+    except OSError as exc:
+        log.error("geçmiş dışa aktarılamadı: %s", exc)
+        ctx.tray.notify(APP_NAME, f"Geçmiş dışa aktarılamadı: {exc}", critical=True)
 
 
 def _sync_history_on_edit(ctx: AppContext, session) -> None:

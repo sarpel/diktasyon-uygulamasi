@@ -120,3 +120,25 @@ def test_search_ignores_missing_diacritics(qtbot):
     p.set_sessions((Session(corrected_text="Toplantısı erteledik"),))
     p.search_edit.setText("toplantisi")
     assert len(_visible(p)) == 1
+
+
+def test_export_button_emits_path_from_injected_dialog(qtbot):
+    from dikte.ui.history_panel import HistoryPanel
+
+    p = HistoryPanel(dialog=lambda *a, **k: ("/tmp/x.md", "Markdown (*.md)"))
+    qtbot.addWidget(p)
+    got = []
+    p.export_requested.connect(got.append)
+    p.export_btn.click()
+    assert got == ["/tmp/x.md"]
+
+
+def test_export_button_does_nothing_when_dialog_cancelled(qtbot):
+    from dikte.ui.history_panel import HistoryPanel
+
+    p = HistoryPanel(dialog=lambda *a, **k: ("", ""))
+    qtbot.addWidget(p)
+    got = []
+    p.export_requested.connect(got.append)
+    p.export_btn.click()
+    assert got == []

@@ -111,6 +111,9 @@ class ResultWindow(QMainWindow):
             pane.copied.connect(lambda _t, p=pane: self._on_copied(p))
         QShortcut(QKeySequence("Ctrl+Shift+C"), self, activated=self.corrected_pane._copy)
         QShortcut(QKeySequence(Qt.Key_Escape), self, activated=self._on_escape)
+        QShortcut(QKeySequence("Ctrl+,"), self, activated=self.settings_action.trigger)
+        QShortcut(QKeySequence("Ctrl+H"), self, activated=self.history_action.trigger)
+        QShortcut(QKeySequence("Ctrl+F"), self, activated=self._open_history_search)
 
     # ---- kurulum
     def _build_toolbar(self) -> None:
@@ -302,6 +305,12 @@ class ResultWindow(QMainWindow):
             return
         words = len((s.corrected_text or s.raw_text).split())
         self.statusBar().showMessage(f"{round(s.duration_s)} sn · {words} kelime")
+
+    def _open_history_search(self) -> None:
+        self.history_action.setChecked(True)
+        self._set_history_visible(True)
+        self.activateWindow()
+        self.history_panel.search_edit.setFocus()
 
     def _set_history_visible(self, visible: bool) -> None:
         self.history_panel.setVisible(visible)
