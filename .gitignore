@@ -6,12 +6,12 @@ __pycache__/
 build/
 dist/
 *.manifest
-
+pr-fix-suggestions.md
 # Sanal ortamlar
 .venv/
 venv/
 env/
-
+implementation_plan.md
 # Test ve araç önbellekleri
 .pytest_cache/
 .ruff_cache/
@@ -20,7 +20,7 @@ env/
 .coverage.*
 coverage.xml
 htmlcov/
-
+improvement_plan.md
 # PyInstaller ara çıktıları
 packaging/build/
 *.spec.bak
