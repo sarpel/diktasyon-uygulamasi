@@ -29,7 +29,7 @@ class SttSettings(BaseModel):
     log_prob_threshold: float = -1.0
     hallucination_silence_threshold_s: float = Field(default=2.0, ge=0)
     hallucination_filter: bool = True
-    initial_prompt: str = "Türkçe konuşma. Noktalama işaretleri kullanılır."
+    initial_prompt: str = "Türkçe konuşmalar. Noktalama işaretleri kullanılır."
     # Uzun kayıtlarda BatchedInferencePipeline; kısa diktede kazanç yok, VRAM'i artırır.
     batch_enabled: bool = True
     batch_threshold_s: float = Field(default=60.0, ge=0)
@@ -50,20 +50,20 @@ class LlmSettings(BaseModel):
     keep_alive: str = "30m"
     # LM Studio yerel sunucusu: OpenAI-uyumlu, varsayılan port 1234, anahtar istemez.
     lmstudio_base_url: str = "http://127.0.0.1:1234/v1"
-    lmstudio_model: str = ""  # LM Studio'daki model kimliği (ör. qwen3.5-4b)
+    lmstudio_model: str = "google/gemma-4-12b-qat"  # LM Studio'daki model kimliği (ör. qwen3.5-4b)
     lmstudio_api_key_env: str = ""  # boş = anahtar gönderilmez
-    openai_model: str = "gpt-5.5"
+    openai_model: str = "gpt-5.6-terra"
     openai_base_url: str = "https://api.openai.com/v1"
     openai_api_key_env: str = "OPENAI_API_KEY"
     anthropic_model: str = "claude-sonnet-5"
     anthropic_api_key_env: str = "ANTHROPIC_API_KEY"
-    gemini_model: str = "gemini-3.5-flash"
-    gemini_api_key_env: str = "GEMINI_API_KEY"
+    gemini_model: str = "gemini-3.8-flash"
+    gemini_api_key_env: str = "AIzaSyD53K4_AcKV3YZFIx7EOF6f5mHlObnJ9Bs"
     # Özel uç nokta: OpenAI-uyumlu veya Anthropic-uyumlu iki yaygın formattan biri.
     custom_format: Literal["openai", "anthropic"] = "openai"
-    custom_base_url: str = ""
-    custom_model: str = ""
-    custom_api_key_env: str = ""  # boş = anahtar gönderilmez (yerel sunucu)
+    custom_base_url: str = "https://api.z.ai/api/coding/paas/v4"
+    custom_model: str = "glm-5.3"
+    custom_api_key_env: str = "7357023cfa1240bebb3fe4514f97ae8c.Rmsk0azUFR5DBzlT"  # boş = anahtar gönderilmez (yerel sunucu)
     timeout_s: float = Field(default=120.0, gt=0)
     think: bool = False  # Qwen3.5 varsayılan olarak düşünür; kapalı tutulur
     num_ctx: int = Field(default=8192, ge=2048)  # KV cache'i küçük tut (VRAM)

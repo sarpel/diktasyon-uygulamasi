@@ -66,6 +66,11 @@ model `LlmSettings.model` varsayılanı olacaktır.
 
 <!-- RESULTS:BEGIN -->
 
-Ölçüm henüz yapılmadı.
+45 örnek · 2 tur
+
+| Model | Puan/10 | yazim | baglam | teknik_koru | noktalama | anlam_koru | bos_degisiklik | Ort. gecikme | Hata |
+|---|---|---|---|---|---|---|---|---|---|
+| qwen3.5:4b | **0.0** | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 sn | 90 |
+| gemma4:e4b-it-qat | **0.0** | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 sn | 90 |
 
 <!-- RESULTS:END -->
