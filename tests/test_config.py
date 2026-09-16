@@ -165,3 +165,29 @@ def test_old_config_without_profiles_still_loads(tmp_path: Path):
     p = tmp_path / "config.json"
     p.write_text(json.dumps({"hotkey": "ctrl+alt+space"}), encoding="utf-8")
     assert load_settings(p).profiles == ()
+
+
+def test_live_chunk_defaults():
+    s = Settings()
+    assert s.stt.live_chunk_s == 20.0
+    assert s.stt.live_max_chunk_s == 45.0
+
+
+def test_live_chunk_s_zero_allowed():
+    from dikte.config import SttSettings
+
+    assert SttSettings(live_chunk_s=0).live_chunk_s == 0
+
+
+def test_live_chunk_s_negative_rejected():
+    from dikte.config import SttSettings
+
+    with pytest.raises(Exception):
+        SttSettings(live_chunk_s=-1)
+
+
+def test_live_max_chunk_s_below_five_rejected():
+    from dikte.config import SttSettings
+
+    with pytest.raises(Exception):
+        SttSettings(live_max_chunk_s=4)

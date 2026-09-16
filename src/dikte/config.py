@@ -36,6 +36,9 @@ class SttSettings(BaseModel):
     batch_size: int = Field(default=8, ge=1, le=32)
     # Model yüklendikten sonra kısa bir sahte çözümleme; ilk gerçek diktenin gecikmesini alır.
     warm_up: bool = True
+    # Kayıt sırasında parça parça çözümleme: 0 = kapalı (tek geçiş, kayıt bitince çözümlenir).
+    live_chunk_s: float = Field(default=20.0, ge=0)
+    live_max_chunk_s: float = Field(default=45.0, ge=5)
 
 
 class LlmSettings(BaseModel):

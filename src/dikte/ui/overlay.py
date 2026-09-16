@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from PySide6.QtCore import QElapsedTimer, Qt, QTimer, Signal
 from PySide6.QtGui import QCursor, QGuiApplication
-from PySide6.QtWidgets import QHBoxLayout, QLabel, QPushButton, QWidget
+from PySide6.QtWidgets import QHBoxLayout, QLabel, QPushButton, QVBoxLayout, QWidget
 
 from dikte.core.state import DictationState
 from dikte.ui.waveform import WaveformWidget
@@ -11,6 +11,7 @@ _STATUS = {
     DictationState.TRANSCRIBING: "Yazıya dökülüyor…",
     DictationState.CORRECTING: "Düzeltiliyor…",
 }
+PARTIAL_MAX_CHARS = 70
 
 
 class RecordingOverlay(QWidget):
@@ -31,9 +32,8 @@ class RecordingOverlay(QWidget):
         )
         panel = QWidget(self)
         panel.setObjectName("panel")
-        lay = QHBoxLayout(panel)
-        lay.setContentsMargins(16, 10, 16, 10)
-        lay.setSpacing(12)
+        row = QHBoxLayout()
+        row.setSpacing(12)
         self._dot = QLabel("●")
         self._dot.setStyleSheet("color:#E53935;font-size:22px;")
         self._wave = WaveformWidget()
@@ -46,7 +46,15 @@ class RecordingOverlay(QWidget):
         self.cancel_btn.setToolTip("Kaydı iptal et (Esc)")
         self.cancel_btn.clicked.connect(self.cancel_requested)
         for w in (self._dot, self._wave, self._time, self._status, self.cancel_btn):
-            lay.addWidget(w)
+            row.addWidget(w)
+        self._partial = QLabel("")
+        self._partial.setStyleSheet("color:#BBBBBB;font-size:12px;")
+        self._partial.hide()
+        panel_lay = QVBoxLayout(panel)
+        panel_lay.setContentsMargins(16, 10, 16, 10)
+        panel_lay.setSpacing(6)
+        panel_lay.addLayout(row)
+        panel_lay.addWidget(self._partial)
         outer = QHBoxLayout(self)
         outer.setContentsMargins(0, 0, 0, 0)
         outer.addWidget(panel)
@@ -70,6 +78,8 @@ class RecordingOverlay(QWidget):
         self._wave.show()
         self._time.show()
         self._status.hide()
+        self._partial.setText("")
+        self._partial.hide()
         self._dot.show()
         self._dot_on = True
         self._dot.setVisible(True)
@@ -120,7 +130,17 @@ class RecordingOverlay(QWidget):
         self._blink.stop()
         self._clock.stop()
         self._dot.setStyleSheet("color:#E53935;font-size:22px;")
+        self._partial.setText("")
+        self._partial.hide()
         self.hide()
+
+    def show_partial(self, text: str) -> None:
+        """Kayıt sırasında henüz teslim edilmemiş canlı transkripti dalganın altında gösterir."""
+        truncated = text[-PARTIAL_MAX_CHARS:]
+        if len(text) > PARTIAL_MAX_CHARS:
+            truncated = "…" + truncated
+        self._partial.setText(truncated)
+        self._partial.setVisible(bool(truncated))
 
     def on_buckets(self, buckets) -> None:
         self._wave.push_buckets(tuple(buckets))

@@ -36,6 +36,11 @@ def test_build_app_creates_mode_hotkeys(ctx):
     assert ctx.hotkey_translate._id != ctx.hotkey._id != ctx.hotkey_prompt._id
 
 
+def test_partial_text_reaches_overlay(ctx):
+    ctx.controller.partial_text.emit("kısmi metin")
+    assert ctx.overlay._partial.text() == "kısmi metin"
+
+
 def test_state_changes_propagate_to_tray_and_overlay(ctx, qtbot):
     ctx.controller.state_changed.emit(DictationState.RECORDING)
     assert ctx.overlay.isVisible()

@@ -16,12 +16,14 @@ class FakeRecorder(QObject):
     buckets_changed = Signal(object)
     limit_reached = Signal()
     silence_reached = Signal()
+    chunk_ready = Signal(object)
     error = Signal(str)
 
     def __init__(self):
         super().__init__()
         self.started = self.stopped = False
         self.audio = np.ones(16000, dtype=np.float32) * 0.1
+        self.chunking = None
 
     def start(self):
         self.started = True
@@ -29,6 +31,9 @@ class FakeRecorder(QObject):
     def stop(self):
         self.stopped = True
         return self.audio
+
+    def set_chunking(self, chunk_s, max_chunk_s):
+        self.chunking = (chunk_s, max_chunk_s)
 
 
 class FakeStt:
@@ -46,7 +51,7 @@ class FakeStt:
         self.load()
         self.warmed = True
 
-    def transcribe(self, audio, language=None):
+    def transcribe(self, audio, language=None, **kwargs):
         return TranscriptResult(self.text, "tr", 1.0, ())
 
 
@@ -392,7 +397,7 @@ class BlockingStt(FakeStt):
         super().__init__(text)
         self.gate = threading.Event()
 
-    def transcribe(self, audio, language=None):
+    def transcribe(self, audio, language=None, **kwargs):
         self.gate.wait(timeout=5)
         return TranscriptResult(self.text, "tr", 1.0, ())
 
@@ -612,3 +617,110 @@ def test_transcribe_file_ignores_stale_active_profile(qtbot):
     qtbot.waitUntil(lambda: c.state is DictationState.RESULT, timeout=3000)
     assert c.session.corrected_text == "Merhaba dünya."
     assert llm.calls != []
+
+
+def _live_chunk_settings(live_chunk_s=1.0, live_max_chunk_s=45.0):
+    s = Settings()
+    return s.model_copy(
+        update={
+            "stt": s.stt.model_copy(
+                update={"live_chunk_s": live_chunk_s, "live_max_chunk_s": live_max_chunk_s}
+            )
+        }
+    )
+
+
+class SequentialStt(FakeStt):
+    """Ardışık çağrılarda sırayla farklı metinler döndürür (canlı-parça testleri için)."""
+
+    def __init__(self, texts):
+        super().__init__(texts[0] if texts else "")
+        self._texts = list(texts)
+        self.calls: list[str] = []
+
+    def transcribe(self, audio, language=None, **kwargs):
+        self.calls.append(kwargs.get("previous_text", ""))
+        return TranscriptResult(self._texts.pop(0), "tr", 1.0, ())
+
+
+def test_controller_configures_recorder_chunking_on_init():
+    rec = FakeRecorder()
+    DictationController(Settings(), recorder=rec, stt=FakeStt(), llm=FakeLlm(), pool=QThreadPool())
+    assert rec.chunking == (20.0, 45.0)
+
+
+def test_update_settings_reconfigures_recorder_chunking():
+    rec = FakeRecorder()
+    c = DictationController(
+        Settings(), recorder=rec, stt=FakeStt(), llm=FakeLlm(), pool=QThreadPool()
+    )
+    c.update_settings(_live_chunk_settings(live_chunk_s=5.0))
+    assert rec.chunking == (5.0, 45.0)
+
+
+def test_live_chunk_s_zero_uses_single_pass_path(qtbot):
+    rec, stt, llm = FakeRecorder(), FakeStt(), FakeLlm()
+    c = DictationController(
+        _live_chunk_settings(live_chunk_s=0), recorder=rec, stt=stt, llm=llm, pool=QThreadPool()
+    )
+    partials = []
+    c.partial_text.connect(partials.append)
+    c.toggle()
+    c.toggle()
+    qtbot.waitUntil(lambda: c.state is DictationState.RESULT, timeout=3000)
+    assert partials == []
+    assert c.session.raw_text == "merhaba dünya"
+
+
+def test_live_chunking_joins_partial_texts_in_order(qtbot):
+    rec = FakeRecorder()
+    stt = SequentialStt(["Birinci parça.", "İkinci parça.", "Üçüncü parça."])
+    llm = FakeLlm()
+    c = DictationController(
+        _live_chunk_settings(), recorder=rec, stt=stt, llm=llm, pool=QThreadPool()
+    )
+    partials = []
+    c.partial_text.connect(partials.append)
+    c.toggle()
+    rec.chunk_ready.emit(np.ones(1600, dtype=np.float32) * 0.1)
+    qtbot.waitUntil(lambda: len(partials) == 1, timeout=3000)
+    rec.chunk_ready.emit(np.ones(1600, dtype=np.float32) * 0.1)
+    qtbot.waitUntil(lambda: len(partials) == 2, timeout=3000)
+    assert partials == ["Birinci parça.", "Birinci parça. İkinci parça."]
+    c.toggle()  # durdur: kuyruktaki son parça da aynı yolla gönderilir
+    qtbot.waitUntil(lambda: c.state is DictationState.RESULT, timeout=3000)
+    assert c.session.raw_text == "Birinci parça. İkinci parça. Üçüncü parça."
+    assert stt.calls == ["", "Birinci parça.", "Birinci parça. İkinci parça."]
+
+
+def test_chunk_ready_ignored_when_not_recording(qtbot):
+    rec, stt, llm = FakeRecorder(), FakeStt(), FakeLlm()
+    c = DictationController(
+        _live_chunk_settings(), recorder=rec, stt=stt, llm=llm, pool=QThreadPool()
+    )
+    partials = []
+    c.partial_text.connect(partials.append)
+    rec.chunk_ready.emit(np.ones(1600, dtype=np.float32) * 0.1)
+    qtbot.wait(200)
+    assert partials == []
+
+
+def test_live_chunk_error_sets_idle_and_emits_error(qtbot):
+    class FailingStt(FakeStt):
+        def transcribe(self, audio, language=None, **kwargs):
+            raise RuntimeError("çözümleme koptu")
+
+    rec = FakeRecorder()
+    c = DictationController(
+        _live_chunk_settings(),
+        recorder=rec,
+        stt=FailingStt(),
+        llm=FakeLlm(),
+        pool=QThreadPool(),
+    )
+    errors = []
+    c.error.connect(errors.append)
+    c.toggle()
+    rec.chunk_ready.emit(np.ones(1600, dtype=np.float32) * 0.1)
+    qtbot.waitUntil(lambda: c.state is DictationState.IDLE, timeout=3000)
+    assert errors and "çözümleme koptu" in errors[-1]

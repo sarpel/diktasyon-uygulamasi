@@ -110,6 +110,22 @@ def test_transcribe_joins_segments_and_strips():
     assert kw["language"] == "tr" and kw["vad_filter"] is True and kw["beam_size"] == 5
 
 
+def test_transcribe_appends_previous_text_to_initial_prompt():
+    eng, created = make_engine()
+    eng.transcribe(np.zeros(16000, dtype=np.float32), previous_text="önceki cümle")
+    call = created["model"].calls[0]
+    assert call["initial_prompt"].endswith("önceki cümle")
+
+
+def test_transcribe_truncates_previous_text_to_last_200_chars():
+    eng, created = make_engine()
+    long_text = "y" * 50 + "x" * 200
+    eng.transcribe(np.zeros(16000, dtype=np.float32), previous_text=long_text)
+    call = created["model"].calls[0]
+    assert call["initial_prompt"].endswith("x" * 200)
+    assert "y" not in call["initial_prompt"]
+
+
 def test_transcribe_autoloads():
     eng, _ = make_engine()
     assert eng.transcribe(np.zeros(16000, dtype=np.float32)).text == "merhaba dünya"

@@ -143,3 +143,55 @@ def test_silence_stop_disabled_by_default(qtbot):
     for _ in range(100):
         s.push(np.zeros(1600, dtype=np.float32))
     assert fired == []
+
+
+def test_chunking_disabled_by_default(rec):
+    rec.start()
+    s = FakeStream.instances[-1]
+    fired = []
+    rec.chunk_ready.connect(lambda audio: fired.append(audio))
+    for _ in range(200):
+        s.push(np.zeros(1600, dtype=np.float32))
+    assert fired == []
+
+
+def test_chunk_ready_fires_after_min_duration_and_silence(qtbot):
+    rec = AudioRecorder(AudioSettings(), stream_factory=FakeStream, chunk_s=1.0, max_chunk_s=45.0)
+    fired = []
+    rec.chunk_ready.connect(lambda audio: fired.append(audio))
+    rec.start()
+    s = FakeStream.instances[-1]
+    for _ in range(12):  # 12 * 1600 = 19 200 örnek = 1,2 sn konuşma
+        s.push(np.ones(1600, dtype=np.float32) * 0.1)
+    assert fired == []  # süre yeter ama sessizlik yok
+    s.push(np.zeros(1600, dtype=np.float32))  # sessiz blok: süre + sessizlik birlikte sağlanır
+    assert len(fired) == 1
+    assert fired[0].shape == (13 * 1600,)
+    s.push(np.ones(1600, dtype=np.float32) * 0.2)
+    s.push(np.ones(1600, dtype=np.float32) * 0.2)
+    audio = rec.stop()
+    assert audio.shape == (2 * 1600,)  # yalnızca son parçadan sonraki kuyruk döner
+
+
+def test_chunk_ready_fires_on_max_chunk_s_even_without_silence(qtbot):
+    rec = AudioRecorder(AudioSettings(), stream_factory=FakeStream, chunk_s=1.0, max_chunk_s=2.0)
+    fired = []
+    rec.chunk_ready.connect(lambda audio: fired.append(audio))
+    rec.start()
+    s = FakeStream.instances[-1]
+    for _ in range(20):  # 20 * 1600 = 32 000 örnek = 2,0 sn, hiç sessizlik yok
+        s.push(np.ones(1600, dtype=np.float32) * 0.1)
+    assert len(fired) == 1
+    assert fired[0].shape == (32_000,)
+
+
+def test_set_chunking_updates_parameters(rec):
+    rec.set_chunking(1.0, 45.0)
+    rec.start()
+    s = FakeStream.instances[-1]
+    fired = []
+    rec.chunk_ready.connect(lambda audio: fired.append(audio))
+    for _ in range(11):
+        s.push(np.ones(1600, dtype=np.float32) * 0.1)
+    s.push(np.zeros(1600, dtype=np.float32))
+    assert len(fired) == 1
