@@ -132,6 +132,35 @@ def test_open_settings_applies_new_settings(ctx, monkeypatch, tmp_path):
     assert expected in ctx.tray.toolTip().lower()
 
 
+def test_open_settings_model_change_triggers_reload(ctx, monkeypatch):
+    monkeypatch.setattr(app_mod, "save_settings", lambda s: None)
+    monkeypatch.setattr(app_mod, "set_autostart", lambda *a, **k: None)
+    monkeypatch.setattr(app_mod, "list_input_devices", lambda: ())
+    informed = []
+    monkeypatch.setattr(
+        app_mod.QMessageBox, "information", staticmethod(lambda *a, **k: informed.append(a))
+    )
+    warmed = []
+    monkeypatch.setattr(ctx.controller, "warm_up", lambda: warmed.append(True))
+
+    class FakeDialog:
+        def __init__(self, settings, devices, parent=None):
+            self._settings = settings
+
+        def exec(self):
+            return 1  # QDialog.DialogCode.Accepted
+
+        def result_settings(self):
+            return self._settings.model_copy(
+                update={"stt": self._settings.stt.model_copy(update={"model": "small"})}
+            )
+
+    monkeypatch.setattr(app_mod, "SettingsDialog", FakeDialog)
+    app_mod._open_settings(ctx)
+    assert warmed == [True]
+    assert informed == []
+
+
 def test_open_settings_cancelled_changes_nothing(ctx, monkeypatch):
     monkeypatch.setattr(app_mod, "list_input_devices", lambda: ())
 

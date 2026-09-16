@@ -48,6 +48,12 @@ def test_start_opens_16k_mono_float32_stream(rec):
     assert rec.is_recording
 
 
+def test_update_settings_applies_on_next_start(rec):
+    rec.update_settings(AudioSettings(device_index=3))
+    rec.start()
+    assert FakeStream.instances[-1].device == 3
+
+
 def test_stop_returns_concatenated_audio(rec):
     rec.start()
     s = FakeStream.instances[-1]

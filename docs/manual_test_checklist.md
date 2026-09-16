@@ -52,6 +52,16 @@
 - [ ] LLM tekrar açıldığında uygulama yeniden başlatılmadan çalışır (yeniden başlatma uyarısı çıkmaz).
 - [ ] `keep_alive` = 0 iken istek bittikten sonra `ollama ps` modeli listeden düşürür (VRAM boşalır).
 
+## Yeniden başlatma gerektirmeyen ayarlar
+
+- [ ] Ayarlar → Konuşma Tanıma'da model veya hassasiyet değiştirip kaydedince uygulama
+      yeniden başlatılmaz; bir sonraki dikte modeli arka planda yeniden yükler.
+- [ ] Süren bir dikte varken model değiştirilip kaydedilirse bilgilendirme mesajı çıkar
+      ("Model değişikliği süren iş bittikten sonra..."); iş bitince Ayarlar tekrar
+      kaydedilince model yeniden yüklenir.
+- [ ] Ayarlar → Ses'te mikrofon değiştirilince süren kayıt etkilenmez, bir sonraki kayıt
+      yeni cihazı kullanır.
+
 ## İptal
 
 - [ ] Kayıt sürerken `Esc` (Windows'ta global): overlay kapanır, durum boşa döner, tepside "İptal edildi" bildirimi çıkar.

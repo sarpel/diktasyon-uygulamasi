@@ -51,8 +51,8 @@ def test_privacy_warning_only_for_remote_providers(dlg):
     assert dlg.privacy_label.isVisibleTo(dlg.llm)
 
 
-def test_restart_hint_present_on_stt_model(dlg):
-    assert "yeniden başlat" in dlg.stt_model_edit.toolTip().lower()
+def test_reload_hint_present_on_stt_model(dlg):
+    assert "yeniden yüklenir" in dlg.stt_model_edit.toolTip().lower()
 
 
 def test_max_seconds_special_text(dlg):

@@ -64,6 +64,22 @@ def long_audio(seconds: float) -> np.ndarray:
     return np.zeros(int(16000 * seconds), dtype=np.float32)
 
 
+def test_update_settings_reloads_only_on_model_change():
+    eng, created = make_engine()
+    eng.load()
+    assert eng.update_settings(SttSettings(beam_size=1)) is False and eng.is_loaded
+    assert eng.update_settings(SttSettings(model="small")) is True and not eng.is_loaded
+    eng.load()
+    assert created["model"].init_args[0] == "small"
+
+
+def test_update_settings_changes_transcribe_kwargs():
+    eng, created = make_engine()
+    eng.update_settings(SttSettings(beam_size=2))
+    eng.transcribe(np.zeros(16000, dtype=np.float32))
+    assert created["model"].calls[0]["beam_size"] == 2
+
+
 def test_load_creates_model_with_settings():
     eng, created = make_engine()
     assert not eng.is_loaded
