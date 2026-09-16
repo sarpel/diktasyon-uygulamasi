@@ -7,6 +7,7 @@ from PySide6.QtWidgets import (
     QComboBox,
     QFormLayout,
     QHBoxLayout,
+    QMessageBox,
     QProgressBar,
     QPushButton,
     QSpinBox,
@@ -79,13 +80,31 @@ class AudioTab(QWidget):
         return AudioRecorder(audio)
 
     def _toggle_test(self, running: bool) -> None:
-        if running:
+        if not running:
+            self.stop_test()
+            return
+        try:
             self._recorder = self._recorder_factory()
             self._recorder.level_changed.connect(self._on_level)
+            error = getattr(self._recorder, "error", None)
+            if error is not None:
+                error.connect(self._on_recorder_error)
             self._recorder.start()
-            self.test_btn.setText("Testi durdur")
+        except Exception as exc:  # cihaz hatası diyaloğu kapatmamalı
+            log.exception("mikrofon testi başlatılamadı")
+            self._on_recorder_error(f"Mikrofon testi başlatılamadı: {exc}")
             return
+        self.test_btn.setText("Testi durdur")
+
+    def _on_recorder_error(self, message: str) -> None:
+        """Kayıt cihazı hatası: testi durdurur ve ne yapılacağını söyler."""
         self.stop_test()
+        QMessageBox.warning(
+            self,
+            "Mikrofon",
+            f"{message}\n\nBaşka bir uygulama mikrofonu kullanıyor olabilir; "
+            "Ayarlar'dan başka bir cihaz seçmeyi deneyin.",
+        )
 
     def stop_test(self) -> None:
         """Diyalog kapanırken mikrofonun açık kalmaması için çağrılır."""

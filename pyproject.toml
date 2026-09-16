@@ -32,6 +32,7 @@ where = ["src"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+pythonpath = ["scripts"]  # scripts/ paket değil; benchmark modülü testlerden içe aktarılır
 markers = ["gpu: CUDA gerektirir", "win: yalnızca Windows"]
 addopts = "-q"
 

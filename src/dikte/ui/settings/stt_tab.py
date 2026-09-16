@@ -76,6 +76,21 @@ class SttTab(QWidget):
         self.no_speech_spin.setToolTip(
             "Segmentin 'konuşma değil' olasılığı bu değeri aşarsa atılır."
         )
+        self.vad_speech_pad_spin = QSpinBox()
+        self.vad_speech_pad_spin.setRange(0, 2000)
+        self.vad_speech_pad_spin.setSingleStep(50)
+        self.vad_speech_pad_spin.setSuffix(" ms")
+        self.vad_speech_pad_spin.setValue(settings.stt.vad_speech_pad_ms)
+        self.log_prob_spin = QDoubleSpinBox()
+        self.log_prob_spin.setRange(-5.0, 0.0)
+        self.log_prob_spin.setSingleStep(0.1)
+        self.log_prob_spin.setDecimals(1)
+        self.log_prob_spin.setValue(settings.stt.log_prob_threshold)
+        self.hallucination_silence_spin = QDoubleSpinBox()
+        self.hallucination_silence_spin.setRange(0.0, 30.0)
+        self.hallucination_silence_spin.setSingleStep(0.5)
+        self.hallucination_silence_spin.setSuffix(" sn")
+        self.hallucination_silence_spin.setValue(settings.stt.hallucination_silence_threshold_s)
         self.hallucination_filter_check = QCheckBox(
             'Bilinen uydurma metinleri ele ("Altyazı M.K.", "İzlediğiniz için teşekkürler")'
         )
@@ -87,6 +102,9 @@ class SttTab(QWidget):
         vad_form.addRow("VAD eşiği", self.vad_threshold_spin)
         vad_form.addRow("En kısa sessizlik", self.vad_min_silence_spin)
         vad_form.addRow("Konuşma yok eşiği", self.no_speech_spin)
+        vad_form.addRow("Konuşma dolgusu (speech pad)", self.vad_speech_pad_spin)
+        vad_form.addRow("Log olasılık eşiği", self.log_prob_spin)
+        vad_form.addRow("Halüsinasyon sessizlik eşiği", self.hallucination_silence_spin)
         vad_form.addRow(self.hallucination_filter_check)
 
         form = QFormLayout()
@@ -126,6 +144,9 @@ class SttTab(QWidget):
                         "vad_threshold": self.vad_threshold_spin.value(),
                         "vad_min_silence_ms": self.vad_min_silence_spin.value(),
                         "no_speech_threshold": self.no_speech_spin.value(),
+                        "vad_speech_pad_ms": self.vad_speech_pad_spin.value(),
+                        "log_prob_threshold": self.log_prob_spin.value(),
+                        "hallucination_silence_threshold_s": self.hallucination_silence_spin.value(),
                         "hallucination_filter": self.hallucination_filter_check.isChecked(),
                     }
                 )

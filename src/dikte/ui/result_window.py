@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from PySide6.QtCore import Qt, Signal
+from PySide6.QtCore import Qt, QTimer, Signal
 from PySide6.QtGui import QAction, QKeySequence, QShortcut
 from PySide6.QtWidgets import (
     QHBoxLayout,
@@ -35,6 +35,7 @@ class ResultWindow(QMainWindow):
         self.resize(1100, 620)
         self._controller = None
         self._pending: str | None = None  # "translation" | "enhanced_prompt"
+        self._ignored_session_id: str | None = None  # geçmiş görüntülenirken geç gelen sonuç
         self.close_after_copy = False
         self.raise_on_result = False
 
@@ -145,16 +146,19 @@ class ResultWindow(QMainWindow):
 
     # ---- slotlar
     def on_session(self, s: Session) -> None:
+        if s.id == self._ignored_session_id:
+            # Geçmişten bir oturum görüntüleniyor; iptal edilen isteğin geç sonucu yok sayılır.
+            return
         self.raw_pane.set_text(s.raw_text)
         self.corrected_pane.set_text(s.corrected_text)
         self._fill_changes(s)
-        self._show_session_stats(s)
         if self._pending == "translation" and s.translation:
             self.output_pane.set_text(s.translation)
             self._finish_pending()
         elif self._pending == "enhanced_prompt" and s.enhanced_prompt:
             self.output_pane.set_text(s.enhanced_prompt)
             self._finish_pending()
+        self._show_session_stats(s)  # _finish_pending mesajı temizledikten sonra yazılır
 
     def on_state(self, state: DictationState) -> None:
         self.record_action.setText("Durdur" if state is DictationState.RECORDING else "Kaydet")
@@ -164,17 +168,23 @@ class ResultWindow(QMainWindow):
         self.cancel_action.setEnabled(state in BUSY_STATES)
         if state is DictationState.RESULT:
             if self.raise_on_result:
-                self.showNormal()
-                self.raise_()
-                self.activateWindow()
-                self.corrected_pane.editor.setFocus()
+                # 0 ms'ye erteleme: result_ready önce işlenir, yapıştırma hedefi korunur.
+                QTimer.singleShot(0, self._activate_result)
         elif state is DictationState.RECORDING:
             self.output_pane.set_text("")
             self._finish_pending()
 
+    def _activate_result(self) -> None:
+        self.showNormal()
+        self.raise_()
+        self.activateWindow()
+        self.corrected_pane.editor.setFocus()
+
     def load_session(self, s: Session) -> None:
         """Geçmişten seçilen oturumu pencereye yükler; bekleyen LLM isteği iptal edilir."""
         self._pending = None
+        live = getattr(self._controller, "session", None)
+        self._ignored_session_id = getattr(live, "id", None)
         self.output_pane.set_busy(False)
         self.raw_pane.set_text(s.raw_text)
         self.corrected_pane.set_text(s.corrected_text)
@@ -204,6 +214,7 @@ class ResultWindow(QMainWindow):
 
     def _start_pending(self, kind: str, title: str) -> None:
         self._pending = kind
+        self._ignored_session_id = None  # kullanıcı yeni istek başlattı; sonuçlar yine gösterilir
         self.output_pane.title_label.setText(title)
         self.output_pane.set_text("")
         self.output_pane.set_busy(True)

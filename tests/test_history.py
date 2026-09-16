@@ -57,3 +57,19 @@ def test_clear_empties_file(tmp_path: Path):
     h.append(Session(raw_text="a"))
     h.clear()
     assert h.load() == ()
+
+
+def test_write_failure_raises_history_error(tmp_path: Path, monkeypatch):
+    """Disk hatası sessizce yutulmaz; kullanıcıya iletilebilecek bir hata yükselir."""
+    import pytest
+
+    from dikte.core.history import HistoryError
+
+    h = History(tmp_path / "h.jsonl", limit=5)
+
+    def boom(*a, **k):
+        raise OSError("disk dolu")
+
+    monkeypatch.setattr(Path, "write_text", boom)
+    with pytest.raises(HistoryError, match="Geçmiş kaydedilemedi"):
+        h.append(Session(raw_text="x"))

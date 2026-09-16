@@ -28,6 +28,9 @@ class SttEngine(Protocol):
     @property
     def is_loaded(self) -> bool: ...
 
+    @property
+    def active_model(self) -> str: ...
+
     def load(self) -> None: ...
 
     def warm_up(self) -> None: ...
@@ -111,6 +114,11 @@ class FasterWhisperEngine:
     @property
     def is_loaded(self) -> bool:
         return self._model is not None
+
+    @property
+    def active_model(self) -> str:
+        """Motorun kurulduğu andaki model adı (ayar sonrası restart'a kadar gerçektir)."""
+        return self._settings.model
 
     @property
     def is_downgraded(self) -> bool:
@@ -250,7 +258,11 @@ class FasterWhisperEngine:
         except Exception as exc:
             raise SttError(f"Transkripsiyon hatası: {exc}") from exc
         if s.hallucination_filter:
-            segments = filter_segments(segments, no_speech_threshold=s.no_speech_threshold)
+            segments = filter_segments(
+                segments,
+                no_speech_threshold=s.no_speech_threshold,
+                log_prob_threshold=s.log_prob_threshold,
+            )
         text = " ".join(seg.text for seg in segments if seg.text).strip()
         return TranscriptResult(
             text=text,

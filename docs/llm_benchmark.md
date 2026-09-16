@@ -59,6 +59,13 @@ birbirini ezmez.
 
 ## Sonuç tablosu
 
-Ölçüm yapıldığında buraya `render_markdown` çıktısı (Model · Puan/10 · kategori kırılımı ·
-ortalama gecikme · hata sayısı) yazılacak ve en yüksek puanlı model `LlmSettings.model`
-varsayılanı olacaktır.
+`scripts/eval_llm.py` çalıştırıldığında `render_markdown` çıktısı (Model · Puan/10 ·
+kategori kırılımı · ortalama gecikme · hata sayısı) aşağıdaki işaretli bölümün içine
+yazılır (`_write_results`); yukarıdaki yöntem ve aday-onay metni korunur. En yüksek puanlı
+model `LlmSettings.model` varsayılanı olacaktır.
+
+<!-- RESULTS:BEGIN -->
+
+Ölçüm henüz yapılmadı.
+
+<!-- RESULTS:END -->

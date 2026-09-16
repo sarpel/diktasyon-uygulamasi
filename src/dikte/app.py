@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import logging
 import sys
+from collections.abc import Callable
 from dataclasses import dataclass
 
 from PySide6.QtCore import QCoreApplication, QThreadPool
@@ -12,7 +13,7 @@ from dikte import APP_NAME, __version__, paths
 from dikte.audio.recorder import AudioRecorder
 from dikte.config import Settings, load_settings, save_settings
 from dikte.core.controller import DictationController
-from dikte.core.history import History
+from dikte.core.history import History, HistoryError
 from dikte.core.state import BUSY_STATES, DictationState
 from dikte.llm import LlmError, make_provider
 from dikte.logging_setup import setup_logging
@@ -144,8 +145,17 @@ def _wire(ctx: AppContext) -> None:
     _refresh_history(ctx)
 
 
+def _guard_history(ctx: AppContext, action: Callable[[], None]) -> None:
+    """Geçmiş yazılamazsa dikte akışı sürer; kullanıcı ne yapacağını bildiren bir uyarı alır."""
+    try:
+        action()
+    except HistoryError as exc:
+        log.error("geçmiş işlemi başarısız: %s", exc)
+        ctx.tray.notify(APP_NAME, str(exc), critical=True)
+
+
 def _store_session(ctx: AppContext) -> None:
-    ctx.history.append(ctx.controller.session)
+    _guard_history(ctx, lambda: ctx.history.append(ctx.controller.session))
     _refresh_history(ctx)
 
 
@@ -154,18 +164,18 @@ def _refresh_history(ctx: AppContext) -> None:
 
 
 def _delete_session(ctx: AppContext, session_id: str) -> None:
-    ctx.history.delete(session_id)
+    _guard_history(ctx, lambda: ctx.history.delete(session_id))
     _refresh_history(ctx)
 
 
 def _clear_history(ctx: AppContext) -> None:
-    ctx.history.clear()
+    _guard_history(ctx, ctx.history.clear)
     _refresh_history(ctx)
 
 
 def _refresh_status_info(ctx: AppContext) -> None:
     llm = ctx.settings.llm.active_model if ctx.settings.llm.enabled else "kapalı"
-    ctx.window.set_status_info(ctx.settings.stt.model, ctx.stt.compute_type, llm)
+    ctx.window.set_status_info(ctx.stt.active_model, ctx.stt.compute_type, llm)
 
 
 def _on_result_ready(ctx: AppContext, text: str) -> None:
@@ -183,7 +193,7 @@ def _on_result_ready(ctx: AppContext, text: str) -> None:
 def _sync_cancel_hotkey(ctx: AppContext, state: DictationState) -> None:
     """İptal için global Esc yalnızca iş sürerken kayıtlı kalır; boştayken serbest bırakılır."""
     if state in BUSY_STATES:
-        if not ctx.cancel_hotkey.register("escape"):
+        if not ctx.cancel_hotkey.register("escape", allow_bare=True):
             log.info("global Esc kaydedilemedi; pencere, overlay veya tepsiden iptal edilebilir")
     else:
         ctx.cancel_hotkey.unregister()
