@@ -58,7 +58,9 @@ def _vad_options(settings: SttSettings) -> dict:
 
 
 def _default_speech_probe(audio: np.ndarray, settings: SttSettings) -> list[dict] | bool:
-    """Kayıttaki konuşma aralıkları (örnek cinsinden). Silero VAD (faster-whisper içinde gömülü) ile bulunur.
+    """Kayıttaki konuşma aralıkları (örnek cinsinden).
+
+    Silero VAD (faster-whisper içinde gömülü) ile bulunur.
 
     Toplu boru hattının kendi kullandığı max_speech_duration_s=30 ile hesaplanır, böylece
     aynı zaman damgaları hem "hiç konuşma var mı" ön kontrolünde hem de toplu çözümlemede
@@ -254,7 +256,7 @@ class FasterWhisperEngine:
             raise SttError("Ses kaydı boş")
         s = self._settings
         # Tamamen sessiz kayıtta Whisper çağrılmaz: uydurma altyazı metni üretmesini engeller.
-        # Sonda toplu boru hattı için yeniden kullanılabilmesi için sonuç saklanır (VAD iki kez çalışmaz).
+        # Toplu boru hattında yeniden kullanmak için sonuç saklanır (VAD iki kez çalışmaz).
         speech: list[dict] | bool = True
         if s.vad_filter:
             speech = self._speech_probe(audio, s)

@@ -58,7 +58,7 @@ def test_missing_api_key_raises(monkeypatch):
 
 
 def test_missing_optional_key_is_sent_as_empty_not_env_fallback(monkeypatch):
-    """required_key=False iken SDK ANTHROPIC_API_KEY'e düşmemeli: özel uç nokta anahtarı görmesin."""
+    """required_key=False iken SDK ANTHROPIC_API_KEY'e düşmemeli: uç nokta anahtarı görmesin."""
     monkeypatch.setenv("ANTHROPIC_API_KEY", "gercek-anahtar")
     captured = {}
 

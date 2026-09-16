@@ -40,5 +40,21 @@ addopts = "-q"
 line-length = 100
 target-version = "py311"
 
+[tool.ruff.format]
+# Markdown içindeki örnek kod blokları kasıtlı olarak kısaltılmıştır (AGENTS.md "KÖTÜ/İYİ"
+# örnekleri, plan dosyaları); ruff 0.16+ bunları biçimlendirmesin.
+exclude = ["*.md"]
+
+[tool.ruff.lint]
+select = ["E", "W", "F", "I", "B", "UP", "C4", "SIM", "RUF", "BLE", "N", "PTH"]
+ignore = [
+  # Türkçe metinlerdeki Unicode karakterler (ı, ş, ğ...) kasıtlıdır.
+  "RUF001",
+  "RUF002",
+  "RUF003",
+  # Qt olay yöntemleri (paintEvent, eventFilter...) camelCase olmak zorunda.
+  "N802",
+]
+
 [tool.ruff.lint.per-file-ignores]
-"tests/*" = ["B017", "BLE001", "RUF012", "RUF059"]
+"tests/*" = ["B017", "BLE001", "N817", "RUF012", "RUF059"]
