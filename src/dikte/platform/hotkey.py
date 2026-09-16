@@ -17,14 +17,15 @@ HOTKEY_ID = 0xD1C7
 
 
 class _Filter(QAbstractNativeEventFilter):
-    def __init__(self, on_hotkey):
+    def __init__(self, on_hotkey, hotkey_id: int):
         super().__init__()
         self._on_hotkey = on_hotkey
+        self._id = hotkey_id
 
     def nativeEventFilter(self, event_type, message):
         if event_type == b"windows_generic_MSG":
             msg = ctypes.wintypes.MSG.from_address(int(message))
-            if msg.message == WM_HOTKEY and msg.wParam == HOTKEY_ID:
+            if msg.message == WM_HOTKEY and msg.wParam == self._id:
                 self._on_hotkey()
                 return True, 0
         return False, 0
@@ -33,23 +34,24 @@ class _Filter(QAbstractNativeEventFilter):
 class GlobalHotkey(QObject):
     activated = Signal()
 
-    def __init__(self, parent=None):
+    def __init__(self, hotkey_id: int = HOTKEY_ID, parent=None):
         super().__init__(parent)
+        self._id = hotkey_id  # her örnek kendi kimliğiyle kaydolur
         self._filter: _Filter | None = None
         self._spec: HotkeySpec | None = None
 
     def register(self, spec: str) -> bool:
         self.unregister()
-        parsed = parse_hotkey(spec)
+        parsed = parse_hotkey(spec, allow_bare=True)
         if sys.platform != "win32":
             log.warning("Global kısayol yalnızca Windows'ta desteklenir (%s)", parsed.label)
             return False
-        ok = ctypes.windll.user32.RegisterHotKey(None, HOTKEY_ID, parsed.modifiers, parsed.vk)
+        ok = ctypes.windll.user32.RegisterHotKey(None, self._id, parsed.modifiers, parsed.vk)
         if not ok:
             err = ctypes.GetLastError()
             log.error("RegisterHotKey başarısız (%s), hata=%s", parsed.label, err)
             return False
-        self._filter = _Filter(self.activated.emit)
+        self._filter = _Filter(self.activated.emit, self._id)
         QCoreApplication.instance().installNativeEventFilter(self._filter)
         self._spec = parsed
         log.info("Global kısayol kaydedildi: %s", parsed.label)
@@ -57,7 +59,7 @@ class GlobalHotkey(QObject):
 
     def unregister(self) -> None:
         if sys.platform == "win32" and self._spec is not None:
-            ctypes.windll.user32.UnregisterHotKey(None, HOTKEY_ID)
+            ctypes.windll.user32.UnregisterHotKey(None, self._id)
         if self._filter is not None:
             app = QCoreApplication.instance()
             if app is not None:

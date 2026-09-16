@@ -1,4 +1,5 @@
 import json
+import threading
 
 import numpy as np
 import pytest
@@ -13,6 +14,7 @@ from dikte.stt.result import TranscriptResult
 class FakeRecorder(QObject):
     level_changed = Signal(float)
     buckets_changed = Signal(object)
+    limit_reached = Signal()
     error = Signal(str)
 
     def __init__(self):
@@ -30,7 +32,7 @@ class FakeRecorder(QObject):
 
 class FakeStt:
     def __init__(self, text="merhaba dünya"):
-        self.text, self.loaded = text, False
+        self.text, self.loaded, self.warmed = text, False, False
 
     @property
     def is_loaded(self):
@@ -38,6 +40,10 @@ class FakeStt:
 
     def load(self):
         self.loaded = True
+
+    def warm_up(self):
+        self.load()
+        self.warmed = True
 
     def transcribe(self, audio, language=None):
         return TranscriptResult(self.text, "tr", 1.0, ())
@@ -48,6 +54,10 @@ class FakeLlm:
 
     def __init__(self):
         self.calls = []
+        self.warmed = False
+
+    def warm_up(self):
+        self.warmed = True
 
     def complete(self, system, user, *, json_schema=None, temperature=0.2):
         self.calls.append(user)
@@ -199,3 +209,155 @@ def test_set_llm_replaces_provider(qtbot):
     c.set_llm(new)
     c.request_translation("merhaba")
     qtbot.waitUntil(lambda: bool(new.calls), timeout=3000)
+
+
+def test_limit_reached_stops_and_transcribes(ctl):
+    c, rec, *_ = ctl
+    c.toggle()
+    assert c.state is DictationState.RECORDING
+    rec.limit_reached.emit()
+    assert c.state is DictationState.TRANSCRIBING and rec.stopped
+
+
+def test_limit_reached_ignored_when_not_recording(ctl):
+    c, rec, *_ = ctl
+    rec.limit_reached.emit()
+    assert c.state is DictationState.IDLE
+
+
+class BlockingStt(FakeStt):
+    """transcribe() serbest bırakılana kadar bekler; geç gelen sonucu test etmek için."""
+
+    def __init__(self, text="merhaba dünya"):
+        super().__init__(text)
+        self.gate = threading.Event()
+
+    def transcribe(self, audio, language=None):
+        self.gate.wait(timeout=5)
+        return TranscriptResult(self.text, "tr", 1.0, ())
+
+    def release(self):
+        self.gate.set()
+
+
+def test_cancel_while_recording_discards_audio_and_goes_idle(ctl):
+    c, rec, *_ = ctl
+    c.toggle()
+    c.cancel()
+    assert c.state is DictationState.IDLE
+    assert rec.stopped
+    assert c.session.raw_text == ""
+
+
+def test_cancel_while_transcribing_ignores_late_result(qtbot):
+    stt = BlockingStt()
+    c = DictationController(
+        Settings(), recorder=FakeRecorder(), stt=stt, llm=FakeLlm(), pool=QThreadPool()
+    )
+    c.toggle()
+    c.toggle()
+    assert c.state is DictationState.TRANSCRIBING
+    c.cancel()
+    assert c.state is DictationState.IDLE
+    stt.release()
+    qtbot.wait(200)
+    assert c.state is DictationState.IDLE
+    assert c.session.raw_text == ""
+
+
+def test_cancel_in_idle_is_noop(ctl):
+    c, *_ = ctl
+    fired = []
+    c.cancelled.connect(lambda: fired.append(1))
+    c.cancel()
+    assert fired == [] and c.state is DictationState.IDLE
+
+
+def test_cancel_emits_cancelled_signal(ctl):
+    c, *_ = ctl
+    fired = []
+    c.cancelled.connect(lambda: fired.append(1))
+    c.toggle()
+    c.cancel()
+    assert fired == [1]
+
+
+def test_cancel_in_result_state_is_noop(ctl, qtbot):
+    c, *_ = ctl
+    c.toggle()
+    c.toggle()
+    qtbot.waitUntil(lambda: c.state is DictationState.RESULT, timeout=5000)
+    c.cancel()
+    assert c.state is DictationState.RESULT
+
+
+def test_warm_up_calls_stt_and_llm_warm_up(qtbot):
+    stt, llm = FakeStt(), FakeLlm()
+    c = DictationController(
+        Settings(), recorder=FakeRecorder(), stt=stt, llm=llm, pool=QThreadPool()
+    )
+    ready = []
+    c.ready_changed.connect(ready.append)
+    c.warm_up()
+    qtbot.waitUntil(lambda: ready == [True], timeout=3000)
+    qtbot.waitUntil(lambda: llm.warmed, timeout=3000)
+    assert stt.warmed
+
+
+def test_warm_up_skips_llm_when_disabled(qtbot):
+    settings, _ = _disabled_llm_settings()
+    llm = FakeLlm()
+    c = DictationController(
+        settings, recorder=FakeRecorder(), stt=FakeStt(), llm=llm, pool=QThreadPool()
+    )
+    c.warm_up()
+    qtbot.wait(150)
+    assert not llm.warmed
+
+
+def test_prewarm_llm_runs_after_provider_change(qtbot):
+    c = DictationController(
+        Settings(), recorder=FakeRecorder(), stt=FakeStt(), llm=FakeLlm(), pool=QThreadPool()
+    )
+    new = FakeLlm()
+    c.set_llm(new)
+    c.prewarm_llm()
+    qtbot.waitUntil(lambda: new.warmed, timeout=3000)
+
+
+def test_result_ready_emitted_after_result_state(qtbot):
+    settings, _ = _disabled_llm_settings()
+    c = DictationController(
+        settings, recorder=FakeRecorder(), stt=FakeStt(), llm=FakeLlm(), pool=QThreadPool()
+    )
+    order = []
+    c.state_changed.connect(lambda s: order.append(("state", s)))
+    c.result_ready.connect(lambda t: order.append(("text", t)))
+    c.toggle()
+    c.toggle()
+    qtbot.waitUntil(lambda: ("text", "merhaba dünya") in order, timeout=5000)
+    assert order.index(("state", DictationState.RESULT)) < order.index(("text", "merhaba dünya"))
+
+
+def test_result_ready_emits_corrected_text(ctl, qtbot):
+    c, *_ = ctl
+    texts = []
+    c.result_ready.connect(texts.append)
+    c.toggle()
+    c.toggle()
+    qtbot.waitUntil(lambda: texts == ["Merhaba dünya."], timeout=5000)
+
+
+def test_result_ready_emits_raw_text_when_llm_fails(qtbot):
+    class BadLlm(FakeLlm):
+        def complete(self, *a, **k):
+            raise RuntimeError("down")
+
+    c = DictationController(
+        Settings(), recorder=FakeRecorder(), stt=FakeStt(), llm=BadLlm(), pool=QThreadPool()
+    )
+    texts = []
+    c.result_ready.connect(texts.append)
+    c.toggle()
+    c.toggle()
+    qtbot.waitUntil(lambda: texts == ["merhaba dünya"], timeout=5000)

@@ -1,0 +1,82 @@
+import subprocess
+
+import pytest
+
+from dikte.platform import paste
+
+
+@pytest.fixture(autouse=True)
+def _reset_warning():
+    paste._warned["tools"] = False
+    yield
+    paste._warned["tools"] = False
+
+
+def test_paste_skips_when_foreground_is_own_window(monkeypatch):
+    monkeypatch.setattr(paste, "foreground_window_id", lambda: 42)
+    sent = []
+    assert paste.paste_active_window({42}, sender=lambda: sent.append(1)) is False
+    assert sent == []
+
+
+def test_paste_sends_keystroke_when_foreground_is_other_window(monkeypatch):
+    monkeypatch.setattr(paste, "foreground_window_id", lambda: 7)
+    sent = []
+    assert paste.paste_active_window({42}, sender=lambda: sent.append(1)) is True
+    assert sent == [1]
+
+
+def test_linux_sender_prefers_xdotool(monkeypatch):
+    monkeypatch.setattr(paste.sys, "platform", "linux")
+    monkeypatch.setattr(
+        paste.shutil, "which", lambda n: "/usr/bin/xdotool" if n == "xdotool" else None
+    )
+    ran = []
+    monkeypatch.setattr(paste.subprocess, "run", lambda cmd, **k: ran.append(cmd))
+    assert paste.send_paste_keystroke() is True
+    assert ran and ran[0][0] == "/usr/bin/xdotool"
+
+
+def test_linux_falls_back_to_wtype(monkeypatch):
+    monkeypatch.setattr(paste.sys, "platform", "linux")
+    monkeypatch.setattr(paste.shutil, "which", lambda n: "/usr/bin/wtype" if n == "wtype" else None)
+    ran = []
+    monkeypatch.setattr(paste.subprocess, "run", lambda cmd, **k: ran.append(cmd))
+    assert paste.send_paste_keystroke() is True
+    assert ran[0][:2] == ["/usr/bin/wtype", "-M"]
+
+
+def test_linux_without_tools_returns_false_and_warns_once(monkeypatch, caplog):
+    monkeypatch.setattr(paste.sys, "platform", "linux")
+    monkeypatch.setattr(paste.shutil, "which", lambda n: None)
+    assert paste.send_paste_keystroke() is False
+    assert paste.send_paste_keystroke() is False
+    assert caplog.text.count("xdotool") == 1
+
+
+def test_subprocess_failure_is_reported_not_raised(monkeypatch, caplog):
+    monkeypatch.setattr(paste.sys, "platform", "linux")
+    monkeypatch.setattr(paste.shutil, "which", lambda n: "/usr/bin/xdotool")
+
+    def boom(cmd, **kwargs):
+        raise OSError("çalıştırılamadı")
+
+    monkeypatch.setattr(paste.subprocess, "run", boom)
+    assert paste.send_paste_keystroke() is False
+    assert "yapıştırma" in caplog.text.lower()
+
+
+def test_timeout_is_handled(monkeypatch):
+    monkeypatch.setattr(paste.sys, "platform", "linux")
+    monkeypatch.setattr(paste.shutil, "which", lambda n: "/usr/bin/xdotool")
+
+    def slow(cmd, **kwargs):
+        raise subprocess.TimeoutExpired(cmd, 3)
+
+    monkeypatch.setattr(paste.subprocess, "run", slow)
+    assert paste.send_paste_keystroke() is False
+
+
+def test_foreground_window_id_is_none_on_linux(monkeypatch):
+    monkeypatch.setattr(paste.sys, "platform", "linux")
+    assert paste.foreground_window_id() is None

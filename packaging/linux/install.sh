@@ -31,3 +31,9 @@ Kurulum tamam. Global kısayol için masaüstü ortamınızda özel bir kısayol
   GNOME : Ayarlar → Klavye → Özel Kısayollar → Komut: dikte --toggle
   KDE   : Sistem Ayarları → Kısayollar → Özel → Komut: dikte --toggle
 HINT
+
+# Otomatik yapıştırma için yardımcı araç kontrolü (kurulum yapılmaz, yalnızca uyarılır).
+if ! command -v xdotool >/dev/null && ! command -v wtype >/dev/null; then
+  echo "Uyarı: xdotool (X11) veya wtype (Wayland) bulunamadı."
+  echo "       Bunlar olmadan sonuç metni aktif pencereye yapıştırılamaz, yalnızca panoya yazılır."
+fi

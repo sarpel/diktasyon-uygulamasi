@@ -1,8 +1,8 @@
 from __future__ import annotations
 
-from PySide6.QtCore import QElapsedTimer, Qt, QTimer
-from PySide6.QtGui import QGuiApplication
-from PySide6.QtWidgets import QHBoxLayout, QLabel, QWidget
+from PySide6.QtCore import QElapsedTimer, Qt, QTimer, Signal
+from PySide6.QtGui import QCursor, QGuiApplication
+from PySide6.QtWidgets import QHBoxLayout, QLabel, QPushButton, QWidget
 
 from dikte.core.state import DictationState
 from dikte.ui.waveform import WaveformWidget
@@ -14,6 +14,8 @@ _STATUS = {
 
 
 class RecordingOverlay(QWidget):
+    cancel_requested = Signal()
+
     def __init__(self, parent=None):
         super().__init__(parent, Qt.Tool | Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint)
         self.setAttribute(Qt.WA_TranslucentBackground)
@@ -21,6 +23,9 @@ class RecordingOverlay(QWidget):
         self.setStyleSheet(
             "QWidget#panel{background:rgba(20,20,20,225);border-radius:14px;}"
             "QLabel{color:white;font-size:14px;}"
+            "QPushButton{color:white;background:rgba(255,255,255,30);border:0;"
+            "border-radius:6px;padding:4px 10px;font-size:13px;}"
+            "QPushButton:hover{background:rgba(255,255,255,55);}"
         )
         panel = QWidget(self)
         panel.setObjectName("panel")
@@ -35,7 +40,10 @@ class RecordingOverlay(QWidget):
         self._time.setMinimumWidth(48)
         self._status = QLabel("")
         self._status.hide()
-        for w in (self._dot, self._wave, self._time, self._status):
+        self.cancel_btn = QPushButton("Vazgeç")
+        self.cancel_btn.setToolTip("Kaydı iptal et (Esc)")
+        self.cancel_btn.clicked.connect(self.cancel_requested)
+        for w in (self._dot, self._wave, self._time, self._status, self.cancel_btn):
             lay.addWidget(w)
         outer = QHBoxLayout(self)
         outer.setContentsMargins(0, 0, 0, 0)
@@ -106,5 +114,7 @@ class RecordingOverlay(QWidget):
 
     def _place(self) -> None:
         self.adjustSize()
-        screen = QGuiApplication.primaryScreen().availableGeometry()
+        # Overlay imlecin bulunduğu ekrana konur; çok ekranlı kurulumda birincil ekrana kaçmaz.
+        current = QGuiApplication.screenAt(QCursor.pos()) or QGuiApplication.primaryScreen()
+        screen = current.availableGeometry()
         self.move(screen.center().x() - self.width() // 2, screen.bottom() - self.height() - 80)

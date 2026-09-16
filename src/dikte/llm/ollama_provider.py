@@ -24,6 +24,19 @@ class OllamaProvider:
             settings.ollama_host, settings.timeout_s
         )
 
+    def warm_up(self) -> None:
+        """Modeli boş bir istekle VRAM'e alır; ilk düzeltmedeki yükleme beklemesini kaldırır."""
+        try:
+            self._client.chat(
+                model=self._settings.model,
+                messages=[],
+                keep_alive=self._settings.keep_alive,
+            )
+        except Exception as exc:  # noqa: BLE001 - ısındırma isteğe bağlıdır
+            log.warning("Ollama ısındırma başarısız: %s", exc)
+        else:
+            log.info("Ollama modeli ısındırıldı: %s", self._settings.model)
+
     def complete(
         self,
         system: str,

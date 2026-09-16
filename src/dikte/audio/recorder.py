@@ -24,6 +24,7 @@ def _default_stream_factory(**kwargs):
 class AudioRecorder(QObject):
     level_changed = Signal(float)
     buckets_changed = Signal(object)
+    limit_reached = Signal()
     error = Signal(str)
 
     def __init__(
@@ -35,6 +36,7 @@ class AudioRecorder(QObject):
         self._stream = None
         self._chunks: list[np.ndarray] = []
         self._total = 0
+        self._limit_hit = False
         self._lock = threading.Lock()
 
     @property
@@ -44,7 +46,7 @@ class AudioRecorder(QObject):
     def start(self) -> None:
         if self._stream is not None:
             return
-        self._chunks, self._total = [], 0
+        self._chunks, self._total, self._limit_hit = [], 0, False
         try:
             self._stream = self._factory(
                 callback=self._on_audio,
@@ -79,13 +81,22 @@ class AudioRecorder(QObject):
         if status:
             log.warning("audio status: %s", status)
         frame = np.asarray(indata, dtype=np.float32).reshape(-1)
-        limit = self._settings.max_seconds * self._settings.sample_rate
+        limit = self._settings.max_seconds * self._settings.sample_rate  # 0 = sınırsız
+        first_hit = False
         with self._lock:
-            room = limit - self._total
-            if room <= 0:
-                return
-            frame = frame[:room].copy()
-            self._chunks.append(frame)
-            self._total += frame.shape[0]
+            if limit > 0:
+                room = limit - self._total
+                if room <= 0:
+                    first_hit, self._limit_hit = not self._limit_hit, True
+                    frame = None
+                else:
+                    frame = frame[:room].copy()
+            if frame is not None:
+                self._chunks.append(frame)
+                self._total += frame.shape[0]
+        if frame is None:
+            if first_hit:
+                self.limit_reached.emit()
+            return
         self.level_changed.emit(rms(frame))
         self.buckets_changed.emit(bucketize(frame, BUCKETS))

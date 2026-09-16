@@ -46,7 +46,20 @@ class History:
         if self._limit <= 0:
             return
         kept = self.load()[-(self._limit - 1) :] if self._limit > 1 else ()
-        content = "\n".join(_to_json(s) for s in (*kept, session)) + "\n"
+        self._write((*kept, session))
+
+    def delete(self, session_id: str) -> None:
+        self._write(tuple(s for s in self.load() if s.id != session_id))
+
+    def clear(self) -> None:
+        self._write(())
+
+    def _write(self, sessions: tuple[Session, ...]) -> None:
+        """Geçmişi tek seferde ve atomik olarak yazar (yarım dosya kalmaz)."""
+        content = "".join(_to_json(s) + "\n" for s in sessions)
         tmp = self._path.with_suffix(".tmp")
-        tmp.write_text(content, encoding="utf-8")
-        tmp.replace(self._path)
+        try:
+            tmp.write_text(content, encoding="utf-8")
+            tmp.replace(self._path)
+        except OSError:
+            log.exception("geçmiş yazılamadı: %s", self._path)

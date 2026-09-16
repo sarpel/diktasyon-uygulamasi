@@ -56,3 +56,20 @@ def test_make_provider_anthropic_requires_api_key(monkeypatch):
     monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
     with pytest.raises(LlmError, match="ANTHROPIC_API_KEY"):
         make_provider(LlmSettings(provider="anthropic"))
+
+
+def test_warm_up_sends_empty_chat_with_keep_alive():
+    c = FakeClient()
+    p = OllamaProvider(
+        LlmSettings(model="m", keep_alive="30m"), client_factory=lambda host, timeout: c
+    )
+    p.warm_up()
+    call = c.calls[-1]
+    assert call["model"] == "m" and call["messages"] == [] and call["keep_alive"] == "30m"
+
+
+def test_warm_up_error_is_logged_not_raised(caplog):
+    c = FakeClient(fail=ConnectionError("refused"))
+    p = OllamaProvider(LlmSettings(), client_factory=lambda host, timeout: c)
+    p.warm_up()
+    assert "ısındırma" in caplog.text.lower()

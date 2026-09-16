@@ -76,3 +76,24 @@ def test_max_seconds_truncates(rec):
     for _ in range(70):  # 70 * 1600 = 112000 örnek = 7 s
         s.push(np.zeros(1600, dtype=np.float32))
     assert rec.stop().shape[0] == 5 * 16000
+
+
+def test_unlimited_recording_keeps_all_audio(qtbot):
+    rec = AudioRecorder(AudioSettings(max_seconds=0), stream_factory=FakeStream)
+    rec.start()
+    s = FakeStream.instances[-1]
+    for _ in range(50):  # 50 × 1600 = 80 000 örnek = 5 sn
+        s.push(np.ones(1600, dtype=np.float32) * 0.1)
+    assert rec.stop().shape[0] == 80_000
+
+
+def test_limit_emits_signal_once_and_keeps_everything_up_to_limit(qtbot):
+    rec = AudioRecorder(AudioSettings(max_seconds=1), stream_factory=FakeStream)
+    fired = []
+    rec.limit_reached.connect(lambda: fired.append(True))
+    rec.start()
+    s = FakeStream.instances[-1]
+    for _ in range(12):  # 19 200 örnek > 16 000
+        s.push(np.ones(1600, dtype=np.float32) * 0.1)
+    assert fired == [True]
+    assert rec.stop().shape[0] == 16_000

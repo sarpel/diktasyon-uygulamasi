@@ -6,6 +6,9 @@ class Segment:
     start: float
     end: float
     text: str
+    # Whisper'ın segment başına verdiği güven ölçütleri; halüsinasyon filtresi bunları kullanır.
+    no_speech_prob: float = 0.0
+    avg_logprob: float = 0.0
 
 
 @dataclass(frozen=True)
