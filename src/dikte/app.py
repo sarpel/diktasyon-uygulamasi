@@ -340,11 +340,11 @@ def _on_result_ready(ctx: AppContext, text: str) -> None:
     foreground = foreground_window_id()
     if foreground is not None and foreground in own_ids:
         return
-    if profile and profile.paste == "type":
+    paste_mode = profile.paste if profile else "ctrl+v"
+    if paste_mode == "type":
         pasted = type_unicode_text(text)
     else:
-        combo = profile.paste if profile else "ctrl+v"
-        pasted = paste_active_window(own_ids, combo=combo)
+        pasted = paste_active_window(own_ids, combo=paste_mode)
     if not pasted:
         log.info("yapıştırma atlandı; metin panoda")
         return

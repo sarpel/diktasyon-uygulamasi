@@ -195,3 +195,15 @@ def test_set_chunking_updates_parameters(rec):
         s.push(np.ones(1600, dtype=np.float32) * 0.1)
     s.push(np.zeros(1600, dtype=np.float32))
     assert len(fired) == 1
+
+
+def test_callback_copies_reused_input_buffer(rec):
+    """PortAudio aynı tamponu yeniden kullanır; kayıt bu tampona view tutmamalı."""
+    rec.start()
+    s = FakeStream.instances[-1]
+    buffer = np.full(1600, 0.25, dtype=np.float32)
+    s.push(buffer)
+    buffer[:] = 1e30  # sürücü tamponu bir sonraki blokla ezer
+    audio = rec.stop()
+    assert np.isfinite(audio).all()
+    assert audio == pytest.approx(np.full(1600, 0.25, dtype=np.float32))

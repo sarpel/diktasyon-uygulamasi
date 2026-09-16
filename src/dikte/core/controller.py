@@ -23,7 +23,8 @@ log = logging.getLogger(__name__)
 def _default_audio_loader(path: str) -> np.ndarray:
     from faster_whisper import decode_audio
 
-    return decode_audio(path, sampling_rate=16000)
+    # split_stereo=False (varsayılan) tek kanal döndürür; asarray yalnızca tipi netleştirir.
+    return np.asarray(decode_audio(path, sampling_rate=16000), dtype=np.float32)
 
 
 class DictationController(QObject):

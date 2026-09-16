@@ -72,7 +72,7 @@ def test_unknown_llm_provider_rejected():
     from dikte.config import LlmSettings
 
     with pytest.raises(ValidationError):
-        LlmSettings(provider="mistral")
+        LlmSettings(provider="mistral")  # pyright: ignore[reportArgumentType]  # kasıtlı geçersiz
 
 
 def test_custom_format_defaults_to_openai_and_key_env_is_empty():

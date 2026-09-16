@@ -333,7 +333,7 @@ def _escape_shortcut(window):
     from PySide6.QtGui import QKeySequence, QShortcut
 
     for sc in window.findChildren(QShortcut):
-        if sc.key() == QKeySequence(Qt.Key_Escape):
+        if sc.key() == QKeySequence(Qt.Key.Key_Escape):
             return sc
     raise AssertionError("Esc kısayolu bulunamadı")
 

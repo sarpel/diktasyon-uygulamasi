@@ -59,7 +59,7 @@ class TextPane(QWidget):
         for c in self._changes:
             cursor = QTextCursor(self.editor.document())
             cursor.setPosition(c.start)
-            cursor.setPosition(c.end, QTextCursor.KeepAnchor)
+            cursor.setPosition(c.end, QTextCursor.MoveMode.KeepAnchor)
             sel = QTextEdit.ExtraSelection()
             sel.cursor = cursor
             sel.format.setBackground(HIGHLIGHT_COLOR)
@@ -67,7 +67,7 @@ class TextPane(QWidget):
         self.editor.setExtraSelections(selections)
 
     def eventFilter(self, obj, event):
-        if obj is self.editor.viewport() and event.type() == QEvent.ToolTip:
+        if obj is self.editor.viewport() and event.type() == QEvent.Type.ToolTip:
             offset = self.editor.cursorForPosition(event.pos()).position()
             for c in self._changes:
                 if c.start <= offset < c.end:

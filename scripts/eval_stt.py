@@ -20,6 +20,8 @@ from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
+import numpy as np
+
 REPO_ROOT = Path(__file__).resolve().parent.parent
 if str(REPO_ROOT / "src") not in sys.path:  # kurulum yapılmadan da çalışsın
     sys.path.insert(0, str(REPO_ROOT / "src"))
@@ -139,8 +141,9 @@ def _real_transcribe_factory(stt_settings) -> Callable[[Path, Config], tuple[str
     engine.load()
 
     def transcribe(path: Path, config: Config) -> tuple[str, float]:
-        audio = decode_audio(str(path), sampling_rate=16000)
+        audio = np.asarray(decode_audio(str(path), sampling_rate=16000), dtype=np.float32)
         started = time.perf_counter()
+        assert engine._model is not None  # load() çağrıldı
         segments, _info = engine._model.transcribe(
             audio,
             language=stt_settings.language,

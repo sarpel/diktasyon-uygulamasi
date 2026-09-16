@@ -11,7 +11,7 @@ def test_cancel_button_emits_signal(qtbot):
     fired = []
     o.cancel_requested.connect(lambda: fired.append(1))
     o.show_recording()
-    qtbot.mouseClick(o.cancel_btn, Qt.LeftButton)
+    qtbot.mouseClick(o.cancel_btn, Qt.MouseButton.LeftButton)
     assert fired == [1]
 
 

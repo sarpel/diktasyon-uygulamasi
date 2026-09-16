@@ -116,6 +116,8 @@ def test_dataset_is_complete_and_unique():
 
 def test_run_uses_provider_factory_without_network():
     class FakeProvider:
+        name = "sahte"
+
         def complete(self, system, user, *, json_schema=None, temperature=0.2):
             return '{"corrected_text": "çok güzel", "changes": []}'
 
@@ -126,6 +128,8 @@ def test_run_uses_provider_factory_without_network():
 
 def test_run_scores_zero_when_provider_fails():
     class BrokenProvider:
+        name = "bozuk"
+
         def complete(self, *a, **k):
             raise RuntimeError("bağlanamadı")
 
@@ -150,6 +154,8 @@ def test_rewrite_without_declared_changes_is_still_a_violation():
 
 def test_model_is_unloaded_after_its_turn():
     class FakeProvider:
+        name = "sahte"
+
         def __init__(self):
             self.unloaded = 0
 

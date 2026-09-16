@@ -161,7 +161,7 @@ def test_settings_reject_cpu_device():
     from pydantic import ValidationError
 
     with pytest.raises(ValidationError):
-        SttSettings(device="cpu")
+        SttSettings(device="cpu")  # pyright: ignore[reportArgumentType]  # kasıtlı geçersiz
 
 
 def test_short_audio_uses_plain_model():

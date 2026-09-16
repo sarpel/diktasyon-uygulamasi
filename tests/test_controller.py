@@ -44,6 +44,10 @@ class FakeStt:
     def is_loaded(self):
         return self.loaded
 
+    @property
+    def active_model(self) -> str:
+        return "fake"
+
     def load(self):
         self.loaded = True
 
