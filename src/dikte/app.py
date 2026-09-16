@@ -57,6 +57,7 @@ class AppContext:
     hotkey_prompt: GlobalHotkey
     history: History
     stt: FasterWhisperEngine
+    recorder: AudioRecorder
     sounds: SoundPlayer
     hold: HoldDetector
     hold_mode: str = "correct"  # hold'un hangi kısayol için silahlandığını taşır
@@ -138,6 +139,7 @@ def build_app(settings: Settings) -> AppContext:
         hotkey_prompt,
         history,
         stt,
+        recorder,
         sounds,
         hold,
     )
@@ -342,7 +344,8 @@ def _open_settings(ctx: AppContext) -> None:
         return
     new = dlg.result_settings()
     save_settings(new)
-    needs_restart = new.stt != ctx.settings.stt or new.audio != ctx.settings.audio
+    needs_reload = ctx.stt.update_settings(new.stt)
+    ctx.recorder.update_settings(new.audio)
     llm_changed = new.llm != ctx.settings.llm
     ctx.settings = new
     set_autostart(new.autostart)
@@ -358,12 +361,16 @@ def _open_settings(ctx: AppContext) -> None:
     _refresh_history(ctx)
     _refresh_status_info(ctx)
     _apply_hotkey(ctx)
-    if needs_restart:
-        QMessageBox.information(
-            ctx.window,
-            APP_NAME,
-            "Model / ses ayarları uygulamayı yeniden başlatınca etkin olur.",
-        )
+    if needs_reload:
+        if ctx.controller.state in BUSY_STATES:
+            QMessageBox.information(
+                ctx.window,
+                APP_NAME,
+                "Model değişikliği süren iş bittikten sonra Ayarlar'ı yeniden kaydedince uygulanır.",
+            )
+        else:
+            ctx.controller.ready_changed.emit(False)
+            ctx.controller.warm_up()
 
 
 def _quit(ctx: AppContext) -> None:

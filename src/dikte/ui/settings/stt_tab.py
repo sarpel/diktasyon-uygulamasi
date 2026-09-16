@@ -15,7 +15,7 @@ from PySide6.QtWidgets import (
 from dikte.config import Settings
 
 COMPUTE_TYPES = ("float16", "int8_float16", "bfloat16", "int8_float32", "float32")
-RESTART_HINT = "Değişiklik uygulamayı yeniden başlatınca etkin olur."
+RESTART_HINT = "Değişince model arka planda yeniden yüklenir."
 
 
 class SttTab(QWidget):

@@ -47,6 +47,10 @@ class AudioRecorder(QObject):
     def is_recording(self) -> bool:
         return self._stream is not None
 
+    def update_settings(self, settings: AudioSettings) -> None:
+        """Süren kayıt etkilenmez; yeni cihaz/parametreler bir sonraki `start()`'ta geçerli olur."""
+        self._settings = settings
+
     def start(self) -> None:
         if self._stream is not None:
             return

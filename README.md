@@ -175,7 +175,7 @@ Ayarlar penceresi (tepsi menüsü veya araç çubuğu → "Ayarlar…") altı se
 | Gelişmiş | beam_size, başlangıç promptu, num_ctx, top_p, top_k, zaman aşımı, düşünme modu |
 | Hakkında | Sürümler, GPU ve desteklenen hassasiyetler, log / ayar klasörünü aç |
 
-Model ve ses ayarları uygulamayı yeniden başlatınca etkin olur; ipucu alanın üstüne gelince görünür.
+Model/hassasiyet değişince model arka planda yeniden yüklenir; mikrofon değişikliği sonraki kayıtta geçerlidir. İpucu alanın üstüne gelince görünür.
 `config.json` içindeki kısayol bozuksa uygulama çökmez, varsayılana döner ve bunu bildirir.
 
 Kullanıcı verileri: `%APPDATA%\Dikte\` (config.json, history.jsonl, dikte.log).

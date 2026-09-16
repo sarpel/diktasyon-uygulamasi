@@ -19,7 +19,7 @@ from dikte.audio.recorder import AudioRecorder
 from dikte.config import Settings
 
 log = logging.getLogger(__name__)
-RESTART_HINT = "Değişiklik uygulamayı yeniden başlatınca etkin olur."
+RESTART_HINT = "Sonraki kayıtta etkin olur."
 
 
 class AudioTab(QWidget):

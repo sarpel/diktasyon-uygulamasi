@@ -159,6 +159,25 @@ class FasterWhisperEngine:
             "NVIDIA sürücüsünü ve CUDA kurulumunu kontrol edin."
         )
 
+    def update_settings(self, settings: SttSettings) -> bool:
+        """Ayarları uygular; model/hassasiyet/cihaz değiştiyse modeli arka planda düşürür.
+
+        Dönen bool, arayana modelin yeniden yüklenmesi (bir sonraki `load()`/`warm_up()`
+        çağrısında) gerekip gerekmediğini söyler."""
+        needs_reload = (
+            settings.model != self._settings.model
+            or settings.compute_type != self._settings.compute_type
+            or settings.device != self._settings.device
+        )
+        with self._lock:
+            self._settings = settings
+            if needs_reload:
+                self._model = None
+                self._pipeline = None
+                self._downgraded = False
+                self._compute_type = settings.compute_type
+        return needs_reload
+
     def load(self) -> None:
         with self._lock:
             if self._model is not None:
