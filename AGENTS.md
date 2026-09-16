@@ -1,6 +1,6 @@
 # AGENTS.md — Dikte
 
-<!-- LAST-SYNCED: 2026-09-15 -->
+<!-- LAST-SYNCED: 2026-09-16 -->
 
 Kodlama ajanları için çalışma kılavuzu. Kullanıcıya dönük anlatım `README.md`'dedir;
 burada yalnızca komutlar, sınırlar ve sözleşmeler var.
@@ -29,6 +29,7 @@ uv pip install -e ".[dev]"                          # Windows'ta ".[dev,cuda]"
 .venv/bin/python -m dikte                           # uygulamayı çalıştır
 .venv/bin/python scripts/download_models.py         # Whisper modelini indirir
 .venv/bin/python scripts/eval_llm.py --models <model…>   # Türkçe LLM benchmark'ı
+.venv/bin/python scripts/eval_stt.py --write             # Türkçe STT WER benchmark'ı
 ```
 
 Başsız ortamda Qt testleri `QT_QPA_PLATFORM=offscreen` ister (CI bunu ayarlar).
@@ -42,7 +43,8 @@ Sistem Python'u kullanılmaz; her zaman `.venv/bin/python`.
 | `src/dikte/audio/` | `sounddevice` kaydı (16 kHz mono float32), seviye ölçümü |
 | `src/dikte/stt/` | faster-whisper motoru, VAD ön-kontrolü, halüsinasyon filtresi |
 | `src/dikte/llm/` | `LlmProvider` protokolü + altı sağlayıcı, promptlar, görevler, anahtar okuma |
-| `src/dikte/platform/` | Global kısayol, yapıştırma, otomatik başlatma, tek örnek/IPC |
+| `src/dikte/platform/` | Global kısayol, yapıştırma, otomatik başlatma, tek örnek/IPC, ön plan süreci |
+| `src/dikte/text/` | Sözlük kuralları, sesli komutlar, uygulama profili eşleştirme |
 | `src/dikte/ui/` | Tray, overlay, sonuç penceresi, geçmiş paneli, `settings/` sekmeleri |
 | `scripts/`, `packaging/`, `docs/` | Yardımcı betikler, PyInstaller/Inno + Linux kurulumu, belgeler |
 
@@ -52,7 +54,7 @@ Giriş noktaları: `python -m dikte` (`src/dikte/__main__.py`) ve `dikte` konsol
 ## Sözleşmeler
 
 - **TDD zorunlu:** önce başarısız test, sonra en küçük uygulama, sonra commit.
-  Kapsam ≥ %80 (bugün %91, 326 test). Conventional Commits, Türkçe mesaj.
+  Kapsam ≥ %80 (bugün %92, 579 test). Conventional Commits, Türkçe mesaj.
 - **Değişmezlik:** pydantic modelleri `frozen=True`; değişiklik yalnızca
   `model_copy(update=...)` ile. Yerinde mutasyon yok.
 - **Enjekte edilebilir dış dünya:** GPU, ağ ve SDK erişimleri `*_factory` / `*_probe`

@@ -311,7 +311,7 @@ python scripts\make_icon.py                 # packaging\dikte.ico üretir
 powershell -ExecutionPolicy Bypass -File packaging\build.ps1
 ```
 
-Çıktı: `dist\Dikte\Dikte.exe` (onedir) ve `dist\Dikte-Setup-0.1.0.exe`
+Çıktı: `dist\Dikte\Dikte.exe` (onedir) ve `dist\Dikte-Setup-0.2.0.exe`
 (Inno Setup 6 kurulu olmalı).
 
 ## Paketleme (Linux)
@@ -324,4 +324,4 @@ python scripts/make_icon.py       # packaging/dikte.ico + packaging/linux/dikte.
 Kaldırmak için: `pipx uninstall dikte` ve
 `rm ~/.local/share/applications/dikte.desktop ~/.config/autostart/dikte.desktop`.
 
-<!-- LAST-SYNCED: 2026-09-15 -->
+<!-- LAST-SYNCED: 2026-09-16 -->
