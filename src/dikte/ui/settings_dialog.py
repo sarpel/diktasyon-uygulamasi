@@ -100,7 +100,7 @@ _PROXIED = {
         "timeout_spin",
         "think_check",
     ),
-    "about": ("gpu_label", "open_log_btn", "open_config_btn"),
+    "about": ("gpu_label", "vram_label", "open_log_btn", "open_config_btn"),
 }
 
 
