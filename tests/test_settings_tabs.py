@@ -298,6 +298,17 @@ def test_sounds_check_unchecked_disables_sounds(dlg):
     assert dlg.result_settings().sounds_enabled is False
 
 
+def test_restore_clipboard_round_trip(dlg):
+    dlg.auto_paste_check.setChecked(True)
+    dlg.restore_clipboard_check.setChecked(True)
+    assert dlg.result_settings().restore_clipboard is True
+
+
+def test_restore_clipboard_disabled_when_auto_paste_off(dlg):
+    dlg.auto_paste_check.setChecked(False)
+    assert not dlg.restore_clipboard_check.isEnabled()
+
+
 def test_open_location_failure_warns_user(dlg, monkeypatch):
     """QDesktopServices açamazsa sessiz kalınmaz; yolu içeren bir uyarı gösterilir."""
     from dikte.ui.settings import about_tab as about_mod

@@ -6,7 +6,7 @@ import sys
 from collections.abc import Callable
 from dataclasses import dataclass
 
-from PySide6.QtCore import QCoreApplication, QThreadPool
+from PySide6.QtCore import QCoreApplication, QThreadPool, QTimer
 from PySide6.QtWidgets import QApplication, QDialog, QMessageBox, QSystemTrayIcon
 
 from dikte import APP_NAME, __version__, paths
@@ -37,6 +37,8 @@ from dikte.ui.tray import TrayIcon
 log = logging.getLogger(__name__)
 # Windows dışında global kısayol yoktur; masaüstü ortamı bu komuta bir tuş bağlar.
 CLI_TOGGLE_HINT = "dikte --toggle"
+# Yapıştırma işletim sisteminde işlenip aktif pencereye ulaşana kadarki bekleme süresi.
+RESTORE_CLIPBOARD_DELAY_MS = 300
 
 
 @dataclass
@@ -185,15 +187,24 @@ def _refresh_status_info(ctx: AppContext) -> None:
 
 
 def _on_result_ready(ctx: AppContext, text: str) -> None:
-    """Sonucu panoya yazar ve (ayar açıksa) ön plandaki uygulamaya yapıştırır."""
+    """Sonucu panoya yazar ve (ayar açıksa) ön plandaki uygulamaya yapıştırır.
+
+    `restore_clipboard` açıksa ve yapıştırma gerçekten gönderildiyse, panodaki eski
+    metin kısa bir gecikmeyle geri yazılır (yapıştırma hedef uygulamaya ulaşsın diye).
+    """
     if not text or not ctx.settings.auto_copy:
         return
-    QApplication.clipboard().setText(text)
+    clipboard = QApplication.clipboard()
+    previous = clipboard.text() if ctx.settings.restore_clipboard else ""
+    clipboard.setText(text)
     if not ctx.settings.auto_paste or ctx.window.isActiveWindow():
         return
     own_ids = {int(ctx.window.winId()), int(ctx.overlay.winId())}
     if not paste_active_window(own_ids):
         log.info("yapıştırma atlandı; metin panoda")
+        return
+    if ctx.settings.restore_clipboard and previous:
+        QTimer.singleShot(RESTORE_CLIPBOARD_DELAY_MS, lambda: clipboard.setText(previous))
 
 
 def _sync_cancel_hotkey(ctx: AppContext, state: DictationState) -> None:

@@ -99,6 +99,8 @@ Kayıt bitip metin hazır olduğunda üç şey birden olur:
 2. Ön plandaki uygulama Dikte değilse metin oraya **Ctrl+V** ile yapıştırılır
    (Ayarlar → "Sonucu aktif pencereye yapıştır"). Windows'ta yerleşik; Linux'ta
    `xdotool` (X11) veya `wtype` (Wayland) kurulu olmalıdır, yoksa metin yalnızca panoda kalır.
+   Ayarlar → "Yapıştırdıktan sonra eski pano içeriğini geri yükle" ile yapıştırma sonrası
+   pano önceki içeriğine döndürülebilir.
 3. Oturum **geçmişe** yazılır.
 
 Sonuç penceresi varsayılan olarak öne gelmez; odağınız çalıştığınız uygulamada kalır.

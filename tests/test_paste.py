@@ -110,3 +110,65 @@ def test_all_tools_failing_returns_false(monkeypatch):
     monkeypatch.setattr(paste.shutil, "which", lambda n: f"/usr/bin/{n}")
     monkeypatch.setattr(paste.subprocess, "run", lambda cmd, **k: SimpleNamespace(returncode=1))
     assert paste.send_paste_keystroke() is False
+
+
+def test_build_key_inputs_presses_then_releases_in_reverse():
+    from dikte.platform.paste import KEYEVENTF_KEYUP, VK_CONTROL, VK_SHIFT, VK_V, build_key_inputs
+
+    seq = build_key_inputs((VK_CONTROL, VK_SHIFT, VK_V))
+    assert seq[:3] == [(VK_CONTROL, 0), (VK_SHIFT, 0), (VK_V, 0)]
+    assert seq[3:] == [
+        (VK_V, KEYEVENTF_KEYUP),
+        (VK_SHIFT, KEYEVENTF_KEYUP),
+        (VK_CONTROL, KEYEVENTF_KEYUP),
+    ]
+
+
+def test_linux_combo_ctrl_shift_v(monkeypatch):
+    monkeypatch.setattr(paste.sys, "platform", "linux")
+    monkeypatch.setattr(
+        paste.shutil, "which", lambda n: "/usr/bin/xdotool" if n == "xdotool" else None
+    )
+    ran = []
+    monkeypatch.setattr(
+        paste.subprocess, "run", lambda cmd, **k: ran.append(cmd) or SimpleNamespace(returncode=0)
+    )
+    assert paste.send_paste_keystroke(combo="ctrl+shift+v") is True
+    assert ran[0][-1] == "ctrl+shift+v"
+
+
+def test_type_unicode_text_uses_injected_sender():
+    typed = []
+    assert paste.type_unicode_text("merhaba", sender=lambda t: typed.append(t) or True) is True
+    assert typed == ["merhaba"]
+
+
+def test_type_unicode_text_linux_xdotool(monkeypatch):
+    monkeypatch.setattr(paste.sys, "platform", "linux")
+    monkeypatch.setattr(
+        paste.shutil, "which", lambda n: "/usr/bin/xdotool" if n == "xdotool" else None
+    )
+    ran = []
+    monkeypatch.setattr(
+        paste.subprocess, "run", lambda cmd, **k: ran.append(cmd) or SimpleNamespace(returncode=0)
+    )
+    assert paste.type_unicode_text("çay") is True and ran[0][-1] == "çay"
+
+
+def test_type_unicode_text_without_tools_returns_false(monkeypatch):
+    monkeypatch.setattr(paste.sys, "platform", "linux")
+    monkeypatch.setattr(paste.shutil, "which", lambda n: None)
+    assert paste.type_unicode_text("merhaba") is False
+
+
+def test_paste_active_window_forwards_combo(monkeypatch):
+    monkeypatch.setattr(paste, "foreground_window_id", lambda: 7)
+    seen = {}
+
+    def fake_send(sender=None, *, combo="ctrl+v"):
+        seen["combo"] = combo
+        return True
+
+    monkeypatch.setattr(paste, "send_paste_keystroke", fake_send)
+    assert paste.paste_active_window({42}, combo="ctrl+shift+v") is True
+    assert seen["combo"] == "ctrl+shift+v"

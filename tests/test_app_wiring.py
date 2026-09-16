@@ -318,6 +318,28 @@ def test_paste_still_happens_when_raise_on_result_activates_window(ctx, qtbot, m
     assert len(pasted) == 1
 
 
+def test_restore_clipboard_after_paste(ctx, monkeypatch, qtbot):
+    from PySide6.QtWidgets import QApplication
+
+    ctx.settings = ctx.settings.model_copy(update={"restore_clipboard": True})
+    QApplication.clipboard().setText("eski")
+    monkeypatch.setattr(app_mod, "paste_active_window", lambda ids, **k: True)
+    app_mod._on_result_ready(ctx, "yeni")
+    assert QApplication.clipboard().text() == "yeni"
+    qtbot.waitUntil(lambda: QApplication.clipboard().text() == "eski", timeout=2000)
+
+
+def test_clipboard_not_restored_when_paste_skipped(ctx, monkeypatch, qtbot):
+    from PySide6.QtWidgets import QApplication
+
+    ctx.settings = ctx.settings.model_copy(update={"restore_clipboard": True})
+    QApplication.clipboard().setText("eski")
+    monkeypatch.setattr(app_mod, "paste_active_window", lambda ids, **k: False)
+    app_mod._on_result_ready(ctx, "yeni")
+    qtbot.wait(400)
+    assert QApplication.clipboard().text() == "yeni"
+
+
 def test_history_panel_refreshes_on_result(ctx):
     ctx.controller._update_session(raw_text="a", corrected_text="A.")
     ctx.controller.state_changed.emit(DictationState.RESULT)
