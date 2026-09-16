@@ -19,6 +19,7 @@ from dikte.ui.settings import (
     DictionaryTab,
     GeneralTab,
     LlmTab,
+    ProfilesTab,
     SttTab,
 )
 
@@ -101,6 +102,7 @@ _PROXIED = {
         "timeout_spin",
         "think_check",
     ),
+    "profiles": ("profiles_table", "add_profile_btn", "remove_profile_btn"),
     "about": ("gpu_label", "vram_label", "open_log_btn", "open_config_btn", "health_btn"),
 }
 
@@ -134,6 +136,7 @@ class SettingsDialog(QDialog):
         self.llm = LlmTab(settings)
         self.dictionary = DictionaryTab(settings)
         self.advanced = AdvancedTab(settings)
+        self.profiles = ProfilesTab(settings)
         self.about = AboutTab(settings)
         self._tabs_in_order = (
             self.general,
@@ -142,6 +145,7 @@ class SettingsDialog(QDialog):
             self.llm,
             self.dictionary,
             self.advanced,
+            self.profiles,
             self.about,
         )
 

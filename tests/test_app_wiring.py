@@ -238,6 +238,24 @@ def test_translate_hotkey_arms_detector_with_own_vk_on_windows(ctx, monkeypatch)
     assert ctx.hold_mode == "translate"
 
 
+def test_hotkey_resolves_matching_profile_and_overrides_mode(ctx, monkeypatch):
+    from dikte.config import AppProfile
+
+    profile = AppProfile(name="Kod", match="code", mode="translate")
+    ctx.settings = ctx.settings.model_copy(update={"push_to_talk": False, "profiles": (profile,)})
+    monkeypatch.setattr(app_mod, "foreground_process_name", lambda: "Code.exe")
+    app_mod._on_hotkey(ctx)
+    assert ctx.active_profile is profile
+    assert ctx.controller.session.mode == "translate"
+
+
+def test_hotkey_no_matching_profile_leaves_active_profile_none(ctx, monkeypatch):
+    ctx.settings = ctx.settings.model_copy(update={"push_to_talk": False})
+    monkeypatch.setattr(app_mod, "foreground_process_name", lambda: "explorer.exe")
+    app_mod._on_hotkey(ctx)
+    assert ctx.active_profile is None
+
+
 def test_apply_hotkey_falls_back_to_cli_label_off_windows(ctx, monkeypatch):
     monkeypatch.setattr(app_mod.sys, "platform", "linux")
     notifications = []
@@ -428,6 +446,42 @@ def test_clipboard_not_restored_when_paste_skipped(ctx, monkeypatch, qtbot):
     app_mod._on_result_ready(ctx, "yeni")
     qtbot.wait(400)
     assert QApplication.clipboard().text() == "yeni"
+
+
+def test_result_ready_uses_profile_paste_combo(ctx, monkeypatch):
+    from dikte.config import AppProfile
+
+    ctx.active_profile = AppProfile(name="Terminal", match="wt", paste="ctrl+shift+v")
+    combos = []
+    monkeypatch.setattr(
+        app_mod, "paste_active_window", lambda ids, **k: combos.append(k.get("combo")) or True
+    )
+    app_mod._on_result_ready(ctx, "Merhaba.")
+    assert combos == ["ctrl+shift+v"]
+
+
+def test_result_ready_uses_type_when_profile_paste_is_type(ctx, monkeypatch):
+    from dikte.config import AppProfile
+
+    ctx.active_profile = AppProfile(name="Kod", match="code", paste="type")
+    typed = []
+    pasted = []
+    monkeypatch.setattr(app_mod, "type_unicode_text", lambda text: typed.append(text) or True)
+    monkeypatch.setattr(app_mod, "paste_active_window", lambda *a, **k: pasted.append(1) or True)
+    app_mod._on_result_ready(ctx, "Merhaba.")
+    assert typed == ["Merhaba."]
+    assert pasted == []
+
+
+def test_result_ready_appends_profile_trailing(ctx, monkeypatch):
+    from PySide6.QtWidgets import QApplication
+
+    from dikte.config import AppProfile
+
+    ctx.active_profile = AppProfile(name="Terminal", match="wt", trailing="\n")
+    monkeypatch.setattr(app_mod, "paste_active_window", lambda *a, **k: True)
+    app_mod._on_result_ready(ctx, "Merhaba.")
+    assert QApplication.clipboard().text() == "Merhaba.\n"
 
 
 def test_history_panel_refreshes_on_result(ctx):

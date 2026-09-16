@@ -1,7 +1,7 @@
 import pytest
 from PySide6.QtGui import QKeySequence
 
-from dikte.config import DictionaryEntry, Settings
+from dikte.config import AppProfile, DictionaryEntry, Settings
 from dikte.ui.settings_dialog import SettingsDialog
 
 TAB_TITLES = [
@@ -11,6 +11,7 @@ TAB_TITLES = [
     "Metin Düzeltme",
     "Sözlük",
     "Gelişmiş",
+    "Profiller",
     "Hakkında",
 ]
 
@@ -415,3 +416,53 @@ def test_dictionary_round_trip(dlg):
 def test_dictionary_rejects_empty_term(dlg):
     dlg.dictionary.add_entry_btn.click()
     assert dlg.dictionary.validate() == "Sözlükte boş terim var"
+
+
+def test_profiles_starts_empty():
+    d = SettingsDialog(Settings(), ())
+    assert d.profiles_table.rowCount() == 0
+
+
+def test_profiles_loads_existing_profiles():
+    profile = AppProfile(name="Kod", match="code", mode="translate", paste="type")
+    s = Settings(profiles=(profile,))
+    d = SettingsDialog(s, ())
+    assert d.profiles_table.rowCount() == 1
+    assert d.profiles_table.item(0, 0).text() == "Kod"
+    assert d.profiles_table.item(0, 1).text() == "code"
+
+
+def test_profiles_round_trip(dlg):
+    dlg.profiles.add_profile_btn.click()
+    row = dlg.profiles_table.rowCount() - 1
+    dlg.profiles_table.item(row, 0).setText("Terminal")
+    dlg.profiles_table.item(row, 1).setText("windowsterminal")
+    dlg.profiles_table.cellWidget(row, 2).setCurrentText("prompt")
+    dlg.profiles_table.cellWidget(row, 3).setCurrentText("ctrl+shift+v")
+    dlg.profiles_table.cellWidget(row, 4).setChecked(False)
+    dlg.profiles_table.cellWidget(row, 5).setCurrentText("yeni satır")
+    s = dlg.result_settings()
+    assert s.profiles == (
+        AppProfile(
+            name="Terminal",
+            match="windowsterminal",
+            mode="prompt",
+            paste="ctrl+shift+v",
+            llm_enabled=False,
+            trailing="\n",
+        ),
+    )
+
+
+def test_profiles_rejects_empty_name_or_match(dlg):
+    dlg.profiles.add_profile_btn.click()
+    row = dlg.profiles_table.rowCount() - 1
+    dlg.profiles_table.item(row, 1).setText("code")
+    assert dlg.profiles.validate() == "Profilde ad ve eşleşme alanları boş olamaz"
+
+
+def test_profiles_remove_selected(dlg):
+    dlg.profiles.add_profile_btn.click()
+    dlg.profiles_table.selectRow(0)
+    dlg.profiles.remove_profile_btn.click()
+    assert dlg.profiles_table.rowCount() == 0

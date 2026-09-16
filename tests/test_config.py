@@ -125,3 +125,43 @@ def test_active_model_follows_provider():
     assert base.model_copy(update={"provider": "openai"}).active_model == "gpt-5.5"
     assert base.model_copy(update={"provider": "gemini"}).active_model == "gemini-3.5-flash"
     assert base.model_copy(update={"provider": "custom"}).active_model == "öz-model"
+
+
+def test_profiles_default_to_empty():
+    assert Settings().profiles == ()
+
+
+def test_app_profile_defaults():
+    from dikte.config import AppProfile
+
+    p = AppProfile(name="Kod", match="code")
+    assert p.mode == "correct"
+    assert p.paste == "ctrl+v"
+    assert p.llm_enabled is True
+    assert p.trailing == ""
+
+
+def test_app_profile_is_immutable():
+    from dikte.config import AppProfile
+
+    p = AppProfile(name="Kod", match="code")
+    with pytest.raises(Exception):
+        p.name = "x"  # type: ignore[misc]
+
+
+def test_profiles_load_from_json():
+    loaded = Settings.model_validate_json(
+        '{"profiles": [{"name": "Terminal", "match": "windowsterminal", '
+        '"paste": "ctrl+shift+v", "llm_enabled": false}]}'
+    )
+    assert loaded.profiles[0].name == "Terminal"
+    assert loaded.profiles[0].paste == "ctrl+shift+v"
+    assert loaded.profiles[0].llm_enabled is False
+
+
+def test_old_config_without_profiles_still_loads(tmp_path: Path):
+    import json
+
+    p = tmp_path / "config.json"
+    p.write_text(json.dumps({"hotkey": "ctrl+alt+space"}), encoding="utf-8")
+    assert load_settings(p).profiles == ()
