@@ -12,7 +12,16 @@ from PySide6.QtWidgets import (
 )
 
 from dikte.config import Settings
-from dikte.ui.settings import AboutTab, AdvancedTab, AudioTab, GeneralTab, LlmTab, SttTab
+from dikte.ui.settings import (
+    AboutTab,
+    AdvancedTab,
+    AudioTab,
+    DictionaryTab,
+    GeneralTab,
+    LlmTab,
+    ProfilesTab,
+    SttTab,
+)
 
 log = logging.getLogger(__name__)
 
@@ -20,14 +29,21 @@ log = logging.getLogger(__name__)
 _PROXIED = {
     "general": (
         "hotkey_edit",
+        "hotkey_translate_edit",
+        "hotkey_prompt_edit",
         "autostart_check",
         "auto_copy_check",
         "auto_paste_check",
+        "restore_clipboard_check",
         "raise_window_check",
         "close_after_copy_check",
+        "sounds_check",
+        "push_to_talk_check",
+        "suggest_dictionary_check",
+        "voice_commands_check",
         "history_spin",
     ),
-    "audio": ("device_combo", "max_seconds_spin", "level_bar", "test_btn"),
+    "audio": ("device_combo", "max_seconds_spin", "silence_stop_spin", "level_bar", "test_btn"),
     "stt": (
         "stt_model_edit",
         "compute_combo",
@@ -36,6 +52,7 @@ _PROXIED = {
         "batch_threshold_spin",
         "batch_size_spin",
         "warm_up_check",
+        "live_chunk_spin",
         "vad_check",
         "vad_threshold_spin",
         "vad_min_silence_spin",
@@ -76,6 +93,7 @@ _PROXIED = {
         "llm_test_btn",
         "llm_test_status",
     ),
+    "dictionary": ("dictionary_table", "add_entry_btn", "remove_entry_btn", "instructions_edit"),
     "advanced": (
         "beam_spin",
         "initial_prompt_edit",
@@ -85,7 +103,8 @@ _PROXIED = {
         "timeout_spin",
         "think_check",
     ),
-    "about": ("gpu_label", "open_log_btn", "open_config_btn"),
+    "profiles": ("profiles_table", "add_profile_btn", "remove_profile_btn"),
+    "about": ("gpu_label", "vram_label", "open_log_btn", "open_config_btn", "health_btn"),
 }
 
 
@@ -116,14 +135,18 @@ class SettingsDialog(QDialog):
         self.audio = AudioTab(settings, devices)
         self.stt = SttTab(settings)
         self.llm = LlmTab(settings)
+        self.dictionary = DictionaryTab(settings)
         self.advanced = AdvancedTab(settings)
+        self.profiles = ProfilesTab(settings)
         self.about = AboutTab(settings)
         self._tabs_in_order = (
             self.general,
             self.audio,
             self.stt,
             self.llm,
+            self.dictionary,
             self.advanced,
+            self.profiles,
             self.about,
         )
 

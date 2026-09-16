@@ -1,4 +1,4 @@
-from dikte.core.state import DictationState
+from dikte.core.state import DictationState, Session
 from dikte.ui.tray import TrayIcon
 
 
@@ -69,3 +69,40 @@ def test_cancel_action_emits_signal(qtbot):
     t.set_state(DictationState.RECORDING)
     with qtbot.waitSignal(t.cancel_requested):
         t._cancel_action.trigger()
+
+
+def test_set_recent_populates_submenu_with_given_count(qtbot):
+    t = make(qtbot)
+    t.set_recent((Session(corrected_text="Eski."), Session(corrected_text="Yeni.")))
+    assert len(t._recent_menu.actions()) == 2
+    assert t._recent_menu.isEnabled() and t._copy_recent_action.isEnabled()
+
+
+def test_set_recent_submenu_item_emits_copy_requested_with_full_text(qtbot):
+    t = make(qtbot)
+    t.set_recent((Session(corrected_text="Uzun bir dikte metni burada."),))
+    with qtbot.waitSignal(t.copy_requested) as blocker:
+        t._recent_menu.actions()[0].trigger()
+    assert blocker.args == ["Uzun bir dikte metni burada."]
+
+
+def test_copy_recent_action_copies_most_recent_session(qtbot):
+    t = make(qtbot)
+    t.set_recent((Session(corrected_text="Eski."), Session(corrected_text="Yeni.")))
+    with qtbot.waitSignal(t.copy_requested) as blocker:
+        t._copy_recent_action.trigger()
+    assert blocker.args == ["Yeni."]
+
+
+def test_set_recent_limits_to_five_and_previews_forty_chars(qtbot):
+    t = make(qtbot)
+    sessions = tuple(Session(corrected_text=f"Kayıt {i} " * 10) for i in range(8))
+    t.set_recent(sessions)
+    assert len(t._recent_menu.actions()) == 5
+    assert all(len(a.text()) <= 40 for a in t._recent_menu.actions())
+
+
+def test_recent_disabled_when_no_history(qtbot):
+    t = make(qtbot)
+    t.set_recent(())
+    assert not t._copy_recent_action.isEnabled() and not t._recent_menu.isEnabled()

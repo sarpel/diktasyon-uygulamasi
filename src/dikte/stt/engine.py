@@ -35,7 +35,9 @@ class SttEngine(Protocol):
 
     def warm_up(self) -> None: ...
 
-    def transcribe(self, audio: np.ndarray, language: str | None = None) -> TranscriptResult: ...
+    def transcribe(
+        self, audio: np.ndarray, language: str | None = None, *, previous_text: str = ""
+    ) -> TranscriptResult: ...
 
 
 def _default_model_factory(*args, **kwargs):
@@ -55,12 +57,17 @@ def _vad_options(settings: SttSettings) -> dict:
     }
 
 
-def _default_speech_probe(audio: np.ndarray, settings: SttSettings) -> bool:
-    """Kayıtta hiç konuşma var mı? Silero VAD (faster-whisper içinde gömülü) ile bakılır."""
+def _default_speech_probe(audio: np.ndarray, settings: SttSettings) -> list[dict] | bool:
+    """Kayıttaki konuşma aralıkları (örnek cinsinden). Silero VAD (faster-whisper içinde gömülü) ile bulunur.
+
+    Toplu boru hattının kendi kullandığı max_speech_duration_s=30 ile hesaplanır, böylece
+    aynı zaman damgaları hem "hiç konuşma var mı" ön kontrolünde hem de toplu çözümlemede
+    (VAD'i ikinci kez çalıştırmadan) kullanılabilir.
+    """
     from faster_whisper.vad import VadOptions, get_speech_timestamps
 
-    options = VadOptions(**_vad_options(settings))
-    return bool(get_speech_timestamps(audio.astype(np.float32, copy=False), options))
+    options = VadOptions(**_vad_options(settings), max_speech_duration_s=30)
+    return get_speech_timestamps(audio.astype(np.float32, copy=False), options)
 
 
 def _default_pipeline_factory(model):
@@ -97,7 +104,7 @@ class FasterWhisperEngine:
         pipeline_factory: Callable | None = None,
         cuda_probe: Callable[[], int] | None = None,
         supported_types_probe: Callable[[], set[str]] | None = None,
-        speech_probe: Callable[[np.ndarray, SttSettings], bool] | None = None,
+        speech_probe: Callable[[np.ndarray, SttSettings], list[dict] | bool] | None = None,
     ):
         self._settings = settings
         self._factory = model_factory or _default_model_factory
@@ -110,6 +117,11 @@ class FasterWhisperEngine:
         self._compute_type = settings.compute_type
         self._downgraded = False
         self._lock = threading.Lock()
+        self._hotwords = ""
+        self._prompt_terms = ""
+
+    def set_dictionary(self, hotwords: str, prompt_terms: str) -> None:
+        self._hotwords, self._prompt_terms = hotwords, prompt_terms
 
     @property
     def is_loaded(self) -> bool:
@@ -153,6 +165,25 @@ class FasterWhisperEngine:
             f"GPU hiçbir compute_type'ı desteklemiyor (istenen: {wanted}). "
             "NVIDIA sürücüsünü ve CUDA kurulumunu kontrol edin."
         )
+
+    def update_settings(self, settings: SttSettings) -> bool:
+        """Ayarları uygular; model/hassasiyet/cihaz değiştiyse modeli arka planda düşürür.
+
+        Dönen bool, arayana modelin yeniden yüklenmesi (bir sonraki `load()`/`warm_up()`
+        çağrısında) gerekip gerekmediğini söyler."""
+        needs_reload = (
+            settings.model != self._settings.model
+            or settings.compute_type != self._settings.compute_type
+            or settings.device != self._settings.device
+        )
+        with self._lock:
+            self._settings = settings
+            if needs_reload:
+                self._model = None
+                self._pipeline = None
+                self._downgraded = False
+                self._compute_type = settings.compute_type
+        return needs_reload
 
     def load(self) -> None:
         with self._lock:
@@ -214,13 +245,19 @@ class FasterWhisperEngine:
             log.info("Toplu çözümleme açıldı (batch_size=%s)", self._settings.batch_size)
         return self._pipeline
 
-    def transcribe(self, audio: np.ndarray, language: str | None = None) -> TranscriptResult:
+    def transcribe(
+        self, audio: np.ndarray, language: str | None = None, *, previous_text: str = ""
+    ) -> TranscriptResult:
         if audio.size == 0:
             raise SttError("Ses kaydı boş")
         s = self._settings
         # Tamamen sessiz kayıtta Whisper çağrılmaz: uydurma altyazı metni üretmesini engeller.
-        if s.vad_filter and not self._speech_probe(audio, s):
-            raise SttError("Konuşma algılanmadı; mikrofon ve VAD eşiğini kontrol edin")
+        # Sonda toplu boru hattı için yeniden kullanılabilmesi için sonuç saklanır (VAD iki kez çalışmaz).
+        speech: list[dict] | bool = True
+        if s.vad_filter:
+            speech = self._speech_probe(audio, s)
+            if not speech:
+                raise SttError("Konuşma algılanmadı; mikrofon ve VAD eşiğini kontrol edin")
         if not self.is_loaded:
             self.load()
         lang = language or s.language
@@ -234,13 +271,22 @@ class FasterWhisperEngine:
             "log_prob_threshold": s.log_prob_threshold,
             "hallucination_silence_threshold": s.hallucination_silence_threshold_s or None,
             "without_timestamps": True,  # kelime zamanları kullanılmıyor
-            "initial_prompt": s.initial_prompt or None,
+            "initial_prompt": " ".join(
+                p for p in (s.initial_prompt, self._prompt_terms, previous_text[-200:]) if p
+            )
+            or None,
+            "hotwords": self._hotwords or None,
         }
         try:
             with self._lock:
                 if self._use_batching(audio):
                     target = self._get_pipeline()
                     kwargs["batch_size"] = s.batch_size
+                    if isinstance(speech, list):
+                        kwargs["clip_timestamps"] = [
+                            {"start": t["start"] / SAMPLE_RATE, "end": t["end"] / SAMPLE_RATE}
+                            for t in speech
+                        ]
                 else:
                     target = self._model
                     kwargs["condition_on_previous_text"] = True

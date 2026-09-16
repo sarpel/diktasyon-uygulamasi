@@ -36,6 +36,9 @@ class SttSettings(BaseModel):
     batch_size: int = Field(default=8, ge=1, le=32)
     # Model yüklendikten sonra kısa bir sahte çözümleme; ilk gerçek diktenin gecikmesini alır.
     warm_up: bool = True
+    # Kayıt sırasında parça parça çözümleme: 0 = kapalı (tek geçiş, kayıt bitince çözümlenir).
+    live_chunk_s: float = Field(default=20.0, ge=0)
+    live_max_chunk_s: float = Field(default=45.0, ge=5)
 
 
 class LlmSettings(BaseModel):
@@ -88,21 +91,58 @@ class AudioSettings(BaseModel):
     device_index: int | None = None  # None = sistem varsayılanı
     sample_rate: int = 16000
     max_seconds: int = Field(default=0, ge=0)  # 0 = sınırsız
+    silence_stop_s: float = Field(
+        default=0.0, ge=0
+    )  # 0 = kapalı; konuşma sonrası bu kadar sessizlikte kayıt otomatik durur
+    silence_threshold: float = Field(
+        default=0.01, ge=0.0, le=1.0
+    )  # RMS eşiği: bunun altı sessizlik sayılır
+
+
+class DictionaryEntry(BaseModel):
+    model_config = ConfigDict(frozen=True)
+    term: str  # doğru yazım, ör. "Kubernetes"
+    wrong: tuple[str, ...] = ()  # STT'nin ürettiği yanlış biçimler, ör. ("kuber netes",)
+
+
+class DictionarySettings(BaseModel):
+    model_config = ConfigDict(frozen=True)
+    entries: tuple[DictionaryEntry, ...] = ()
+    user_instructions: str = ""  # LLM düzeltme talimatına ek serbest metin
+
+
+class AppProfile(BaseModel):
+    model_config = ConfigDict(frozen=True)
+    name: str
+    match: str  # exe adı alt dizesi, küçük harf (ör. "code", "windowsterminal")
+    mode: Literal["correct", "translate", "prompt"] = "correct"
+    paste: Literal["ctrl+v", "ctrl+shift+v", "type"] = "ctrl+v"
+    llm_enabled: bool = True
+    trailing: Literal["", " ", "\n"] = ""
 
 
 class Settings(BaseModel):
     model_config = ConfigDict(frozen=True)
     hotkey: str = "ctrl+alt+space"
+    hotkey_translate: str = ""  # boş = kapalı
+    hotkey_prompt: str = ""  # boş = kapalı
     autostart: bool = True
     close_after_copy: bool = False
     history_limit: int = Field(default=200, ge=0)
     # Sonuç teslimi: pano her zaman yedektir, yapıştırma aktif pencereye Ctrl+V gönderir.
     auto_copy: bool = True
     auto_paste: bool = True
+    restore_clipboard: bool = False  # yapıştırdıktan sonra panodaki eski içeriği geri yükle
+    push_to_talk: bool = True  # Windows: kısayolu basılı tutunca kayıt, bırakınca çözümleme
     raise_window_on_result: bool = False  # dikte akışını bozmamak için varsayılan kapalı
+    sounds_enabled: bool = True  # başlat/durdur/hata sesleri
+    suggest_dictionary: bool = True  # elle düzenlemeden tek kelimelik sözlük önerisi çıkar
+    voice_commands: bool = True  # "yeni satır", "yeni paragraf", "son cümleyi sil"
     stt: SttSettings = SttSettings()
     llm: LlmSettings = LlmSettings()
     audio: AudioSettings = AudioSettings()
+    dictionary: DictionarySettings = DictionarySettings()
+    profiles: tuple[AppProfile, ...] = ()
 
 
 def load_settings(path: Path | None = None) -> Settings:

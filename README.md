@@ -76,18 +76,34 @@ açık değilse hata verip 1 döner. Otomatik başlatma ayarı Linux'ta
 
 Kullanıcı verileri: `~/.config/Dikte/`, model önbelleği: `~/.cache/Dikte/models/`.
 
+### İlk açılışta durum kontrolü
+
+Config dosyası henüz yoksa (ilk çalıştırma) veya GPU/Whisper modeli/LLM bağlantısından
+biri sorunluysa, uygulama açılışta **modal olmayan** bir "Durum kontrolü" penceresi
+gösterir: her öğe için ✓/✗ ve bir ipucu satırı, Whisper modeli önbellekte değilse
+ilerleme çubuklu bir "Modeli indir" düğmesi. Aynı pencereyi istediğiniz zaman
+Ayarlar → Hakkında → **"Durum kontrolü…"** ile de açabilirsiniz. STT modeli sonradan
+(ör. dosya bozulması) yüklenemezse pencere otomatik olarak yeniden açılır.
+
 ## Kullanım
 
 | Eylem | Kısayol / yer |
 |---|---|
 | Kaydı başlat / durdur | Windows: `Ctrl+Alt+Space` (ayarlardan değiştirilebilir) · Linux: `dikte --toggle`'a bağladığınız tuş |
+| Bas-konuş (Windows) | Kısayolu basılı tutun, bırakınca çözümlenir; kısa basış aç/kapat olarak çalışır (Ayarlar → Genel → "Bas-konuş"). Linux'ta: `dikte --start` / `dikte --stop` komutlarını tuşa basınca/bırakınca bağlayın |
 | Düzeltilmiş metni kopyala | Pane'in sağ üstündeki kopyala ikonu veya `Ctrl+Shift+C` |
-| İngilizce çeviri | Alt araç çubuğu → "İngilizce'ye Çevir" |
-| Agent prompt'u | Alt araç çubuğu → "Agent Prompt'a Dönüştür" |
+| İngilizce çeviri | Alt araç çubuğu → "İngilizce'ye Çevir" · veya Ayarlar → Genel'de ayrı bir kısayol tanımlayıp doğrudan çeviri sonucunu yapıştırın (Linux: `dikte --toggle --mode translate`) |
+| Agent prompt'u | Alt araç çubuğu → "Agent Prompt'a Dönüştür" · veya Ayarlar → Genel'de ayrı bir kısayol tanımlayıp doğrudan prompt sonucunu yapıştırın (Linux: `dikte --toggle --mode prompt`) |
 | Kaydı/çözümlemeyi iptal et | `Esc` (Windows'ta global) · overlay ya da araç çubuğunda "Vazgeç" · tray menüsü |
-| Geçmiş panelini aç/kapat | Araç çubuğu → "Geçmiş" |
+| Ayarları aç | Araç çubuğu → "Ayarlar…" veya `Ctrl+,` |
+| Geçmiş panelini aç/kapat | Araç çubuğu → "Geçmiş" veya `Ctrl+H` |
+| Geçmişte ara | `Ctrl+F` (paneli açar ve arama kutusuna odaklanır) |
+| Geçmişi dışa aktar | Geçmiş paneli → "Dışa aktar…" (`.md` → Markdown, `.txt` → düz metin) |
+| Son diktenin metnini kopyala | Tray menüsü → "Son metni kopyala" veya "Son dikteler" alt menüsünden birini seç |
 | Pencereyi gizle | `X` (uygulama tray'de kalır) |
 | Çıkış | Tray menüsü → "Çıkış" |
+
+Başlat/durdur/hata sesleri Ayarlar → Genel'den kapatılabilir.
 
 ### Sonuç nasıl teslim edilir
 
@@ -97,7 +113,12 @@ Kayıt bitip metin hazır olduğunda üç şey birden olur:
 2. Ön plandaki uygulama Dikte değilse metin oraya **Ctrl+V** ile yapıştırılır
    (Ayarlar → "Sonucu aktif pencereye yapıştır"). Windows'ta yerleşik; Linux'ta
    `xdotool` (X11) veya `wtype` (Wayland) kurulu olmalıdır, yoksa metin yalnızca panoda kalır.
+   Ayarlar → "Yapıştırdıktan sonra eski pano içeriğini geri yükle" ile yapıştırma sonrası
+   pano önceki içeriğine döndürülebilir.
 3. Oturum **geçmişe** yazılır.
+
+Düzeltilmiş metni elle düzenleyip Ctrl+Enter ile yeniden yapıştırabilirsiniz; düzeltmeniz
+geçmişe yazılır ve sözlüğe eklemeniz önerilir.
 
 Sonuç penceresi varsayılan olarak öne gelmez; odağınız çalıştığınız uygulamada kalır.
 İsterseniz Ayarlar → "Sonuçta pencereyi öne getir" ile açabilirsiniz.
@@ -105,6 +126,22 @@ Sonuç penceresi varsayılan olarak öne gelmez; odağınız çalıştığınız
 Kayıt süresi varsayılan olarak **sınırsızdır** (Ayarlar → "Kayıt süresi sınırı" = 0). Bellek
 kullanımı 16 kHz float32 ham ses için yaklaşık **230 MB/saat**'tir. Bir sınır girilirse süre
 dolunca kayıt sessizce kesilmez; otomatik durur ve o ana kadarki ses çözümlenir.
+
+### Canlı çözümleme
+
+Uzun diktelerde tüm kaydı sonda tek seferde çözümlemek yerine, kayıt sürerken konuşma +
+sessizlik biriktikçe **parça parça** çözümlenir (Ayarlar → Konuşma Tanıma → "Canlı çözümleme
+parça süresi", varsayılan 20 sn, `0` = kapalı). Her parça, önceki parçaların metniyle birlikte
+(bağlam olarak) çözümlenir ve overlay'de dalganın altında **canlı transkript** olarak görünür.
+Bu sayede:
+
+- Uzun bir dikte bittiğinde beklenen süre neredeyse **sabit kalır** (yalnızca son küçük parça
+  çözümlenmeyi bekler), tüm kaydın çözümlenmesini beklemek yerine.
+- Bir parça çok uzun sessizsiz konuşursa **45 saniyede** (sabit üst sınır, `live_max_chunk_s`)
+  sessizlikten bağımsız olarak yine de bölünür.
+
+Kısa diktelerde (parça süresinden kısa kayıtlarda) davranış değişmez: tüm kayıt kayıt bitince
+tek seferde çözümlenir.
 
 ### Halüsinasyon ve sessizlik
 
@@ -159,22 +196,94 @@ otomatik olarak `json_object` moduna düşülür.
 
 ### Ayarlar
 
-Ayarlar penceresi (tepsi menüsü veya araç çubuğu → "Ayarlar…") altı sekmeden oluşur:
+Ayarlar penceresi (tepsi menüsü veya araç çubuğu → "Ayarlar…") sekiz sekmeden oluşur:
 
 | Sekme | İçerik |
 |---|---|
-| Genel | Kısayol (tuşa basarak yakalanır), geçmiş kayıt sayısı, açılışta başlat, panoya kopyala / yapıştır / pencereyi öne getir |
-| Ses | Mikrofon, kayıt süresi sınırı (0 = sınırsız), canlı seviye testi |
-| Konuşma Tanıma | Whisper modeli, hassasiyet (compute_type), dil, toplu çözümleme, açılışta ısıtma, "Sessizlik ve halüsinasyon" (VAD eşiği, en kısa sessizlik, konuşma yok eşiği, kara liste) |
+| Genel | Kısayol (tuşa basarak yakalanır) + isteğe bağlı ayrı çeviri/agent-prompt kısayolları, bas-konuş (yalnızca Windows), geçmiş kayıt sayısı, açılışta başlat, panoya kopyala / yapıştır / pencereyi öne getir, elle düzeltmelerden sözlük önerisi çıkarma |
+| Ses | Mikrofon, kayıt süresi sınırı (0 = sınırsız), sessizlikte otomatik durdurma (0 = kapalı), canlı seviye testi |
+| Konuşma Tanıma | Whisper modeli, hassasiyet (compute_type), dil, toplu çözümleme, açılışta ısıtma, canlı çözümleme parça süresi, "Sessizlik ve halüsinasyon" (VAD eşiği, en kısa sessizlik, konuşma yok eşiği, kara liste) |
 | Metin Düzeltme | LLM aç/kapa, sağlayıcı ve sağlayıcıya özel alanlar, bellekte tutma |
+| Sözlük | Özel terimler (doğru yazım + yanlış tanınan biçimler), LLM düzeltmesine ek serbest talimat |
 | Gelişmiş | beam_size, başlangıç promptu, num_ctx, top_p, top_k, zaman aşımı, düşünme modu |
-| Hakkında | Sürümler, GPU ve desteklenen hassasiyetler, log / ayar klasörünü aç |
+| Profiller | Ön plandaki uygulamaya göre mod/yapıştırma/LLM/sonek profilleri (bkz. [Uygulama profilleri](#uygulama-profilleri)) |
+| Hakkında | Sürümler, GPU ve desteklenen hassasiyetler, VRAM kullanımı (`nvidia-smi` üzerinden), log / ayar klasörünü aç |
 
-Model ve ses ayarları uygulamayı yeniden başlatınca etkin olur; ipucu alanın üstüne gelince görünür.
+Model/hassasiyet değişince model arka planda yeniden yüklenir; mikrofon değişikliği sonraki kayıtta geçerlidir. İpucu alanın üstüne gelince görünür.
 `config.json` içindeki kısayol bozuksa uygulama çökmez, varsayılana döner ve bunu bildirir.
+
+#### Özel sözlük
+
+Ayarlar → Sözlük'te eklenen her terim üç katmanda devreye girer:
+
+1. **Whisper hotwords + başlangıç promptu:** Terimler `hotwords` parametresi ve
+   `initial_prompt` sonuna eklenerek modelin doğru yazımı tanıma olasılığını artırır.
+2. **LLM sözlüğü:** Terimler ve "Ek talimat" alanı, metin düzeltme sistemine eklenen bir
+   "Sözlük (doğru yazımlar): …" bloğu olarak LLM'e gönderilir.
+3. **Kural tabanlı düzeltme:** Her terimin "yanlış tanınan biçimler" listesindeki her
+   varyant, ham metinde tam kelime eşleşmesiyle (büyük/küçük harf duyarsız) doğru yazımla
+   değiştirilir — LLM kapalıyken bile çalışır.
 
 Kullanıcı verileri: `%APPDATA%\Dikte\` (config.json, history.jsonl, dikte.log).
 Model önbelleği: `%LOCALAPPDATA%\Dikte\models\`.
+
+#### Sesli komutlar
+
+Ham metin, sözlük kurallarından sonra üç sesli komut için taranır (Ayarlar → Genel →
+"Sesli komutları tanı" ile kapatılabilir; büyük/küçük harf duyarsız, komut etrafındaki
+virgül/nokta temizlenir):
+
+- **"yeni satır"** → satır sonu ekler, sonrasındaki ilk harfi büyütür.
+- **"yeni paragraf"** → boş satırla ayrılan yeni bir paragraf başlatır.
+- **"son cümleyi sil"** → komutu ve ondan önceki cümleyi (önceki nokta/ünlem/soru işaretine
+  ya da metin başına kadar) siler.
+
+Örnek: "bugün hava güzel son cümleyi sil yarın yağmur var" → "Yarın yağmur var".
+Noktalama komutları ("noktalı virgül" gibi) bilinçli olarak desteklenmez — Türkçede bu
+ifadeler gerçek kelime olarak da geçer, yanlışlıkla komut sanılabilir.
+
+#### Ses dosyası çözümleme
+
+Mikrofonla kayıt dışında, hazır bir ses dosyasını da çözümletebilirsiniz:
+
+- Araç çubuğu → **"Dosya aç…"** ile dosya seçin, veya
+- Bir ses dosyasını doğrudan sonuç penceresinin üzerine **sürükleyip bırakın**
+  (`.wav`, `.mp3`, `.m4a`, `.ogg`, `.flac`, `.webm`, `.mp4`, `.opus`).
+
+Süren bir kayıt/çözümleme varsa yeni bir dosya kabul edilmez. Sonuç, ham metin
+çözümleme adımlarının (sözlük kuralları, sesli komutlar, LLM düzeltmesi) hepsinden
+mikrofon kaydındaki gibi geçer; tek fark **panoya kopyalanır ama otomatik yapıştırılmaz**
+(dosyadan gelen sonucun yapıştırılacağı doğal bir hedef pencere yoktur).
+
+#### Uygulama profilleri
+
+Ayarlar → Profiller'de, kısayola bastığınız anda **ön plandaki uygulamanın sürecine göre**
+mod, yapıştırma tuşu, LLM düzeltmesi ve sonuca eklenecek sonek değiştirilebilir. Her profil şu
+alanlardan oluşur:
+
+| Alan | Anlamı |
+|---|---|
+| Ad | Yalnızca listede tanımak için (isteğe bağlı içerik zorunluluğu yok, boş bırakılamaz) |
+| Eşleşme | Süreç adının (küçük harf) içinde aranan alt dize, ör. `code`, `windowsterminal` |
+| Mod | `correct` / `translate` / `prompt` — yalnızca kısayol "düzelt" modundaysa (varsayılan kısayol) devreye girer; ayrı çeviri/prompt kısayolları profille geçersiz kılınmaz |
+| Yapıştırma | `ctrl+v`, `ctrl+shift+v` (bazı terminallerde yapıştır için ayrı kısayoldur) veya `type` (panoyu kullanmadan karakter karakter yazar) |
+| LLM | Kapatılırsa bu uygulamada metin düzeltmeden geçmez, ham metin doğrudan teslim edilir |
+| Sonek | Sonuca eklenecek `(yok)` / `boşluk` / `yeni satır` |
+
+Birden fazla profil eşleşirse **listede önce gelen** kazanır. Eşleşme boş bırakılan bir profil
+hiçbir zaman eşleşmez.
+
+Örnekler:
+
+- **Windows Terminal:** Eşleşme=`windowsterminal`, Yapıştırma=`ctrl+shift+v` — çoğu terminal
+  emülatöründe `Ctrl+V` başka bir işleve (ya da hiçbir şeye) bağlıdır.
+- **Bir not uygulamasında LLM'siz hızlı not:** Eşleşme=`notepad`, LLM=kapalı — ham metin
+  hızlıca yapıştırılır, düzeltme için LLM çağrısı beklenmez.
+
+Ön plan sürecinin adı Windows'ta `GetForegroundWindow`/`QueryFullProcessImageNameW` ile,
+Linux'ta `xdotool` (X11) ile okunur; araç kurulu değilse veya sorgu başarısız olursa profil
+eşleştirme sessizce atlanır (genel ayarlar geçerli olur). Hiç profil tanımlı değilse ön plan
+sürecine hiç bakılmaz.
 
 ## Geliştirme
 
@@ -202,7 +311,7 @@ python scripts\make_icon.py                 # packaging\dikte.ico üretir
 powershell -ExecutionPolicy Bypass -File packaging\build.ps1
 ```
 
-Çıktı: `dist\Dikte\Dikte.exe` (onedir) ve `dist\Dikte-Setup-0.1.0.exe`
+Çıktı: `dist\Dikte\Dikte.exe` (onedir) ve `dist\Dikte-Setup-0.2.0.exe`
 (Inno Setup 6 kurulu olmalı).
 
 ## Paketleme (Linux)
@@ -215,4 +324,4 @@ python scripts/make_icon.py       # packaging/dikte.ico + packaging/linux/dikte.
 Kaldırmak için: `pipx uninstall dikte` ve
 `rm ~/.local/share/applications/dikte.desktop ~/.config/autostart/dikte.desktop`.
 
-<!-- LAST-SYNCED: 2026-09-15 -->
+<!-- LAST-SYNCED: 2026-09-16 -->

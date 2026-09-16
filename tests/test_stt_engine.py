@@ -64,6 +64,31 @@ def long_audio(seconds: float) -> np.ndarray:
     return np.zeros(int(16000 * seconds), dtype=np.float32)
 
 
+def test_update_settings_reloads_only_on_model_change():
+    eng, created = make_engine()
+    eng.load()
+    assert eng.update_settings(SttSettings(beam_size=1)) is False and eng.is_loaded
+    assert eng.update_settings(SttSettings(model="small")) is True and not eng.is_loaded
+    eng.load()
+    assert created["model"].init_args[0] == "small"
+
+
+def test_update_settings_changes_transcribe_kwargs():
+    eng, created = make_engine()
+    eng.update_settings(SttSettings(beam_size=2))
+    eng.transcribe(np.zeros(16000, dtype=np.float32))
+    assert created["model"].calls[0]["beam_size"] == 2
+
+
+def test_set_dictionary_adds_hotwords_and_prompt_terms():
+    eng, created = make_engine()
+    eng.set_dictionary("a, b", "Terimler: a, b")
+    eng.transcribe(np.zeros(16000, dtype=np.float32))
+    call = created["model"].calls[0]
+    assert call["hotwords"] == "a, b"
+    assert call["initial_prompt"].endswith("Terimler: a, b")
+
+
 def test_load_creates_model_with_settings():
     eng, created = make_engine()
     assert not eng.is_loaded
@@ -83,6 +108,22 @@ def test_transcribe_joins_segments_and_strips():
     assert len(res.segments) == 2 and res.segments[0].text == "merhaba"
     kw = created["model"].calls[0]
     assert kw["language"] == "tr" and kw["vad_filter"] is True and kw["beam_size"] == 5
+
+
+def test_transcribe_appends_previous_text_to_initial_prompt():
+    eng, created = make_engine()
+    eng.transcribe(np.zeros(16000, dtype=np.float32), previous_text="önceki cümle")
+    call = created["model"].calls[0]
+    assert call["initial_prompt"].endswith("önceki cümle")
+
+
+def test_transcribe_truncates_previous_text_to_last_200_chars():
+    eng, created = make_engine()
+    long_text = "y" * 50 + "x" * 200
+    eng.transcribe(np.zeros(16000, dtype=np.float32), previous_text=long_text)
+    call = created["model"].calls[0]
+    assert call["initial_prompt"].endswith("x" * 200)
+    assert "y" not in call["initial_prompt"]
 
 
 def test_transcribe_autoloads():
@@ -165,7 +206,7 @@ def test_real_silence_is_rejected_before_the_model_runs():
 def test_real_silero_probe_rejects_silence():
     from dikte.stt.engine import _default_speech_probe
 
-    assert _default_speech_probe(np.zeros(32_000, dtype=np.float32), SttSettings()) is False
+    assert not _default_speech_probe(np.zeros(32_000, dtype=np.float32), SttSettings())
 
 
 @pytest.mark.gpu
@@ -345,3 +386,24 @@ def test_batching_is_skipped_when_vad_disabled():
     eng, created = make_engine(SttSettings(vad_filter=False, batch_threshold_s=1.0))
     eng.transcribe(long_audio(30))
     assert "pipeline" not in created
+
+
+def test_batched_path_reuses_probe_timestamps_in_seconds():
+    settings = SttSettings(batch_threshold_s=5)
+    created = {}
+    eng = FasterWhisperEngine(
+        settings,
+        model_factory=lambda *a, **kw: created.setdefault("model", FakeModel(*a, **kw)),
+        pipeline_factory=lambda m: created.setdefault("pipeline", FakePipeline(m)),
+        cuda_probe=lambda: 1,
+        speech_probe=lambda audio, s: [{"start": 0, "end": 16000}, {"start": 32000, "end": 48000}],
+    )
+    eng.transcribe(long_audio(10))
+    kw = created["pipeline"].calls[0]
+    assert kw["clip_timestamps"] == [{"start": 0.0, "end": 1.0}, {"start": 2.0, "end": 3.0}]
+
+
+def test_short_path_does_not_pass_clip_timestamps():
+    eng, created = make_engine()
+    eng.transcribe(np.zeros(16000, dtype=np.float32))
+    assert "clip_timestamps" not in created["model"].calls[0]

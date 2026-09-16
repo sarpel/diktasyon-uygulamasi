@@ -36,6 +36,25 @@ def test_zero_limit_disables_history(tmp_path: Path):
     assert h.load() == ()
 
 
+def test_update_replaces_existing_session_without_growing_count(tmp_path: Path):
+    h = History(tmp_path / "h.jsonl", limit=10)
+    s = Session(raw_text="a", corrected_text="A.")
+    h.append(s)
+    edited = s.with_(corrected_text="A edited.")
+    h.update(edited)
+    loaded = h.load()
+    assert len(loaded) == 1
+    assert loaded[0].id == s.id and loaded[0].corrected_text == "A edited."
+
+
+def test_update_appends_when_id_unknown(tmp_path: Path):
+    h = History(tmp_path / "h.jsonl", limit=10)
+    h.append(Session(raw_text="a"))
+    new = Session(raw_text="b")
+    h.update(new)
+    assert [s.raw_text for s in h.load()] == ["a", "b"]
+
+
 def test_delete_removes_only_that_session(tmp_path: Path):
     h = History(tmp_path / "h.jsonl", limit=10)
     a, b = Session(raw_text="a"), Session(raw_text="b")

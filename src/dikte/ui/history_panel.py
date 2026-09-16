@@ -3,8 +3,10 @@ from __future__ import annotations
 import unicodedata
 
 from PySide6.QtCore import Qt, Signal
+from PySide6.QtGui import QPalette
 from PySide6.QtWidgets import (
     QDockWidget,
+    QFileDialog,
     QHBoxLayout,
     QLabel,
     QLineEdit,
@@ -41,11 +43,13 @@ class HistoryPanel(QDockWidget):
     session_selected = Signal(object)
     delete_requested = Signal(str)
     clear_requested = Signal()
+    export_requested = Signal(str)
 
-    def __init__(self, parent=None):
+    def __init__(self, parent=None, dialog=None):
         super().__init__("Geçmiş", parent)
         self.setObjectName("historyDock")
         self._sessions: tuple[Session, ...] = ()
+        self._dialog = dialog or QFileDialog.getSaveFileName
 
         self.search_edit = QLineEdit()
         self.search_edit.setPlaceholderText("Ara…")
@@ -54,13 +58,14 @@ class HistoryPanel(QDockWidget):
         self.list_widget.setAlternatingRowColors(True)
         self.empty_label = QLabel("Henüz kayıt yok.")
         self.empty_label.setAlignment(Qt.AlignCenter)
-        self.empty_label.setStyleSheet("color:#888;")
+        self.empty_label.setForegroundRole(QPalette.ColorRole.PlaceholderText)
         self.copy_btn = QPushButton("Kopyala")
         self.delete_btn = QPushButton("Sil")
         self.clear_btn = QPushButton("Tümünü temizle")
+        self.export_btn = QPushButton("Dışa aktar…")
 
         buttons = QHBoxLayout()
-        for b in (self.copy_btn, self.delete_btn, self.clear_btn):
+        for b in (self.copy_btn, self.delete_btn, self.clear_btn, self.export_btn):
             buttons.addWidget(b)
         body = QWidget()
         lay = QVBoxLayout(body)
@@ -77,6 +82,7 @@ class HistoryPanel(QDockWidget):
         self.copy_btn.clicked.connect(self._copy_current)
         self.delete_btn.clicked.connect(self._delete_current)
         self.clear_btn.clicked.connect(self._confirm_clear)
+        self.export_btn.clicked.connect(self._export)
         self.set_sessions(())
 
     # ---- kamu
@@ -121,6 +127,16 @@ class HistoryPanel(QDockWidget):
         if session is None:
             return
         self.delete_requested.emit(session.id)
+
+    def _export(self) -> None:
+        path, _selected_filter = self._dialog(
+            self,
+            "Geçmişi dışa aktar",
+            "",
+            "Markdown (*.md);;Metin (*.txt)",
+        )
+        if path:
+            self.export_requested.emit(path)
 
     def _confirm_clear(self) -> None:
         if not self._sessions:
