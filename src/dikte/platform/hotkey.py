@@ -51,13 +51,17 @@ class GlobalHotkey(QObject):
         if sys.platform != "win32":
             log.warning("Global kısayol yalnızca Windows'ta desteklenir (%s)", parsed.label)
             return False
+        app = QCoreApplication.instance()
+        if app is None:
+            log.error("QCoreApplication yok; kısayol kaydedilemez (%s)", parsed.label)
+            return False
         ok = ctypes.windll.user32.RegisterHotKey(None, self._id, parsed.modifiers, parsed.vk)
         if not ok:
             err = ctypes.GetLastError()
             log.error("RegisterHotKey başarısız (%s), hata=%s", parsed.label, err)
             return False
         self._filter = _Filter(self.activated.emit, self._id)
-        QCoreApplication.instance().installNativeEventFilter(self._filter)
+        app.installNativeEventFilter(self._filter)
         self._spec = parsed
         log.info("Global kısayol kaydedildi: %s", parsed.label)
         return True

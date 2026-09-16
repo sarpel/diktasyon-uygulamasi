@@ -68,7 +68,8 @@ class HealthDialog(QDialog):
         return f"{mark} {item.name}: {item.detail}"
 
     def _start_download(self) -> None:
-        if self._on_download is None:
+        download = self._on_download
+        if download is None:
             return
         self.download_btn.setEnabled(False)
         self.progress_bar.setVisible(True)
@@ -80,7 +81,7 @@ class HealthDialog(QDialog):
             self.progress_bar.setValue(done)
 
         self._job_signals = run_in_pool(
-            lambda: self._on_download(on_progress),
+            lambda: download(on_progress),
             self._download_done,
             self._download_failed,
             QThreadPool.globalInstance(),

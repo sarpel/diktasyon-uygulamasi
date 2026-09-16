@@ -95,7 +95,7 @@ class ResultWindow(QMainWindow):
         ml = QVBoxLayout(mid)
         ml.setContentsMargins(0, 0, 0, 0)
         ml.addWidget(self.corrected_pane, 1)
-        split = QSplitter(Qt.Horizontal)
+        split = QSplitter(Qt.Orientation.Horizontal)
         for w in (left, mid, self.output_pane):
             split.addWidget(w)
         split.setSizes([330, 400, 370])
@@ -115,18 +115,22 @@ class ResultWindow(QMainWindow):
         self._build_toolbar()
         self._build_status_bar()
         self.history_panel = HistoryPanel(self)
-        self.addDockWidget(Qt.RightDockWidgetArea, self.history_panel)
+        self.addDockWidget(Qt.DockWidgetArea.RightDockWidgetArea, self.history_panel)
         self.history_panel.hide()
         self.history_panel.visibilityChanged.connect(self._on_dock_visibility)
         self.history_panel.session_selected.connect(self.load_session)
 
         for pane in (self.raw_pane, self.corrected_pane, self.output_pane):
             pane.copied.connect(lambda _t, p=pane: self._on_copied(p))
-        QShortcut(QKeySequence("Ctrl+Shift+C"), self, activated=self.corrected_pane._copy)
-        QShortcut(QKeySequence(Qt.Key_Escape), self, activated=self._on_escape)
-        QShortcut(QKeySequence("Ctrl+,"), self, activated=self.settings_action.trigger)
-        QShortcut(QKeySequence("Ctrl+H"), self, activated=self.history_action.trigger)
-        QShortcut(QKeySequence("Ctrl+F"), self, activated=self._open_history_search)
+        shortcuts = (
+            ("Ctrl+Shift+C", self.corrected_pane._copy),
+            (Qt.Key.Key_Escape, self._on_escape),
+            ("Ctrl+,", self.settings_action.trigger),
+            ("Ctrl+H", self.history_action.trigger),
+            ("Ctrl+F", self._open_history_search),
+        )
+        for key, handler in shortcuts:
+            QShortcut(QKeySequence(key), self).activated.connect(handler)
 
     # ---- kurulum
     def _build_toolbar(self) -> None:

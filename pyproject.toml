@@ -18,7 +18,18 @@ cuda = ["nvidia-cublas-cu12", "nvidia-cudnn-cu12>=9"]
 anthropic = ["anthropic>=0.40"]
 openai = ["openai>=2"]
 gemini = ["google-genai>=1.30"]
-dev = ["pytest>=8", "pytest-qt>=4.4", "pytest-cov>=5", "ruff>=0.5", "pyinstaller>=6.6"]
+dev = [
+  "pytest>=8",
+  "pytest-qt>=4.4",
+  "pytest-cov>=5",
+  "ruff>=0.5",
+  "pyinstaller>=6.6",
+  "pyright>=1.1.390",
+  # Tip denetimi için opsiyonel sağlayıcı SDK'ları da kurulu olmalı.
+  "anthropic>=0.40",
+  "openai>=2",
+  "google-genai>=1.30",
+]
 
 [project.scripts]
 dikte = "dikte.app:main"
@@ -39,6 +50,16 @@ addopts = "-q"
 [tool.ruff]
 line-length = 100
 target-version = "py311"
+
+[tool.pyright]
+include = ["src", "scripts", "tests"]
+extraPaths = ["scripts"]  # eval_* modülleri paket değil; testler doğrudan içe aktarır
+venvPath = "."
+venv = ".venv"
+pythonVersion = "3.11"
+# Windows'a özgü modüller (winreg, ctypes.windll) Linux'ta çözümlenemez; "All" her iki
+# platformun dallarını da analiz eder.
+pythonPlatform = "All"
 
 [tool.ruff.format]
 # Markdown içindeki örnek kod blokları kasıtlı olarak kısaltılmıştır (AGENTS.md "KÖTÜ/İYİ"

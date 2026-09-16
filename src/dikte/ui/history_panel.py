@@ -57,7 +57,7 @@ class HistoryPanel(QDockWidget):
         self.list_widget = QListWidget()
         self.list_widget.setAlternatingRowColors(True)
         self.empty_label = QLabel("Henüz kayıt yok.")
-        self.empty_label.setAlignment(Qt.AlignCenter)
+        self.empty_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.empty_label.setForegroundRole(QPalette.ColorRole.PlaceholderText)
         self.copy_btn = QPushButton("Kopyala")
         self.delete_btn = QPushButton("Sil")
@@ -92,7 +92,7 @@ class HistoryPanel(QDockWidget):
         for s in self._sessions:
             preview = (s.corrected_text or s.raw_text).replace("\n", " ")[:PREVIEW_CHARS]
             item = QListWidgetItem(f"{s.created_at:%d.%m %H:%M}  {preview}")
-            item.setData(Qt.UserRole, s)
+            item.setData(Qt.ItemDataRole.UserRole, s)
             item.setToolTip(s.corrected_text or s.raw_text)
             self.list_widget.addItem(item)
         self.empty_label.setVisible(not self._sessions)
@@ -103,16 +103,16 @@ class HistoryPanel(QDockWidget):
         wanted = normalize(needle)
         for i in range(self.list_widget.count()):
             item = self.list_widget.item(i)
-            session = item.data(Qt.UserRole)
+            session = item.data(Qt.ItemDataRole.UserRole)
             haystack = normalize(f"{session.corrected_text} {session.raw_text}")
             item.setHidden(bool(wanted) and wanted not in haystack)
 
     def _current_session(self) -> Session | None:
         item = self.list_widget.currentItem()
-        return item.data(Qt.UserRole) if item is not None else None
+        return item.data(Qt.ItemDataRole.UserRole) if item is not None else None
 
     def _emit_selected(self, item: QListWidgetItem) -> None:
-        self.session_selected.emit(item.data(Qt.UserRole))
+        self.session_selected.emit(item.data(Qt.ItemDataRole.UserRole))
 
     def _copy_current(self) -> None:
         from PySide6.QtWidgets import QApplication

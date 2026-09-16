@@ -9,6 +9,7 @@ from __future__ import annotations
 import logging
 from collections.abc import Callable
 from pathlib import Path
+from typing import cast
 
 log = logging.getLogger(__name__)
 
@@ -24,7 +25,9 @@ def download_model(
     from huggingface_hub import snapshot_download
     from tqdm import tqdm
 
-    run = downloader or snapshot_download
+    # cast: `tqdm_class` özel alt sınıfımızı kabul eder, ancak hub tip taslakları
+    # yalnızca `tqdm_asyncio` bildirir.
+    run = cast(Callable[..., object], downloader or snapshot_download)
     repo_id = _MODELS.get(model, model)
 
     class _ProgressTqdm(tqdm):
@@ -33,4 +36,4 @@ def download_model(
             progress(self.n, self.total or 0)
 
     result = run(repo_id=repo_id, cache_dir=str(root), tqdm_class=_ProgressTqdm)
-    return Path(result)
+    return Path(str(result))

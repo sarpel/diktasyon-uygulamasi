@@ -32,7 +32,7 @@ def copy_icon(size: int = 32) -> QIcon:
     pm = QPixmap(size, size)
     pm.fill(Qt.GlobalColor.transparent)
     p = QPainter(pm)
-    p.setRenderHint(QPainter.Antialiasing)
+    p.setRenderHint(QPainter.RenderHint.Antialiasing)
     text_color = QApplication.palette().text().color()  # koyu/açık temaya uyum sağlar
     p.setPen(QPen(text_color, 2))
     p.drawRoundedRect(QRectF(size * 0.35, size * 0.35, size * 0.45, size * 0.5), 3, 3)

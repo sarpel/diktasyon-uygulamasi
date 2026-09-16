@@ -18,9 +18,14 @@ class RecordingOverlay(QWidget):
     cancel_requested = Signal()
 
     def __init__(self, parent=None):
-        super().__init__(parent, Qt.Tool | Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint)
-        self.setAttribute(Qt.WA_TranslucentBackground)
-        self.setAttribute(Qt.WA_ShowWithoutActivating)
+        super().__init__(
+            parent,
+            Qt.WindowType.Tool
+            | Qt.WindowType.FramelessWindowHint
+            | Qt.WindowType.WindowStaysOnTopHint,
+        )
+        self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
+        self.setAttribute(Qt.WidgetAttribute.WA_ShowWithoutActivating)
         # Bilerek koyu: yarı saydam, her masaüstü arka planının üzerinde okunaklı kalması gereken
         # bir HUD panelidir; sistem temasına bağlamak kontrastı öngörülemez kılar.
         self.setStyleSheet(
