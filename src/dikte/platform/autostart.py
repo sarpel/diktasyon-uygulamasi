@@ -114,10 +114,17 @@ def set_autostart(enabled: bool, exe_path: str | None = None, reg=None) -> None:
     r = _reg(reg)
     if r is None:
         return
-    if enabled:
-        r.set_value(RUN_KEY, VALUE_NAME, launch_command(exe_path, posix=getattr(r, "posix", False)))
-    else:
-        r.delete_value(RUN_KEY, VALUE_NAME)
+    try:
+        if enabled:
+            r.set_value(
+                RUN_KEY, VALUE_NAME, launch_command(exe_path, posix=getattr(r, "posix", False))
+            )
+        else:
+            r.delete_value(RUN_KEY, VALUE_NAME)
+    except OSError:
+        # Otomatik başlatma en iyi çaba (best-effort) bir kolaylıktır; kayıt defteri/dosya
+        # yazma izni sorunu tüm ayarların kaydedilmesini engellememeli.
+        log.exception("otomatik başlatma ayarlanamadı")
 
 
 def is_autostart_enabled(reg=None) -> bool:

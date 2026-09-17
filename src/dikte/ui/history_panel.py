@@ -120,7 +120,7 @@ class HistoryPanel(QDockWidget):
         session = self._current_session()
         if session is None:
             return
-        QApplication.clipboard().setText(session.corrected_text or session.raw_text)
+        QApplication.clipboard().setText(session.output_text or session.raw_text)
 
     def _delete_current(self) -> None:
         session = self._current_session()

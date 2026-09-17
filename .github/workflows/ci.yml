@@ -8,7 +8,10 @@ on:
 
 concurrency:
   group: ci-${{ github.ref }}
-  cancel-in-progress: true
+  # main/master'a art arda push'larda iptal etmek, main dalının hiç yeşil geçmemiş bir
+  # commit'te takılı kalmasına yol açabilir; yalnızca PR çalışmaları (aynı dalın yeni bir
+  # push'la geçersiz kıldığı ara denemeler) iptal edilir.
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 env:
   PIP_DISABLE_PIP_VERSION_CHECK: "1"
@@ -54,7 +57,21 @@ jobs:
         run: pip install -e ".[dev,anthropic,openai,gemini]"
 
       - name: Testler
-        run: pytest -q --cov=src --cov-report=term-missing
+        # AGENTS.md: %80 asgari kapsam kuralı; CI bunu zorunlu kılmıyordu, düşen kapsam
+        # sessizce yeşil geçerdi.
+        run: pytest -q --cov=src --cov-report=term-missing --cov-fail-under=80
+
+  typecheck:
+    needs: lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+      - run: pip install -e ".[dev,anthropic,openai,gemini]"
+      - run: pyright
 
   desktop-entry:
     needs: lint

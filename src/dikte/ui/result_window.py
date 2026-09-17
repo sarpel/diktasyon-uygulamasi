@@ -39,7 +39,7 @@ class ResultWindow(QMainWindow):
     record_requested = Signal()
     cancel_requested = Signal()
     settings_requested = Signal()
-    text_edited = Signal(str)
+    text_edited = Signal(str, str)  # session_id, text
     repaste_requested = Signal(str)
     dictionary_add_requested = Signal(str, str)
     file_requested = Signal(str)
@@ -53,6 +53,8 @@ class ResultWindow(QMainWindow):
         self._controller = None
         self._pending: str | None = None  # "translation" | "enhanced_prompt"
         self._ignored_session_id: str | None = None  # geçmiş görüntülenirken geç gelen sonuç
+        self._displayed_session_id: str | None = None  # düzenleme sinyaline eklenen oturum kimliği
+        self._viewing_history = False  # geçmişten bir oturum gösteriliyor (canlı değil)
         self.close_after_copy = False
         self.raise_on_result = False
         self._last_shown_text = ""
@@ -123,7 +125,7 @@ class ResultWindow(QMainWindow):
         for pane in (self.raw_pane, self.corrected_pane, self.output_pane):
             pane.copied.connect(lambda _t, p=pane: self._on_copied(p))
         shortcuts = (
-            ("Ctrl+Shift+C", self.corrected_pane._copy),
+            ("Ctrl+Shift+C", self.corrected_pane.copy),
             (Qt.Key.Key_Escape, self._on_escape),
             ("Ctrl+,", self.settings_action.trigger),
             ("Ctrl+H", self.history_action.trigger),
@@ -203,6 +205,9 @@ class ResultWindow(QMainWindow):
         if s.id == self._ignored_session_id:
             # Geçmişten bir oturum görüntüleniyor; iptal edilen isteğin geç sonucu yok sayılır.
             return
+        self._displayed_session_id = s.id
+        self._viewing_history = False
+        self.set_llm_enabled(self._llm_enabled)
         self.raw_pane.set_text(s.raw_text)
         self.corrected_pane.set_text(s.corrected_text)
         self._last_shown_text = s.corrected_text
@@ -236,6 +241,12 @@ class ResultWindow(QMainWindow):
             self.output_pane.set_text("")
             self.output_pane.setVisible(False)
             self._finish_pending()
+        elif state is DictationState.TRANSCRIBING and self._pending is None:
+            # Dosyadan çözümleme RECORDING'den geçmeden doğrudan TRANSCRIBING'e girer
+            # (bkz. controller.transcribe_file); önceki oturumun çeviri/prompt paneli
+            # temizlenmezse yeni (henüz boş) oturumun üzerinde asılı kalırdı.
+            self.output_pane.set_text("")
+            self.output_pane.setVisible(False)
 
     def _activate_result(self) -> None:
         self.showNormal()
@@ -248,6 +259,8 @@ class ResultWindow(QMainWindow):
         self._pending = None
         live = getattr(self._controller, "session", None)
         self._ignored_session_id = getattr(live, "id", None)
+        self._displayed_session_id = s.id
+        self._viewing_history = True
         self.output_pane.set_busy(False)
         self.raw_pane.set_text(s.raw_text)
         self.corrected_pane.set_text(s.corrected_text)
@@ -259,20 +272,25 @@ class ResultWindow(QMainWindow):
         self.output_pane.setVisible(bool(self.output_pane.text()))
         self.corrected_pane.set_highlights(s.changes)
         self._show_session_stats(s)
-        self.translate_btn.setEnabled(self._llm_enabled)
-        self.enhance_btn.setEnabled(self._llm_enabled)
+        # Geçmişten bir oturum görüntülenirken bu iki düğme kapalı: istek her zaman canlı
+        # oturuma gider ve sonucu bu pencereye yazar — ekranda görünen geçmiş metniyle
+        # ilgisi olmayan bir sonuç canlı oturumu ezerdi (bkz. on_session/_ignored_session_id).
+        hint = "Geçmişten bir oturum görüntülenirken kullanılamaz."
+        for btn in (self.translate_btn, self.enhance_btn):
+            btn.setEnabled(False)
+            btn.setToolTip(hint)
 
     # ---- butonlar
     def _on_translate(self) -> None:
         text = self.corrected_pane.text().strip()
-        if not text or self._controller is None:
+        if not text or self._controller is None or self._viewing_history:
             return
         self._start_pending("translation", TITLE_TRANSLATION)
         self._controller.request_translation(text)
 
     def _on_enhance(self) -> None:
         text = self.corrected_pane.text().strip()
-        if not text or self._controller is None:
+        if not text or self._controller is None or self._viewing_history:
             return
         self._start_pending("enhanced_prompt", TITLE_PROMPT)
         self._controller.request_enhanced_prompt(text)
@@ -282,9 +300,9 @@ class ResultWindow(QMainWindow):
 
     def _emit_text_edited(self) -> None:
         text = self.corrected_pane.text()
-        if text != self._last_shown_text:
+        if text != self._last_shown_text and self._displayed_session_id is not None:
             self._last_shown_text = text
-            self.text_edited.emit(text)
+            self.text_edited.emit(self._displayed_session_id, text)
 
     def _open_file(self) -> None:
         path, _selected_filter = self._file_dialog(
@@ -381,7 +399,10 @@ class ResultWindow(QMainWindow):
     def _on_copied(self, pane: TextPane) -> None:
         Toast.show_message(self, "Kopyalandı")
         if self.close_after_copy and pane is not self.raw_pane:
-            self.hide()
+            # Toast, bu pencerenin bir alt widget'ı; pencere hemen gizlenirse Toast da
+            # hiç görünmeden kaybolur. Kısa bir gecikme kullanıcının bildirimi görmesini
+            # sağlar (Toast zaten kendi zamanlayıcısıyla 1500 ms sonra kendini kapatır).
+            QTimer.singleShot(700, self.hide)
 
     def _on_error(self, msg: str) -> None:
         self._finish_pending()

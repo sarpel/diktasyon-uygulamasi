@@ -21,7 +21,11 @@ def _default_client_factory(*, base_url: str, api_key: str | None, timeout: floa
         from openai import OpenAI
     except ImportError as exc:
         raise LlmError('OpenAI SDK kurulu değil: uv pip install -e ".[openai]"') from exc
-    return OpenAI(base_url=base_url, api_key=api_key or PLACEHOLDER_KEY, timeout=timeout)
+    # max_retries=0: SDK varsayılanı 2 yeniden deneme (zaman aşımları dahil), iptal edilen
+    # bir iş worker'ı timeout_s × 3'e kadar işgal edebilir; iptal zaten gen sayacıyla yapılıyor.
+    return OpenAI(
+        base_url=base_url, api_key=api_key or PLACEHOLDER_KEY, timeout=timeout, max_retries=0
+    )
 
 
 # SDK kurulu olsun olmasın yakalanan sınıflar: yerel sunucular json_schema'yı 400 yerine

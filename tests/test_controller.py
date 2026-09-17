@@ -19,17 +19,28 @@ class FakeRecorder(QObject):
     chunk_ready = Signal(object)
     error = Signal(str)
 
-    def __init__(self):
+    def __init__(self, fail_to_start=False):
         super().__init__()
         self.started = self.stopped = False
         self.audio = np.ones(16000, dtype=np.float32) * 0.1
         self.chunking = None
+        self._fail_to_start = fail_to_start
+        self._recording = False
+
+    @property
+    def is_recording(self):
+        return self._recording
 
     def start(self):
         self.started = True
+        if self._fail_to_start:
+            self.error.emit("mikrofon açılamadı")
+            return
+        self._recording = True
 
     def stop(self):
         self.stopped = True
+        self._recording = False
         return self.audio
 
     def set_chunking(self, chunk_s, max_chunk_s):
@@ -323,6 +334,16 @@ def test_start_recording_from_idle_starts(ctl):
     assert c.state is DictationState.RECORDING and rec.started
 
 
+def test_start_recording_stays_idle_when_microphone_fails_to_open(qtbot):
+    rec, stt, llm = FakeRecorder(fail_to_start=True), FakeStt(), FakeLlm()
+    c = DictationController(Settings(), recorder=rec, stt=stt, llm=llm, pool=QThreadPool())
+    errors = []
+    c.error.connect(errors.append)
+    c.start_recording()
+    assert c.state is DictationState.IDLE
+    assert errors == ["mikrofon açılamadı"]
+
+
 def test_start_recording_while_recording_is_a_no_op(ctl):
     c, rec, *_ = ctl
     c.start_recording()
@@ -432,6 +453,41 @@ def test_cancel_while_transcribing_ignores_late_result(qtbot):
     qtbot.wait(200)
     assert c.state is DictationState.IDLE
     assert c.session.raw_text == ""
+
+
+class BlockingLlm(FakeLlm):
+    """complete() serbest bırakılana kadar bekler; geç gelen çeviri sonucunu test etmek için."""
+
+    def __init__(self):
+        super().__init__()
+        self.gate = threading.Event()
+
+    def complete(self, system, user, *, json_schema=None, temperature=0.2):
+        self.gate.wait(timeout=5)
+        return super().complete(system, user, json_schema=json_schema, temperature=temperature)
+
+    def release(self):
+        self.gate.set()
+
+
+def test_stale_translation_does_not_stick_to_next_session(qtbot):
+    """F013: bir oturumdayken istenen çeviri, yanıt gelmeden yeni bir kayıt başlarsa
+    yeni oturuma yapışmamalı (_gen kuşak sayacı bu isteği de geçersiz kılmalı)."""
+    c = DictationController(
+        Settings(), recorder=FakeRecorder(), stt=FakeStt(), llm=FakeLlm(), pool=QThreadPool()
+    )
+    c.toggle()
+    qtbot.waitUntil(lambda: c.state is DictationState.RECORDING, timeout=3000)
+    c.toggle()
+    qtbot.waitUntil(lambda: c.state is DictationState.RESULT, timeout=3000)
+    llm = BlockingLlm()
+    c.set_llm(llm)
+    c.request_translation("eski metin")
+    c.start_recording()  # yanıt gelmeden yeni bir oturum başlatılıyor
+    assert c.state is DictationState.RECORDING
+    llm.release()
+    qtbot.wait(300)
+    assert c.session.translation == ""
 
 
 def test_cancel_in_idle_is_noop(ctl):

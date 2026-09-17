@@ -6,13 +6,21 @@ import sys
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
+from typing import cast
 
-from PySide6.QtCore import QCoreApplication, QThreadPool, QTimer
+from PySide6.QtCore import QCoreApplication, QMimeData, QThreadPool, QTimer
 from PySide6.QtWidgets import QApplication, QDialog, QMessageBox, QSystemTrayIcon
 
 from dikte import APP_NAME, __version__, paths
 from dikte.audio.recorder import AudioRecorder
-from dikte.config import AppProfile, DictionaryEntry, Settings, load_settings, save_settings
+from dikte.config import (
+    AppProfile,
+    DictionaryEntry,
+    Settings,
+    SettingsError,
+    load_settings,
+    save_settings,
+)
 from dikte.core.controller import DictationController
 from dikte.core.health import (
     HealthItem,
@@ -24,6 +32,7 @@ from dikte.core.health import (
 from dikte.core.history import History, HistoryError
 from dikte.core.history_export import to_markdown, to_text
 from dikte.core.state import BUSY_STATES, MODES, DictationState
+from dikte.core.workers import run_in_pool
 from dikte.llm import LlmError, make_provider
 from dikte.logging_setup import setup_logging
 from dikte.platform.autostart import set_autostart
@@ -56,6 +65,10 @@ log = logging.getLogger(__name__)
 CLI_TOGGLE_HINT = "dikte --toggle"
 # Yapıştırma işletim sisteminde işlenip aktif pencereye ulaşana kadarki bekleme süresi.
 RESTORE_CLIPBOARD_DELAY_MS = 300
+# check_health'in LLM kontrolü ağ isteği yapar; SDK varsayılan yeniden deneme + zaman
+# aşımıyla en kötü durumda dakikalarca sürebilir. Senkron çağrı GUI iş parçacığını
+# (ve bu iş parçacığında dönen IPC sunucusunu — bkz. single_instance.py) bloke ederdi.
+_background_jobs: list = []  # run_in_pool sinyalleri iş bitene kadar canlı tutulmalı
 
 
 @dataclass
@@ -206,7 +219,7 @@ def _wire(ctx: AppContext) -> None:
     ctx.window.cancel_requested.connect(c.cancel)
     ctx.window.settings_requested.connect(lambda: _open_settings(ctx))
     ctx.window.file_requested.connect(c.transcribe_file)
-    ctx.window.text_edited.connect(c.apply_edit)
+    ctx.window.text_edited.connect(lambda sid, text: _on_text_edited(ctx, sid, text))
     ctx.window.dictionary_add_requested.connect(
         lambda wrong, term: _add_dictionary_entry(ctx, wrong, term)
     )
@@ -232,13 +245,33 @@ def _guard_history(ctx: AppContext, action: Callable[[], None]) -> None:
         ctx.tray.notify(APP_NAME, str(exc), critical=True)
 
 
+def _guard_settings(ctx: AppContext, action: Callable[[], None]) -> bool:
+    """Ayarlar yazılamazsa akış sürer; kullanıcı ne yapacağını bildiren bir uyarı alır.
+    Başarıysa True döner (çağıranın devam edip etmeyeceğine karar vermesi için)."""
+    try:
+        action()
+        return True
+    except SettingsError as exc:
+        log.error("ayarlar kaydedilemedi: %s", exc)
+        ctx.tray.notify(APP_NAME, str(exc), critical=True)
+        return False
+
+
 def _store_session(ctx: AppContext) -> None:
     _guard_history(ctx, lambda: ctx.history.append(ctx.controller.session))
     _refresh_history(ctx)
 
 
 def _refresh_history(ctx: AppContext) -> None:
-    sessions = ctx.history.load()
+    """Bozuk/okunamayan history.jsonl uygulamanın hiç açılmamasına neden olmasın diye
+    korumalı: yükleme başarısız olursa kullanıcı bilgilendirilir, akış boş listeyle sürer."""
+    sessions: tuple = ()
+
+    def _load() -> None:
+        nonlocal sessions
+        sessions = ctx.history.load()
+
+    _guard_history(ctx, _load)
     ctx.window.history_panel.set_sessions(sessions)
     ctx.tray.set_recent(sessions)
 
@@ -262,6 +295,32 @@ def _export_history(ctx: AppContext, path: str) -> None:
     except OSError as exc:
         log.error("geçmiş dışa aktarılamadı: %s", exc)
         ctx.tray.notify(APP_NAME, f"Geçmiş dışa aktarılamadı: {exc}", critical=True)
+
+
+def _on_text_edited(ctx: AppContext, session_id: str, text: str) -> None:
+    """Düzenlenen metnin ait olduğu oturuma göre yönlendirir: canlı oturum ise denetleyiciye
+    (öğrenme/geçmiş senkronu tetiklenir), geçmişten görüntülenen eski bir oturum ise doğrudan
+    geçmiş kaydına yazılır — en son diktenin ezilmesini engeller."""
+    if session_id == ctx.controller.session.id:
+        ctx.controller.apply_edit(text)
+    else:
+        _apply_history_edit(ctx, session_id, text)
+
+
+def _apply_history_edit(ctx: AppContext, session_id: str, text: str) -> None:
+    sessions: tuple = ()
+
+    def _load() -> None:
+        nonlocal sessions
+        sessions = ctx.history.load()
+
+    _guard_history(ctx, _load)
+    for s in sessions:
+        if s.id == session_id:
+            edited = s.with_(corrected_text=text)
+            _guard_history(ctx, lambda edited=edited: ctx.history.update(edited))
+            _refresh_history(ctx)
+            return
 
 
 def _sync_history_on_edit(ctx: AppContext, session) -> None:
@@ -289,14 +348,15 @@ def _add_dictionary_entry(ctx: AppContext, wrong: str, term: str) -> None:
     entries = (*ctx.settings.dictionary.entries, DictionaryEntry(term=term, wrong=(wrong,)))
     new_dictionary = ctx.settings.dictionary.model_copy(update={"entries": entries})
     new_settings = ctx.settings.model_copy(update={"dictionary": new_dictionary})
-    save_settings(new_settings)
+    if not _guard_settings(ctx, lambda: save_settings(new_settings)):
+        return
     ctx.settings = new_settings
     ctx.controller.update_settings(new_settings)
 
 
 def _repaste(ctx: AppContext, text: str) -> None:
     ctx.window.hide()
-    QTimer.singleShot(200, lambda: _on_result_ready(ctx, text))
+    QTimer.singleShot(200, lambda: _on_result_ready(ctx, text, force_paste=True))
 
 
 def _refresh_status_info(ctx: AppContext) -> None:
@@ -313,27 +373,70 @@ def _warn_if_low_vram(ctx: AppContext) -> None:
     if free_mb < LOW_VRAM_MB:
         free_gb = free_mb / 1024
         ctx.window.statusBar().showMessage(
-            f"Boş VRAM düşük ({free_gb:.1f} GB): LLM'i kapatmayı veya keep_alive=0 yapmayı düşünün",
+            # gpu_info.format_vram ile aynı biçim (virgül ondalık ayracı, Türkçe kural).
+            f"Boş VRAM düşük ({free_gb:.1f} GB)".replace(".", ",")
+            + ": LLM'i kapatmayı veya keep_alive=0 yapmayı düşünün",
             15000,
         )
 
 
-def _on_result_ready(ctx: AppContext, text: str) -> None:
+_TYPED_MIME_FORMATS = (
+    "text/plain",
+    "text/html",
+    "text/uri-list",
+    "application/x-qt-image",
+    "application/x-color",
+)
+
+
+def _clone_mime(src: QMimeData) -> QMimeData:
+    """`QClipboard.mimeData()` çağıranın sahip olmadığı bir nesne döndürür; panoyu
+    değiştirmeden önce içeriğini korumak için bağımsız bir kopya çıkarır. Resim gibi
+    bazı türler ("application/x-qt-image") ham bayt verisi değil bir QVariant olarak
+    taşınır — yalnızca genel `data()/setData()` kullanmak bunları sessizce kaybederdi;
+    tipe özel erişimciler (`imageData` vb.) de kullanılır."""
+    clone = QMimeData()
+    if src.hasText():
+        clone.setText(src.text())
+    if src.hasHtml():
+        clone.setHtml(src.html())
+    if src.hasUrls():
+        clone.setUrls(src.urls())
+    if src.hasImage():
+        clone.setImageData(src.imageData())
+    if src.hasColor():
+        clone.setColorData(src.colorData())
+    for fmt in src.formats():
+        if fmt not in _TYPED_MIME_FORMATS:
+            clone.setData(fmt, src.data(fmt))
+    return clone
+
+
+def _on_result_ready(ctx: AppContext, text: str, *, force_paste: bool = False) -> None:
     """Sonucu panoya yazar ve (ayar açıksa) ön plandaki uygulamaya yapıştırır.
 
     `restore_clipboard` açıksa ve yapıştırma gerçekten gönderildiyse, panodaki eski
     metin kısa bir gecikmeyle geri yazılır (yapıştırma hedef uygulamaya ulaşsın diye).
+    `force_paste=True` (yalnızca "Yeniden yapıştır" eylemi): dosyadan çözümlenen bir
+    oturumda bile kullanıcı açıkça yapıştırmayı istedi, otomatik-teslim kısıtlaması
+    (aşağıdaki source_path kontrolü) burada atlanır.
     """
     if not text or not ctx.settings.auto_copy:
         return
-    profile = ctx.active_profile
+    # ctx.active_profile yalnızca en son global kısayolu izler; tepsi/pencere düğmesi/IPC
+    # ile başlatılan bir dikte hiç ondan geçmez, o zaman yanlış (eski) profil uygulanırdı.
+    # controller.active_profile bu SONUCU üreten oturuma ait gerçek profildir.
+    profile = ctx.controller.active_profile
     if profile and profile.trailing:
         text += profile.trailing
     clipboard = QApplication.clipboard()
-    previous = clipboard.text() if ctx.settings.restore_clipboard else ""
+    # Yalnızca clipboard.text() değil tüm QMimeData (resim/dosya de dahil) korunur; aksi
+    # hâlde panoda bir resim varken dikte sonrası geri yükleme onu sessizce kaybederdi.
+    # mimeData() clipboard'a ait olduğundan, clipboard değişmeden önce kopyalanmalı.
+    previous_mime = _clone_mime(clipboard.mimeData()) if ctx.settings.restore_clipboard else None
     clipboard.setText(text)
-    if ctx.controller.session.source_path:
-        return  # dosyadan çözümlenen sonuç yalnızca panoya kopyalanır, yapıştırılmaz
+    if ctx.controller.session.source_path and not force_paste:
+        return  # dosyadan çözümlenen sonuç otomatik olarak yalnızca panoya kopyalanır
     if not ctx.settings.auto_paste or ctx.window.isActiveWindow():
         return
     own_ids = {int(ctx.window.winId()), int(ctx.overlay.winId())}
@@ -348,8 +451,8 @@ def _on_result_ready(ctx: AppContext, text: str) -> None:
     if not pasted:
         log.info("yapıştırma atlandı; metin panoda")
         return
-    if ctx.settings.restore_clipboard and previous:
-        QTimer.singleShot(RESTORE_CLIPBOARD_DELAY_MS, lambda: clipboard.setText(previous))
+    if ctx.settings.restore_clipboard and previous_mime is not None and previous_mime.formats():
+        QTimer.singleShot(RESTORE_CLIPBOARD_DELAY_MS, lambda: clipboard.setMimeData(previous_mime))
 
 
 def _sync_cancel_hotkey(ctx: AppContext, state: DictationState) -> None:
@@ -367,14 +470,32 @@ def _maybe_show_health_dialog_on_error(ctx: AppContext, message: str) -> None:
         _show_health_dialog(ctx)
 
 
-def _show_health_dialog(ctx: AppContext, items: tuple[HealthItem, ...] | None = None) -> None:
-    if items is None:
-        items = check_health(
+def _check_health_async(ctx: AppContext, on_done: Callable[[tuple[HealthItem, ...]], None]) -> None:
+    """`check_health`'i arka planda çalıştırır (LLM kontrolü ağ isteği yapar, GUI iş
+    parçacığını bloke etmemeli). `on_done` sonuçla GUI iş parçacığında çağrılır."""
+    job = run_in_pool(
+        lambda: check_health(
             ctx.settings,
             cuda_probe=default_cuda_probe,
             model_probe=default_model_probe,
             llm_probe=default_llm_probe,
-        )
+        ),
+        lambda result: on_done(cast("tuple[HealthItem, ...]", result)),
+        lambda e: log.error("durum kontrolü başarısız: %s", e),
+        QThreadPool.globalInstance(),
+    )
+    _background_jobs.append(job)
+
+
+def _show_health_dialog(ctx: AppContext, items: tuple[HealthItem, ...] | None = None) -> None:
+    if items is None:
+        _check_health_async(ctx, lambda result: _show_health_dialog(ctx, result))
+        return
+    if ctx.health_dialog is not None:
+        # Tekrarlayan model yükleme hataları (ör. her başarısız dikte denemesi) her
+        # seferinde yeni bir pencere açardı; eskisi kapatılmadan referans üzerine
+        # yazılınca kapanmamış pencereler birikirdi.
+        ctx.health_dialog.close()
     ctx.health_dialog = HealthDialog(
         items,
         on_download=lambda progress: _download_model_for_ctx(ctx, progress),
@@ -480,7 +601,8 @@ def _open_settings(ctx: AppContext) -> None:
     if dlg.exec() != QDialog.DialogCode.Accepted:
         return
     new = dlg.result_settings()
-    save_settings(new)
+    if not _guard_settings(ctx, lambda: save_settings(new)):
+        return
     needs_reload = ctx.stt.update_settings(new.stt)
     ctx.recorder.update_settings(new.audio)
     llm_changed = new.llm != ctx.settings.llm
@@ -568,16 +690,31 @@ def main(argv: list[str] | None = None) -> int:
         QMessageBox.critical(None, APP_NAME, "Sistem tepsisi bulunamadı.")
         return 1
 
-    first_run = not paths.config_path().exists()
-    settings = load_settings()
-    ctx = build_app(settings)
+    try:
+        first_run = not paths.config_path().exists()
+        settings = load_settings()
+        ctx = build_app(settings)
+    except OSError as exc:
+        # Veri klasörü (paths.app_data_dir()) oluşturulamadı/yazılamadı — paketlenmiş
+        # derlemede (console=False) hiçbir iz bırakmadan sessizce kapanmak yerine kullanıcıya
+        # nedeni gösterilir.
+        log.exception("veri klasörü hazırlanamadı")
+        QMessageBox.critical(
+            None,
+            APP_NAME,
+            f"Veri klasörü hazırlanamadı: {exc}\nYazma izinlerini kontrol edin.",
+        )
+        return 1
     hotkeys_sanitized = (
         ctx.settings.hotkey != settings.hotkey
         or ctx.settings.hotkey_translate != settings.hotkey_translate
         or ctx.settings.hotkey_prompt != settings.hotkey_prompt
     )
     if hotkeys_sanitized:  # bozuk kısayol(lar) düzeltildi, kalıcı hâle getir
-        save_settings(ctx.settings)
+        try:
+            save_settings(ctx.settings)
+        except SettingsError:
+            log.exception("düzeltilmiş kısayol ayarları kaydedilemedi")
     single.activated.connect(ctx.tray.show_requested)
     single.toggle_requested.connect(ctx.controller.toggle)
     single.start_requested.connect(ctx.controller.start_recording)
@@ -598,14 +735,12 @@ def main(argv: list[str] | None = None) -> int:
     _apply_hotkey(ctx)
     set_autostart(settings.autostart)
     ctx.controller.warm_up()
-    items = check_health(
-        ctx.settings,
-        cuda_probe=default_cuda_probe,
-        model_probe=default_model_probe,
-        llm_probe=default_llm_probe,
-    )
-    if first_run or any(not i.ok for i in items):
-        _show_health_dialog(ctx, items)
+
+    def _after_startup_health_check(items: tuple[HealthItem, ...]) -> None:
+        if first_run or any(not i.ok for i in items):
+            _show_health_dialog(ctx, items)
+
+    _check_health_async(ctx, _after_startup_health_check)
     if not args.minimized:
         ctx.window.show()
     log.info("%s %s başladı", APP_NAME, __version__)

@@ -62,3 +62,12 @@ def test_model_is_cached_finds_model_bin(tmp_path):
 
 def test_model_is_cached_false_when_missing(tmp_path):
     assert model_is_cached("large-v3-turbo", tmp_path) is False
+
+
+def test_model_is_cached_does_not_match_turbo_as_plain_large_v3(tmp_path):
+    """F: yalnızca "large-v3-turbo" önbellekteyken "large-v3" istenirse yanlış pozitif
+    üretmemeli — ikisi farklı modeller."""
+    d = tmp_path / "models--x--faster-whisper-large-v3-turbo" / "snapshots" / "a"
+    d.mkdir(parents=True)
+    (d / "model.bin").write_bytes(b"x")
+    assert model_is_cached("large-v3", tmp_path) is False

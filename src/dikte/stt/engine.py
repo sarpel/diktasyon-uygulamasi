@@ -36,7 +36,12 @@ class SttEngine(Protocol):
     def warm_up(self) -> None: ...
 
     def transcribe(
-        self, audio: np.ndarray, language: str | None = None, *, previous_text: str = ""
+        self,
+        audio: np.ndarray,
+        language: str | None = None,
+        *,
+        previous_text: str = "",
+        allow_empty: bool = False,
     ) -> TranscriptResult: ...
 
 
@@ -250,9 +255,24 @@ class FasterWhisperEngine:
         return self._pipeline
 
     def transcribe(
-        self, audio: np.ndarray, language: str | None = None, *, previous_text: str = ""
+        self,
+        audio: np.ndarray,
+        language: str | None = None,
+        *,
+        previous_text: str = "",
+        allow_empty: bool = False,
     ) -> TranscriptResult:
+        """`allow_empty=True`: sessiz/boş ses hata fırlatmak yerine boş metinli bir sonuç
+        döndürür. Canlı parça-parça çözümlemede kullanılır — tek bir sessiz parça, tüm
+        dikte oturumunu iptal eden bir hata olmamalı (yalnızca o parça boş metin katkısı yapar)."""
         if audio.size == 0:
+            if allow_empty:
+                return TranscriptResult(
+                    text="",
+                    language=language or self._settings.language,
+                    duration_s=0.0,
+                    segments=(),
+                )
             raise SttError("Ses kaydı boş")
         s = self._settings
         # Tamamen sessiz kayıtta Whisper çağrılmaz: uydurma altyazı metni üretmesini engeller.
@@ -261,6 +281,13 @@ class FasterWhisperEngine:
         if s.vad_filter:
             speech = self._speech_probe(audio, s)
             if not speech:
+                if allow_empty:
+                    return TranscriptResult(
+                        text="",
+                        language=language or s.language,
+                        duration_s=audio.size / SAMPLE_RATE,
+                        segments=(),
+                    )
                 raise SttError("Konuşma algılanmadı; mikrofon ve VAD eşiğini kontrol edin")
         if not self.is_loaded:
             self.load()
@@ -292,6 +319,16 @@ class FasterWhisperEngine:
                             for t in speech
                         ]
                 else:
+                    if isinstance(speech, list):
+                        # _speech_probe zaten VAD'i çalıştırdı (yukarıda, "hiç konuşma var mı"
+                        # ön kontrolü için); clip_timestamps vermek faster-whisper'ın
+                        # model.transcribe() içinde VAD'i ikinci kez çalıştırmasını engeller
+                        # (kaynak: "vad_filter will be ignored if clip_timestamps is used").
+                        kwargs["clip_timestamps"] = [
+                            x
+                            for t in speech
+                            for x in (t["start"] / SAMPLE_RATE, t["end"] / SAMPLE_RATE)
+                        ]
                     assert self._model is not None
                     target = self._model
                     kwargs["condition_on_previous_text"] = True

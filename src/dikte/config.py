@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import logging
+import sys
 from pathlib import Path
 from typing import Literal
 
@@ -10,6 +11,10 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError
 from dikte import paths
 
 log = logging.getLogger(__name__)
+
+
+class SettingsError(RuntimeError):
+    """Ayarlar dosyası yazılamadı; çağıran katman kullanıcıya ne yapacağını söylemeli."""
 
 
 class SttSettings(BaseModel):
@@ -165,7 +170,18 @@ def load_settings(path: Path | None = None) -> Settings:
 def save_settings(settings: Settings, path: Path | None = None) -> None:
     p = path or paths.config_path()
     tmp = p.with_suffix(".tmp")
-    tmp.write_text(
-        json.dumps(settings.model_dump(), ensure_ascii=False, indent=2), encoding="utf-8"
-    )
-    tmp.replace(p)
+    try:
+        tmp.write_text(
+            json.dumps(settings.model_dump(), ensure_ascii=False, indent=2), encoding="utf-8"
+        )
+        if sys.platform != "win32":
+            # API anahtarı *adları* (değerleri değil) gibi bilgiler burada; yine de çok
+            # kullanıcılı bir sistemde başkaları okumasın.
+            tmp.chmod(0o600)
+        tmp.replace(p)
+    except OSError as exc:
+        log.exception("config yazılamadı: %s", p)
+        raise SettingsError(
+            f"Ayarlar kaydedilemedi ({p}): {exc}. Diskte yer olduğunu ve klasöre "
+            "yazma izniniz olduğunu kontrol edin."
+        ) from exc

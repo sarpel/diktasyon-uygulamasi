@@ -3,6 +3,7 @@ from __future__ import annotations
 import logging
 from functools import reduce
 
+from PySide6.QtGui import QPalette
 from PySide6.QtWidgets import (
     QDialog,
     QDialogButtonBox,
@@ -137,6 +138,7 @@ class SettingsDialog(QDialog):
         self.llm = LlmTab(settings)
         self.dictionary = DictionaryTab(settings)
         self.advanced = AdvancedTab(settings)
+        self.llm.advanced_tab = self.advanced
         self.profiles = ProfilesTab(settings)
         self.about = AboutTab(settings)
         self._tabs_in_order = (
@@ -156,7 +158,13 @@ class SettingsDialog(QDialog):
 
         self.error_label = QLabel("")
         self.error_label.setWordWrap(True)
-        self.error_label.setStyleSheet("color:#E53935;")
+        # Bu etiket, sistem temasına göre değişen normal diyalog arka planının üzerinde
+        # (overlay.py/toast.py'nin sabit koyu HUD panelinden farklı olarak); tek bir sabit
+        # kırmızı koyu temada WCAG AA kontrast eşiğinin (4.5:1) altına düşüyordu. Arka planın
+        # açıklığına göre iki farklı kırmızı tondan biri seçilir.
+        bg_lightness = self.palette().color(QPalette.ColorRole.Window).lightness()
+        error_color = "#FF6B6B" if bg_lightness < 128 else "#C62828"
+        self.error_label.setStyleSheet(f"color:{error_color};")
         buttons = QDialogButtonBox(
             QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
         )

@@ -22,18 +22,31 @@ _KEYS = {
     "escape": 0x1B,
     "backspace": 0x08,
     "insert": 0x2D,
+    "ins": 0x2D,  # QKeySequence'ın kanonik kısa biçimi (bkz. _QT_KEY_ALIASES)
     "delete": 0x2E,
+    "del": 0x2E,
     "home": 0x24,
     "end": 0x23,
     "pageup": 0x21,
+    "pgup": 0x21,
     "pagedown": 0x22,
+    "pgdown": 0x22,
     "pause": 0x13,
     "scrolllock": 0x91,
     "capslock": 0x14,
     "numlock": 0x90,
     "printscreen": 0x2C,
+    "print": 0x2C,
     **{f"f{i}": 0x70 + i - 1 for i in range(1, 25)},
 }
+
+# Bazı isimlerimiz, QKeySequence'ın PortableText biçiminde tanıdığı dizeyle eşleşmiyor
+# ("Win"/"Pageup"/"Printscreen" Qt tarafından tanınmıyor — PySide6 6.11.2 ile canlı
+# doğrulandı). to_key_sequence bu isimleri Qt'nin kabul ettiği kanonik forma çevirir;
+# from_key_sequence tarafı zaten Qt'nin kendi (kısa) çıktısını üretir ve yukarıdaki
+# _KEYS/_MODS'a eklenen "ins"/"del"/"pgup"/"pgdown"/"print"/"meta" ile geri okunabilir.
+_QT_MOD_ALIASES = {"win": "Meta"}
+_QT_KEY_ALIASES = {"pageup": "PgUp", "pagedown": "PgDown", "printscreen": "Print"}
 
 
 class HotkeyParseError(ValueError):
@@ -80,8 +93,11 @@ def to_key_sequence(spec: str):
     from PySide6.QtGui import QKeySequence
 
     parse_hotkey(spec)  # doğrula
-    parts = [p.strip() for p in spec.split("+") if p.strip()]
-    portable = "+".join(p.capitalize() if len(p) > 1 else p.upper() for p in parts)
+    parts = [p.strip().lower() for p in spec.split("+") if p.strip()]
+    *mods, key = parts
+    portable_mods = [_QT_MOD_ALIASES.get(m, m.capitalize()) for m in mods]
+    portable_key = _QT_KEY_ALIASES.get(key, key.capitalize() if len(key) > 1 else key.upper())
+    portable = "+".join([*portable_mods, portable_key])
     seq = QKeySequence(portable)
     if seq.isEmpty():
         raise HotkeyParseError(f"Kısayol Qt tarafından tanınmadı: {spec}")

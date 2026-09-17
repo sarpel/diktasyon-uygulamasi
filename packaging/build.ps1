@@ -1,7 +1,7 @@
 $ErrorActionPreference = "Stop"
 Set-Location $PSScriptRoot\..
 .\.venv\Scripts\Activate.ps1
-pip install -e ".[dev,anthropic,openai,gemini]"
+pip install -e ".[dev,cuda,anthropic,openai,gemini]"
 pytest -q
 pyinstaller --noconfirm --clean packaging\dikte.spec
 $version = (Select-String -Path packaging\installer.iss -Pattern '#define AppVersion "(.+)"').Matches[0].Groups[1].Value

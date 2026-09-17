@@ -8,10 +8,11 @@ from __future__ import annotations
 
 import re
 
-_NEWLINE_RE = re.compile(r"\s*yeni sat[ıi]r\s*[,.]?\s*", re.IGNORECASE)
-_PARAGRAPH_RE = re.compile(r"\s*yeni paragraf\s*[,.]?\s*", re.IGNORECASE)
-_DELETE_LAST_SENTENCE_RE = re.compile(r"\s*son cümleyi sil\s*[,.]?\s*", re.IGNORECASE)
-_SENTENCE_END_RE = re.compile(r"[.!?]")
+_NEWLINE_RE = re.compile(r"\s*yeni sat[ıi]r(?!\w)\s*[,.]?\s*", re.IGNORECASE)
+_PARAGRAPH_RE = re.compile(r"\s*yeni paragraf(?!\w)\s*[,.]?\s*", re.IGNORECASE)
+_DELETE_LAST_SENTENCE_RE = re.compile(r"\s*son cümleyi sil(?!\w)\s*[,.]?\s*", re.IGNORECASE)
+# "14.30" (saat) veya "3.5" (ondalık) gibi rakamlar arasındaki nokta cümle sonu sayılmaz.
+_SENTENCE_END_RE = re.compile(r"[!?]|(?<!\d)\.(?!\d)")
 
 
 def _capitalize_turkish(text: str) -> str:

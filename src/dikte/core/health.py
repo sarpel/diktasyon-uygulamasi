@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import re
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
@@ -19,8 +20,14 @@ class HealthItem:
 
 
 def model_is_cached(model: str, root: Path) -> bool:
-    """Varsayılan model_probe: `root` altında `*<model>*/**/model.bin` eşleşmesi arar."""
-    return any(root.glob(f"*{model}*/**/model.bin"))
+    """Varsayılan model_probe: `root` altında `*<model>*/**/model.bin` eşleşmesi arar.
+
+    Salt alt dize eşleşmesi yanlış pozitif üretir: model="large-v3" iken
+    "faster-whisper-large-v3-turbo" dizini de eşleşirdi. Model adından hemen sonra
+    (isteğe bağlı bir "-" ile) başka bir alfasayısal karakter gelmemesi şartı aranır.
+    """
+    guard = re.compile(re.escape(model) + r"(?!-?[0-9a-zA-Z])")
+    return any(guard.search(str(p)) for p in root.glob(f"*{model}*/**/model.bin"))
 
 
 def check_health(

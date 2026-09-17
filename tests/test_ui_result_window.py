@@ -260,11 +260,23 @@ def test_new_request_after_history_load_is_shown_again(qtbot):
 
 def test_editing_corrected_text_emits_debounced_text_edited(qtbot):
     w, c = make(qtbot)
-    c.session_updated.emit(Session(raw_text="a", corrected_text="Merhaba."))
+    session = Session(raw_text="a", corrected_text="Merhaba.")
+    c.session_updated.emit(session)
     w.corrected_pane.editor.setPlainText("Merhaba dünya.")
     with qtbot.waitSignal(w.text_edited, timeout=2000) as blocker:
         pass
-    assert blocker.args == ["Merhaba dünya."]
+    assert blocker.args == [session.id, "Merhaba dünya."]
+
+
+def test_editing_history_session_emits_its_own_session_id(qtbot):
+    w, c = make(qtbot)
+    c.session = Session(raw_text="canlı", corrected_text="Canlı.")
+    old = Session(raw_text="eski", corrected_text="Eski.")
+    w.load_session(old)
+    w.corrected_pane.editor.setPlainText("Eski düzeltildi.")
+    with qtbot.waitSignal(w.text_edited, timeout=2000) as blocker:
+        pass
+    assert blocker.args == [old.id, "Eski düzeltildi."]
 
 
 def test_programmatic_session_update_does_not_emit_text_edited(qtbot):

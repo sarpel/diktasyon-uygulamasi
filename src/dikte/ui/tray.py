@@ -66,7 +66,7 @@ class TrayIcon(QSystemTrayIcon):
         self._recent_menu.setEnabled(bool(self._recent_sessions))
         self._recent_menu.clear()
         for session in self._recent_sessions:
-            text = session.corrected_text or session.raw_text
+            text = session.output_text or session.raw_text
             preview = text.replace("\n", " ")[:RECENT_PREVIEW_CHARS] or "(boş)"
             action = QAction(preview, self._recent_menu)
             action.triggered.connect(lambda checked=False, t=text: self.copy_requested.emit(t))
@@ -75,7 +75,7 @@ class TrayIcon(QSystemTrayIcon):
     def _emit_copy_most_recent(self) -> None:
         if self._recent_sessions:
             session = self._recent_sessions[0]
-            self.copy_requested.emit(session.corrected_text or session.raw_text)
+            self.copy_requested.emit(session.output_text or session.raw_text)
 
     def set_hotkey_label(self, label: str) -> None:
         self._hotkey_label = label

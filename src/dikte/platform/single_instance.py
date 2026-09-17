@@ -55,6 +55,38 @@ def send_command(name: str, message: bytes, timeout_ms: int = _TIMEOUT_MS) -> bo
     return result["ok"]
 
 
+def _server_socket_exists(name: str, timeout_ms: int = 500) -> bool:
+    """Bir soket bağlantısı kabul ediliyor mu (sunucu canlı) — ACK beklemeden, yalnızca
+    bağlantı aşaması. `send_command`'ın SHOW isteği zaman aşımına uğraması iki farklı
+    durumdan olabilir: sunucu hiç yok (eski/çökmüş örnekten kalan soket dosyası — silmek
+    güvenli) ya da sunucu canlı ama meşgul (GUI iş parçacığı bloke — soketi silip ikinci
+    bir örnek başlatmak veri kaybına/duplicate örneğe yol açar). Bu ayrımı yapar."""
+    sock = QLocalSocket()
+    loop = QEventLoop()
+    result = {"connected": False, "done": False}
+
+    def finish(connected: bool) -> None:
+        if result["done"]:
+            return
+        result["connected"], result["done"] = connected, True
+        loop.quit()
+
+    sock.connected.connect(lambda: finish(True))
+    sock.errorOccurred.connect(lambda _err: finish(False))
+
+    timer = QTimer()
+    timer.setSingleShot(True)
+    timer.timeout.connect(lambda: finish(False))
+    timer.start(timeout_ms)
+
+    sock.connectToServer(name)
+    if not result["done"]:
+        loop.exec()
+    timer.stop()
+    sock.abort()
+    return result["connected"]
+
+
 class SingleInstance(QObject):
     activated = Signal()
     toggle_requested = Signal(str)  # mod: "correct" | "translate" | "prompt"
@@ -72,6 +104,12 @@ class SingleInstance(QObject):
 
     def try_acquire(self) -> bool:
         if send_command(self._name, SHOW_MESSAGE):
+            return False
+        if _server_socket_exists(self._name):
+            # Sunucu canlı (bağlantı kabul edildi) ama SHOW isteğine zamanında ACK
+            # dönmedi — örn. GUI iş parçacığı meşgul. Soketi silip ikinci bir örnek
+            # başlatmak yerine yalnızca başlatmayı reddet.
+            log.warning("çalışan örnek meşgul görünüyor, ikinci başlatma reddedildi")
             return False
         QLocalServer.removeServer(self._name)  # çökmüş önceki örnekten kalan soket
         self._server = QLocalServer(self)
@@ -110,9 +148,17 @@ class SingleInstance(QObject):
         conn.disconnectFromServer()
 
 
+_VALID_MODES = ("correct", "translate", "prompt")
+
+
 def _parse_mode(payload: bytes, prefix: bytes) -> str:
-    """`b"toggle:translate"` → "translate"; salt `b"toggle"` → varsayılan "correct"."""
+    """`b"toggle:translate"` → "translate"; salt `b"toggle"` → varsayılan "correct".
+
+    Aynı kullanıcının yerel süreçleri dışında kimse bu soketi kullanamaz (sertleştirme
+    notu, F054), ama yine de doğrulanmamış bir dize denetleyiciye `mode` olarak
+    ulaşmasın diye tanınmayan değerler "correct"a düşürülür."""
     rest = payload[len(prefix) :]
-    if rest.startswith(b":"):
-        return rest[1:].decode("ascii", errors="replace")
-    return "correct"
+    if not rest.startswith(b":"):
+        return "correct"
+    mode = rest[1:].decode("ascii", errors="replace")
+    return mode if mode in _VALID_MODES else "correct"
