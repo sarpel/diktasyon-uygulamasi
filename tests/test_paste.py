@@ -1,9 +1,20 @@
+import ctypes
 import subprocess
 from types import SimpleNamespace
 
 import pytest
 
 from dikte.platform import paste
+
+
+def test_input_struct_matches_win32_abi():
+    """SendInput cbSize == sizeof(INPUT) şartını koşuyor (Microsoft belgeleri); yanlış
+    boyut hiçbir tuş vuruşu göndermeden sessizce başarısız olur. 64-bit Win32 INPUT
+    (DWORD type + union{MOUSEINPUT,KEYBDINPUT,HARDWAREINPUT}) her zaman 40 bayttır."""
+    assert ctypes.sizeof(paste._INPUT) == 40
+    assert ctypes.sizeof(paste._MOUSEINPUT) == 32
+    assert ctypes.sizeof(paste._KEYBDINPUT) == 24
+    assert ctypes.sizeof(paste._HARDWAREINPUT) == 8
 
 
 @pytest.fixture(autouse=True)

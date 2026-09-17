@@ -26,7 +26,15 @@ for pkg in (
 # bunlar pytest'i pakete sürükler ve boyutu gereksiz büyütür.
 hiddenimports = [m for m in hiddenimports if ".tests" not in m and not m.endswith(".tests")]
 for pkg in ("nvidia.cublas", "nvidia.cudnn"):
-    binaries += collect_dynamic_libs(pkg)
+    libs = collect_dynamic_libs(pkg)
+    # collect_dynamic_libs paket kurulu değilse sessizce boş liste döner (yalnızca uyarı
+    # loglar, build'i başarısız etmez) — bu STT'nin GPU'da hiç çalışmayacağı bir paket
+    # üretiminin fark edilmeden yayınlanması anlamına gelir.
+    assert libs, (
+        f"{pkg} için hiçbir dinamik kütüphane bulunamadı. "
+        f'`pip install -e ".[cuda]"` çalıştırıldı mı?'
+    )
+    binaries += libs
 
 a = Analysis(
     [os.path.join(ROOT, "src", "dikte", "__main__.py")],

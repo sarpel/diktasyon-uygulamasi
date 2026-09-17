@@ -101,6 +101,11 @@ class SttTab(QWidget):
         self.hallucination_silence_spin.setSingleStep(0.5)
         self.hallucination_silence_spin.setSuffix(" sn")
         self.hallucination_silence_spin.setValue(settings.stt.hallucination_silence_threshold_s)
+        self.hallucination_silence_spin.setToolTip(
+            "faster-whisper yalnızca kelime zamanlarını hesapladığında bu eşiği kullanır; "
+            "Dikte performans için bunu hesaplamıyor, bu yüzden bu ayarın şu an etkisi yok "
+            "(aşağıdaki 'Bilinen uydurma metinleri ele' filtresi kullanın)."
+        )
         self.hallucination_filter_check = QCheckBox(
             'Bilinen uydurma metinleri ele ("Altyazı M.K.", "İzlediğiniz için teşekkürler")'
         )

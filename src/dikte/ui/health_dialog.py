@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 
-from PySide6.QtCore import QThreadPool
+from PySide6.QtCore import QThreadPool, Signal
 from PySide6.QtGui import QPalette
 from PySide6.QtWidgets import (
     QDialog,
@@ -22,6 +22,8 @@ MODEL_ITEM_NAME = "Whisper modeli"
 
 class HealthDialog(QDialog):
     """İlk çalıştırmada veya STT hatasında gösterilen, modal olmayan durum penceresi."""
+
+    _progress = Signal(int, int)  # indirme işçi iş parçacığından GUI iş parçacığına taşır
 
     def __init__(
         self,
@@ -62,6 +64,8 @@ class HealthDialog(QDialog):
         close_btn.clicked.connect(self.accept)
         layout.addWidget(close_btn)
 
+        self._progress.connect(self._on_progress)
+
     @staticmethod
     def _row_text(item: HealthItem) -> str:
         mark = "✓" if item.ok else "✗"
@@ -75,17 +79,19 @@ class HealthDialog(QDialog):
         self.progress_bar.setVisible(True)
         self.progress_bar.setRange(0, 0)  # ilk `progress` çağrısına kadar belirsiz
 
-        def on_progress(done: int, total: int) -> None:
-            if total:
-                self.progress_bar.setRange(0, total)
-            self.progress_bar.setValue(done)
-
         self._job_signals = run_in_pool(
-            lambda: download(on_progress),
+            lambda: download(self._progress.emit),
             self._download_done,
             self._download_failed,
             QThreadPool.globalInstance(),
         )
+
+    def _on_progress(self, done: int, total: int) -> None:
+        """`_progress` sinyaline bağlı; her zaman GUI iş parçacığında çalışır (indirme
+        işçi iş parçacığından widget'lara doğrudan dokunmak Qt'de güvenli değildir)."""
+        if total:
+            self.progress_bar.setRange(0, total)
+        self.progress_bar.setValue(done)
 
     def _download_done(self, _result: object) -> None:
         self.progress_bar.setVisible(False)

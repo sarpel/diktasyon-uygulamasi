@@ -24,7 +24,7 @@ improvement_plan.md
 # PyInstaller ara çıktıları
 packaging/build/
 *.spec.bak
-
+.codebase-review/
 # Üretilen ikonlar dışındaki paketleme çıktıları
 dist/Dikte-Setup-*.exe
 

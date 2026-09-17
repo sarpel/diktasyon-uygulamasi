@@ -107,7 +107,13 @@ class AudioTab(QWidget):
             log.exception("mikrofon testi başlatılamadı")
             self._on_recorder_error(f"Mikrofon testi başlatılamadı: {exc}")
             return
-        self.test_btn.setText("Testi durdur")
+        # AudioRecorder.start() kendi hatasını fırlatmaz, `error` sinyaliyle bildirir —
+        # bu, aynı iş parçacığında _on_recorder_error'ı (ve onun stop_test() çağrısını)
+        # start()'ın kendisi dönmeden ÖNCE senkron çalıştırır. Mikrofon gerçekten
+        # açılmadıysa (is_recording False) buton metnini "Testi durdur"a çevirmemeli —
+        # aksi hâlde stop_test()'in düzelttiği metni hemen üzerine yazardı.
+        if self._recorder is not None and getattr(self._recorder, "is_recording", True):
+            self.test_btn.setText("Testi durdur")
 
     def _on_recorder_error(self, message: str) -> None:
         """Kayıt cihazı hatası: testi durdurur ve ne yapılacağını söyler."""

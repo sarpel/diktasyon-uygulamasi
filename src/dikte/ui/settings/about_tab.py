@@ -5,7 +5,7 @@ import sys
 from collections.abc import Callable
 from importlib.metadata import PackageNotFoundError, version
 
-from PySide6.QtCore import QUrl
+from PySide6.QtCore import QThreadPool, QUrl
 from PySide6.QtGui import QDesktopServices
 from PySide6.QtWidgets import (
     QFormLayout,
@@ -25,6 +25,7 @@ from dikte.core.health import (
     default_llm_probe,
     default_model_probe,
 )
+from dikte.core.workers import run_in_pool
 from dikte.stt.download import download_model
 from dikte.ui.health_dialog import HealthDialog
 
@@ -72,6 +73,7 @@ class AboutTab(QWidget):
     ):
         super().__init__(parent)
         self._settings = settings
+        self._health_job = None
         form = QFormLayout()
         form.addRow("Uygulama", QLabel(f"{APP_NAME} {__version__}"))
         form.addRow("Python", QLabel(sys.version.split()[0]))
@@ -114,14 +116,30 @@ class AboutTab(QWidget):
             )
 
     def _open_health_dialog(self) -> None:
-        items = check_health(
-            self._settings,
-            cuda_probe=default_cuda_probe,
-            model_probe=default_model_probe,
-            llm_probe=default_llm_probe,
+        # check_health LLM kontrolü için ağ isteği yapar (SDK yeniden deneme + zaman
+        # aşımıyla dakikalarca sürebilir); GUI iş parçacığını bloke etmemek için arka
+        # planda çalıştırılır.
+        self.health_btn.setEnabled(False)
+        self._health_job = run_in_pool(
+            lambda: check_health(
+                self._settings,
+                cuda_probe=default_cuda_probe,
+                model_probe=default_model_probe,
+                llm_probe=default_llm_probe,
+            ),
+            self._on_health_checked,
+            self._on_health_check_failed,
+            QThreadPool.globalInstance(),
         )
+
+    def _on_health_checked(self, items) -> None:
+        self.health_btn.setEnabled(True)
         dlg = HealthDialog(items, on_download=self._download_model, parent=self)
         dlg.exec()
+
+    def _on_health_check_failed(self, message: str) -> None:
+        self.health_btn.setEnabled(True)
+        QMessageBox.warning(self, APP_NAME, f"Durum kontrolü başarısız: {message}")
 
     def _download_model(self, progress) -> None:
         download_model(self._settings.stt.model, paths.models_dir(), progress)

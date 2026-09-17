@@ -11,6 +11,7 @@ from __future__ import annotations
 import ctypes
 import logging
 import shutil
+import struct
 import subprocess
 import sys
 from collections.abc import Callable
@@ -38,18 +39,50 @@ _WTYPE_ARGS: dict[KeyCombo, list[str]] = {
 
 # Yalnızca ctypes ilkel türleriyle kurulu; tanım Linux'ta da güvenle yapılabilir
 # (Windows API'sine erişim yalnızca _send_windows/_type_windows içinde, win32'de olur).
-class _KEYBDINPUT(ctypes.Structure):
+#
+# Gerçek Win32 INPUT yapısı bir union (MOUSEINPUT/KEYBDINPUT/HARDWAREINPUT) içerir. SendInput,
+# cbSize == sizeof(INPUT) olmasını şart koşar (Microsoft belgeleri: eşleşmezse çağrı tümüyle
+# başarısız olur, kısmi işlem yapılmaz) — 64-bit'te bu 40 bayttır. Yalnızca {type, KEYBDINPUT}
+# içeren eski tanım 32 bayttı; SendInput her zaman 0 döndürüyordu (hiçbir tuş vuruşu iletilmedi).
+# DWORD/LONG Windows'ta her zaman 32 bittir (LLP64) — ama bu modül Linux'ta da import
+# edilip test edilir, ve Linux'ta ctypes.c_long/c_ulong 64 bittir (LP64). Win32 ABI'siyle
+# platformdan bağımsız eşleşmek için sabit genişlikli tipler kullanılır.
+class _MOUSEINPUT(ctypes.Structure):
     _fields_ = [
-        ("wVk", ctypes.c_ushort),
-        ("wScan", ctypes.c_ushort),
-        ("dwFlags", ctypes.c_ulong),
-        ("time", ctypes.c_ulong),
+        ("dx", ctypes.c_int32),
+        ("dy", ctypes.c_int32),
+        ("mouseData", ctypes.c_uint32),
+        ("dwFlags", ctypes.c_uint32),
+        ("time", ctypes.c_uint32),
         ("dwExtraInfo", ctypes.c_void_p),
     ]
 
 
+class _KEYBDINPUT(ctypes.Structure):
+    _fields_ = [
+        ("wVk", ctypes.c_ushort),
+        ("wScan", ctypes.c_ushort),
+        ("dwFlags", ctypes.c_uint32),
+        ("time", ctypes.c_uint32),
+        ("dwExtraInfo", ctypes.c_void_p),
+    ]
+
+
+class _HARDWAREINPUT(ctypes.Structure):
+    _fields_ = [
+        ("uMsg", ctypes.c_uint32),
+        ("wParamL", ctypes.c_ushort),
+        ("wParamH", ctypes.c_ushort),
+    ]
+
+
+class _INPUTUNION(ctypes.Union):
+    _fields_ = [("mi", _MOUSEINPUT), ("ki", _KEYBDINPUT), ("hi", _HARDWAREINPUT)]
+
+
 class _INPUT(ctypes.Structure):
-    _fields_ = [("type", ctypes.c_ulong), ("ki", _KEYBDINPUT)]
+    _anonymous_ = ("u",)
+    _fields_ = [("type", ctypes.c_uint32), ("u", _INPUTUNION)]
 
 
 def foreground_window_id() -> int | None:
@@ -77,10 +110,18 @@ def _send_windows(combo: KeyCombo = "ctrl+v") -> bool:
     return sent == len(arr)
 
 
+def _utf16_code_units(text: str) -> list[int]:
+    """`wScan` 16 bittir; BMP-dışı karakterler (emoji vb.) `ord(ch)` tek bir 16 bit alana
+    sessizce (ctypes taşmasıyla) kırpılıyordu. Windows'un kendi KEYEVENTF_UNICODE sözleşmesi
+    zaten UTF-16 kod birimleri ister — BMP-dışı karakterler için gerçek bir surrogate çifti
+    (iki ayrı tuş vuruşu) gönderilir, tek bir kırpılmış değer değil."""
+    raw = text.encode("utf-16-le")
+    return list(struct.unpack(f"<{len(raw) // 2}H", raw))
+
+
 def _type_windows(text: str) -> bool:
     events: list[tuple[int, int]] = []
-    for ch in text:
-        scan = ord(ch)
+    for scan in _utf16_code_units(text):
         events.append((scan, KEYEVENTF_UNICODE))
         events.append((scan, KEYEVENTF_UNICODE | KEYEVENTF_KEYUP))
     user32 = ctypes.windll.user32

@@ -40,6 +40,7 @@ class AudioRecorder(QObject):
     ):
         super().__init__(parent)
         self._settings = settings
+        self._active_settings = settings  # süren kayıtta kullanılan sabit anlık görüntü
         self._factory = stream_factory or _default_stream_factory
         self._stream = None
         self._chunks: list[np.ndarray] = []
@@ -69,22 +70,30 @@ class AudioRecorder(QObject):
     def start(self) -> None:
         if self._stream is not None:
             return
+        self._active_settings = self._settings  # bu oturum boyunca sabit
         self._chunks, self._total, self._limit_hit = [], 0, False
         self._chunk_samples = 0
         self._speech_seen, self._silent_samples, self._silence_hit = False, 0, False
+        stream = None
         try:
             stream = self._factory(
                 callback=self._on_audio,
-                samplerate=self._settings.sample_rate,
+                samplerate=self._active_settings.sample_rate,
                 channels=1,
                 dtype="float32",
-                device=self._settings.device_index,
+                device=self._active_settings.device_index,
                 blocksize=BLOCK_SIZE,
             )
             stream.start()
             self._stream = stream
         except Exception as exc:  # sounddevice.PortAudioError vb.
             self._stream = None
+            if stream is not None:
+                # Nesne oluşturuldu ama start() başarısız oldu: donanım tutamacı sızmasın.
+                try:
+                    stream.close()
+                except Exception:
+                    log.exception("başarısız stream kapatılırken hata")
             log.exception("mikrofon açılamadı")
             self.error.emit(f"Mikrofon açılamadı: {exc}")
 
@@ -110,7 +119,7 @@ class AudioRecorder(QObject):
         # PortAudio giriş tamponunu her geri çağırmada yeniden kullanır; view saklamak
         # sonradan üzerine yazılan (bozuk/çöp) ses verisi demektir. Bu yüzden kopya alınır.
         frame: np.ndarray | None = np.array(indata, dtype=np.float32).reshape(-1)
-        limit = self._settings.max_seconds * self._settings.sample_rate  # 0 = sınırsız
+        limit = self._active_settings.max_seconds * self._active_settings.sample_rate  # 0=sınırsız
         first_hit = False
         level = 0.0
         chunk_to_emit: np.ndarray | None = None
@@ -132,6 +141,12 @@ class AudioRecorder(QObject):
                 level = rms(frame)
                 if self._chunk_s > 0:
                     chunk_to_emit = self._maybe_flush_chunk(level)
+        # chunk_ready, RECORDING durumundayken tüketilmesi için durdurma sinyallerinden
+        # (limit_reached/silence_reached) ÖNCE yayınlanır. Qt'nin kuyruklu bağlantıları aynı
+        # alıcı için FIFO sırasını korur, bu yüzden emit sırası GUI iş parçacığındaki işlem
+        # sırasını belirler; tersi olursa son parça durdurma sonrası atılırdı.
+        if chunk_to_emit is not None:
+            self.chunk_ready.emit(chunk_to_emit)
         if first_hit:
             self.limit_reached.emit()
         if frame is None:
@@ -139,15 +154,13 @@ class AudioRecorder(QObject):
         self._track_silence(level, frame.shape[0])
         self.level_changed.emit(level)
         self.buckets_changed.emit(bucketize(frame, BUCKETS))
-        if chunk_to_emit is not None:
-            self.chunk_ready.emit(chunk_to_emit)
 
     def _maybe_flush_chunk(self, level: float) -> np.ndarray | None:
         """Kilit altında çağrılır. Toplanan süre `chunk_s`i geçip blok sessizse, ya da
         `max_chunk_s`e ulaşılmışsa (sessizlikten bağımsız sert kesim) parçayı boşaltır."""
-        duration_s = self._chunk_samples / self._settings.sample_rate
+        duration_s = self._chunk_samples / self._active_settings.sample_rate
         should_flush = duration_s >= self._max_chunk_s or (
-            duration_s >= self._chunk_s and level < self._settings.silence_threshold
+            duration_s >= self._chunk_s and level < self._active_settings.silence_threshold
         )
         if not should_flush or not self._chunks:
             return None
@@ -156,7 +169,8 @@ class AudioRecorder(QObject):
         return np.concatenate(chunk).astype(np.float32, copy=False)
 
     def _track_silence(self, level: float, n: int) -> None:
-        stop_s, thr = self._settings.silence_stop_s, self._settings.silence_threshold
+        stop_s = self._active_settings.silence_stop_s
+        thr = self._active_settings.silence_threshold
         if stop_s <= 0 or self._silence_hit:
             return
         if level > thr * 3:
@@ -165,6 +179,6 @@ class AudioRecorder(QObject):
         if not self._speech_seen:
             return
         self._silent_samples += n
-        if self._silent_samples >= stop_s * self._settings.sample_rate:
+        if self._silent_samples >= stop_s * self._active_settings.sample_rate:
             self._silence_hit = True
             self.silence_reached.emit()

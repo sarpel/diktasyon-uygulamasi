@@ -77,6 +77,6 @@ class OllamaProvider:
                 f"Ollama'ya ulaşılamadı veya yanıt vermedi ({self._settings.ollama_host}): {exc}"
             ) from exc
         content = getattr(getattr(resp, "message", None), "content", None)
-        if not isinstance(content, str):
+        if not isinstance(content, str) or not content.strip():
             raise LlmError("Ollama boş yanıt döndürdü")
         return content

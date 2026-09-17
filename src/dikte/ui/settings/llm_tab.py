@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+from typing import TYPE_CHECKING
 
 from PySide6.QtCore import QThreadPool
 from PySide6.QtWidgets import (
@@ -22,6 +23,9 @@ from dikte.llm import make_provider
 from dikte.llm.keys import key_status
 from dikte.llm.provider import LlmError
 
+if TYPE_CHECKING:
+    from dikte.ui.settings.advanced_tab import AdvancedTab
+
 log = logging.getLogger(__name__)
 PROVIDERS = ("ollama", "lmstudio", "openai", "anthropic", "gemini", "custom")
 # Dikte metninin makineden çıktığı sağlayıcılar; uyarı yalnızca bunlarda gösterilir.
@@ -36,6 +40,11 @@ class LlmTab(QWidget):
 
     def __init__(self, settings: Settings, parent=None):
         super().__init__(parent)
+        # SettingsDialog kurulumdan sonra atar (bkz. settings_dialog.py); "Bağlantıyı test et"
+        # Gelişmiş sekmesindeki kaydedilmemiş timeout_s/top_p/top_k/think değerlerini de
+        # kullanabilsin diye. None ise (ör. LlmTab tek başına test ediliyorsa) yalnızca
+        # kaydedilmiş/varsayılan LlmSettings kullanılır.
+        self.advanced_tab: AdvancedTab | None = None
         llm = settings.llm
         self.llm_enabled_check = QCheckBox("LLM ile metin düzeltme (kapalıyken VRAM kullanılmaz)")
         self.llm_enabled_check.setChecked(llm.enabled)
@@ -270,7 +279,17 @@ class LlmTab(QWidget):
         }
 
     def _snapshot_llm_settings(self) -> LlmSettings:
-        return LlmSettings().model_copy(update=self._llm_updates())
+        updates = self._llm_updates()
+        adv = self.advanced_tab
+        if adv is not None:
+            updates.update(
+                num_ctx=adv.num_ctx_spin.value(),
+                top_p=adv.top_p_spin.value(),
+                top_k=adv.top_k_spin.value(),
+                timeout_s=float(adv.timeout_spin.value()),
+                think=adv.think_check.isChecked(),
+            )
+        return LlmSettings().model_copy(update=updates)
 
     def _test_connection(self) -> None:
         """Seçili sağlayıcıyı arka planda dener; UI thread'i bloklamaz."""

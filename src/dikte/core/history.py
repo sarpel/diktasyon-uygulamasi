@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import logging
+import sys
 from dataclasses import asdict
 from datetime import datetime
 from pathlib import Path
@@ -40,7 +41,14 @@ class History:
     def load(self) -> tuple[Session, ...]:
         if self._limit <= 0 or not self._path.exists():
             return ()
-        lines = self._path.read_text(encoding="utf-8").splitlines()
+        try:
+            lines = self._path.read_text(encoding="utf-8").splitlines()
+        except OSError as exc:
+            log.exception("geçmiş okunamadı: %s", self._path)
+            raise HistoryError(
+                f"Geçmiş okunamadı ({self._path}): {exc}. Dosyaya okuma izniniz olduğunu "
+                "kontrol edin."
+            ) from exc
         sessions = [
             s for s in (_from_json(line) for line in lines if line.strip()) if s is not None
         ]
@@ -74,6 +82,10 @@ class History:
         tmp = self._path.with_suffix(".tmp")
         try:
             tmp.write_text(content, encoding="utf-8")
+            if sys.platform != "win32":
+                # Dikte edilen metnin kendisi burada; çok kullanıcılı bir Linux sisteminde
+                # başkaları okumasın.
+                tmp.chmod(0o600)
             tmp.replace(self._path)
         except OSError as exc:
             log.exception("geçmiş yazılamadı: %s", self._path)

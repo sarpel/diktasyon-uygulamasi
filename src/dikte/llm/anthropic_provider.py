@@ -10,6 +10,10 @@ from dikte.llm.keys import read_api_key
 from dikte.llm.provider import LlmError
 
 log = logging.getLogger(__name__)
+# Anahtar istemeyen özel uç noktalar da bir değer bekler; SDK boş dizeyi (aksine ortam
+# değişkenine düşmeden) açık bir kimlik bilgisi sayıp X-Api-Key başlığı doğrulamasında
+# TypeError fırlatıyor. OpenAI sağlayıcısındaki yer tutucu deseniyle aynı çözüm.
+PLACEHOLDER_KEY = "no-key"
 
 
 def _default_client_factory(api_key: str | None, timeout: float, base_url: str | None = None):
@@ -17,9 +21,13 @@ def _default_client_factory(api_key: str | None, timeout: float, base_url: str |
         from anthropic import Anthropic
     except ImportError as exc:
         raise LlmError('Anthropic SDK kurulu değil: uv pip install -e ".[anthropic]"') from exc
+    key = api_key or PLACEHOLDER_KEY
+    # SDK varsayılanı 2 yeniden deneme (zaman aşımları dahil): iptal edilen bir iş,
+    # QThreadPool işçisini timeout_s × 3'e kadar işgal edebilir. İptal denetleyicide zaten
+    # gen sayacıyla yapılıyor; SDK'nın kendi yeniden denemesine gerek yok.
     if base_url:
-        return Anthropic(api_key=api_key, timeout=timeout, base_url=base_url)
-    return Anthropic(api_key=api_key, timeout=timeout)
+        return Anthropic(api_key=key, timeout=timeout, base_url=base_url, max_retries=0)
+    return Anthropic(api_key=key, timeout=timeout, max_retries=0)
 
 
 class AnthropicProvider:
@@ -66,7 +74,9 @@ class AnthropicProvider:
         try:
             msg = self._client.messages.create(
                 model=self._model,
-                max_tokens=4096,
+                # 4096 uzun bir düzeltme/çeviri isteğinde yanıtı (JSON dahil) kesebilir —
+                # kesilmiş JSON tümüyle kaybolur, kesilmiş düz metin sessizce kırpılır.
+                max_tokens=8192,
                 temperature=temperature,
                 system=sys_prompt,
                 messages=[{"role": "user", "content": user}],

@@ -15,7 +15,7 @@ from dikte.llm.provider import LlmProvider
 from dikte.stt.engine import SttEngine
 from dikte.stt.result import TranscriptResult
 from dikte.text.commands import apply_commands
-from dikte.text.dictionary import apply_rules, hotwords, prompt_terms
+from dikte.text.dictionary import apply_compiled, compile_rules, hotwords, prompt_terms
 
 log = logging.getLogger(__name__)
 
@@ -65,6 +65,7 @@ class DictationController(QObject):
         self._chunks_pending = 0
         self._chunk_sample_total = 0
         self._recording_stopped = False
+        self._compiled_dictionary_rules: list = []
         recorder.level_changed.connect(self.level_changed)
         recorder.buckets_changed.connect(self.buckets_changed)
         recorder.error.connect(self._on_recorder_error)
@@ -95,6 +96,14 @@ class DictationController(QObject):
     @property
     def llm_enabled(self) -> bool:
         return self._settings.llm.enabled
+
+    @property
+    def active_profile(self) -> AppProfile | None:
+        """O anki oturumu başlatan tetikleyicide eşleşen profil (varsa). `app.py` sonucu
+        teslim ederken bunu okumalı — ambient/son-kısayol durumu değil, bu belirli
+        oturuma ait gerçek profili verir (tepsi/pencere/IPC ile başlatılan diktelerde de
+        doğru sonucu verir; app.ctx.active_profile yalnızca son global kısayolu izler)."""
+        return self._active_profile
 
     # ---- kamu slotları
     @Slot()
@@ -171,6 +180,7 @@ class DictationController(QObject):
         if self._state not in (DictationState.IDLE, DictationState.RESULT):
             self.error.emit("Önce süren işi bitirin.")
             return
+        self._gen += 1  # eski çeviri/prompt gibi bekleyen işler bu oturuma yazılmasın
         self._active_profile = None
         self._session = Session(source_path=path)
         self.session_updated.emit(self._session)
@@ -179,8 +189,12 @@ class DictationController(QObject):
         self._spawn(
             lambda: self._stt.transcribe(self._audio_loader(path), lang),
             self._on_transcribed,
-            lambda e: self.error.emit(f"Dosya çözümlenemedi: {e}"),
+            self._on_file_transcribe_error,
         )
+
+    def _on_file_transcribe_error(self, msg: str) -> None:
+        self.error.emit(f"Dosya çözümlenemedi: {msg}")
+        self._set_state(DictationState.IDLE)
 
     @Slot(str)
     def request_translation(self, text: str) -> None:
@@ -209,17 +223,20 @@ class DictationController(QObject):
         if self._state is not DictationState.RESULT:
             return
         before = self._session.corrected_text
-        self._update_session(corrected_text=text)
+        # changes=(): LLM düzeltmesinin ham metne göre vurguları artık geçersiz — kullanıcının
+        # düzenlediği yeni metinde eski ofsetler yanlış kelimeleri işaretlerdi.
+        self._update_session(corrected_text=text, changes=())
         changes = word_changes(before, text)
         if changes:
             self.edit_learned.emit(changes)
 
     # ---- iç akış
     def _push_dictionary(self) -> None:
+        entries = self._settings.dictionary.entries
+        self._compiled_dictionary_rules = compile_rules(entries)
         setter = getattr(self._stt, "set_dictionary", None)
         if setter is None:
             return
-        entries = self._settings.dictionary.entries
         setter(hotwords(entries), prompt_terms(entries))
 
     def _require_llm(self) -> bool:
@@ -229,6 +246,7 @@ class DictationController(QObject):
         return False
 
     def _start_recording(self, mode: str = "correct", *, profile: AppProfile | None = None) -> None:
+        self._gen += 1  # eski çeviri/prompt gibi bekleyen işler bu oturuma yazılmasın
         self._active_profile = profile
         effective_mode = profile.mode if profile and mode == "correct" else mode
         self._session = Session(mode=effective_mode, profile=profile.name if profile else "")
@@ -239,6 +257,11 @@ class DictationController(QObject):
         self._chunk_sample_total = 0
         self._recording_stopped = False
         self._recorder.start()
+        if not self._recorder.is_recording:
+            # AudioRecorder.start() mikrofon açılamazsa hatayı zaten error sinyaliyle
+            # bildirdi (_on_recorder_error tetiklendi); burada IDLE'a geçmeyip RECORDING
+            # göstermek, hiç ses yakalanmayan bir kaydı kullanıcıya "kayıtta" gösterirdi.
+            return
         self._set_state(DictationState.RECORDING)
 
     def _stop_and_transcribe(self) -> None:
@@ -268,7 +291,9 @@ class DictationController(QObject):
         self._chunk_sample_total += audio.shape[0]
         lang = self._settings.stt.language
         self._spawn(
-            lambda: self._stt.transcribe(audio, lang, previous_text=self._joined_text()),
+            lambda: self._stt.transcribe(
+                audio, lang, previous_text=self._joined_text(), allow_empty=True
+            ),
             lambda result: self._on_chunk_transcribed(seq, result),
             self._on_chunk_error,
         )
@@ -281,6 +306,8 @@ class DictationController(QObject):
 
     def _on_chunk_error(self, msg: str) -> None:
         self._gen += 1  # bekleyen diğer parçaların geç gelen sonuçları da yok sayılsın
+        if self._state is DictationState.RECORDING:
+            self._recorder.stop()  # ses atılır; mikrofon açık kalmasın
         self._on_stt_error(msg)
 
     def _maybe_finish_transcription(self) -> None:
@@ -305,7 +332,7 @@ class DictationController(QObject):
             self._set_state(DictationState.IDLE)
             return
         entries = self._settings.dictionary.entries
-        text = apply_rules(result.text, entries)
+        text = apply_compiled(result.text, self._compiled_dictionary_rules)
         if self._settings.voice_commands:
             text = apply_commands(text)
         self._update_session(raw_text=text, duration_s=result.duration_s)
@@ -341,7 +368,13 @@ class DictationController(QObject):
         if mode == "correct":
             self._finish_result()
             return
-        if not self._settings.llm.enabled:
+        # profile_skips_llm: _on_transcribed'daki düzeltme-atlama kontrolüyle aynı — profil
+        # llm_enabled=False dediyse (ör. hassas bir uygulama eşleşti), çeviri/prompt da uzak
+        # sağlayıcıya gitmemeli. Yalnızca global ayarı kontrol etmek bu korumayı atlıyordu.
+        profile_skips_llm = (
+            self._active_profile is not None and not self._active_profile.llm_enabled
+        )
+        if not self._settings.llm.enabled or profile_skips_llm:
             self.error.emit(
                 "LLM kapalı; çeviri/prompt için Ayarlar'dan açın. Düzeltilmemiş metin yapıştırıldı."
             )

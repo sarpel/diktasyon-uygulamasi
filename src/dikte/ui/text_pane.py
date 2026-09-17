@@ -33,7 +33,7 @@ class TextPane(QWidget):
         self.copy_btn.setIcon(copy_icon())
         self.copy_btn.setToolTip("Kopyala (Ctrl+Shift+C)")
         self.copy_btn.setAutoRaise(True)
-        self.copy_btn.clicked.connect(self._copy)
+        self.copy_btn.clicked.connect(self.copy)
         self.editor = QPlainTextEdit()
         self.editor.setPlaceholderText("…")
         self.editor.setMouseTracking(True)
@@ -88,7 +88,7 @@ class TextPane(QWidget):
         self.copy_btn.setEnabled(not busy)
         self.editor.setPlaceholderText("Bekleniyor…" if busy else "…")
 
-    def _copy(self) -> None:
+    def copy(self) -> None:
         text = self.text()
         if not text:
             return

@@ -73,6 +73,7 @@ class RecordingOverlay(QWidget):
         self._dot_on = True
         self._error_token = 0
         self._pending_error_token = 0
+        self._showing_error = False
         self._error_timer = QTimer(self)
         self._error_timer.setSingleShot(True)
         self._error_timer.timeout.connect(self._on_error_timeout)
@@ -112,6 +113,7 @@ class RecordingOverlay(QWidget):
         self._blink.stop()
         self._clock.stop()
         self._error_timer.stop()
+        self._showing_error = True
         self._error_token += 1
         self._pending_error_token = self._error_token
         self._dot.setStyleSheet("color:#E53935;font-size:22px;")
@@ -134,6 +136,7 @@ class RecordingOverlay(QWidget):
     def hide_overlay(self) -> None:
         self._blink.stop()
         self._clock.stop()
+        self._showing_error = False
         self._dot.setStyleSheet("color:#E53935;font-size:22px;")
         self._partial.setText("")
         self._partial.hide()
@@ -151,12 +154,18 @@ class RecordingOverlay(QWidget):
         self._wave.push_buckets(tuple(buckets))
 
     def on_state(self, state: DictationState) -> None:
-        self._error_token += 1  # bekleyen hata gizleme zamanlayıcısını geçersiz kılar
         if state is DictationState.RECORDING:
+            self._error_token += 1  # bekleyen hata gizleme zamanlayıcısını geçersiz kılar
             self.show_recording()
         elif state in _STATUS:
+            self._error_token += 1
             self.show_status(_STATUS[state])
-        else:
+        elif not self._showing_error:
+            # error sinyali her zaman state_changed'dan hemen önce gelir (bkz.
+            # controller._on_stt_error); IDLE/RESULT'a bu geçiş yüzünden anında gizlemek,
+            # kullanıcının hata mesajını hiç görmeden overlay'in kaybolmasına yol açardı.
+            # Gösterilen bir hata varsa kendi zamanlayıcısı (_error_timer) bitirsin.
+            self._error_token += 1
             self.hide_overlay()
 
     # ---- iç

@@ -54,7 +54,7 @@ Giriş noktaları: `python -m dikte` (`src/dikte/__main__.py`) ve `dikte` konsol
 ## Sözleşmeler
 
 - **TDD zorunlu:** önce başarısız test, sonra en küçük uygulama, sonra commit.
-  Kapsam ≥ %80 (bugün %92, 579 test). Conventional Commits, Türkçe mesaj.
+  Kapsam ≥ %80 (bugün %91, 593 test). Conventional Commits, Türkçe mesaj.
 - **Değişmezlik:** pydantic modelleri `frozen=True`; değişiklik yalnızca
   `model_copy(update=...)` ile. Yerinde mutasyon yok.
 - **Enjekte edilebilir dış dünya:** GPU, ağ ve SDK erişimleri `*_factory` / `*_probe`

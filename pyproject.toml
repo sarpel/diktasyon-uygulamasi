@@ -9,7 +9,7 @@ dependencies = [
   "numpy>=1.26",
   "faster-whisper>=1.1.0",
   "ctranslate2>=4.5",
-  "ollama>=0.4",
+  "ollama>=0.5",  # ollama_provider.py her zaman think= gönderiyor, 0.5'te eklendi
   "pydantic>=2.7",
 ]
 
@@ -22,7 +22,7 @@ dev = [
   "pytest>=8",
   "pytest-qt>=4.4",
   "pytest-cov>=5",
-  "ruff>=0.5",
+  "ruff>=0.16",  # ci.yml'nin sabitlediği sürümle eşleşmeli, aksi hâlde yerel lint CI'dan sapar
   "pyinstaller>=6.6",
   "pyright>=1.1.390",
   # Tip denetimi için opsiyonel sağlayıcı SDK'ları da kurulu olmalı.

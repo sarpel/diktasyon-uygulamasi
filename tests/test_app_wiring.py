@@ -442,6 +442,24 @@ def test_restore_clipboard_after_paste(ctx, monkeypatch, qtbot):
     qtbot.waitUntil(lambda: QApplication.clipboard().text() == "eski", timeout=2000)
 
 
+def test_restore_clipboard_preserves_image_not_just_text(ctx, monkeypatch, qtbot):
+    """F: restore_clipboard yalnızca metni koruyordu; panodaki bir resim dikte sonrası
+    geri yükleme sırasında sessizce kayboluyordu."""
+    from PySide6.QtGui import QImage
+    from PySide6.QtWidgets import QApplication
+
+    ctx.settings = ctx.settings.model_copy(update={"restore_clipboard": True})
+    image = QImage(4, 4, QImage.Format.Format_RGB32)
+    image.fill(0xFF00FF)
+    QApplication.clipboard().setImage(image)
+    monkeypatch.setattr(app_mod, "paste_active_window", lambda ids, **k: True)
+    app_mod._on_result_ready(ctx, "yeni")
+    assert QApplication.clipboard().text() == "yeni"
+    qtbot.waitUntil(lambda: not QApplication.clipboard().image().isNull(), timeout=2000)
+    restored = QApplication.clipboard().image()
+    assert restored.size() == image.size()
+
+
 def test_clipboard_not_restored_when_paste_skipped(ctx, monkeypatch, qtbot):
     from PySide6.QtWidgets import QApplication
 
@@ -456,7 +474,7 @@ def test_clipboard_not_restored_when_paste_skipped(ctx, monkeypatch, qtbot):
 def test_result_ready_uses_profile_paste_combo(ctx, monkeypatch):
     from dikte.config import AppProfile
 
-    ctx.active_profile = AppProfile(name="Terminal", match="wt", paste="ctrl+shift+v")
+    ctx.controller._active_profile = AppProfile(name="Terminal", match="wt", paste="ctrl+shift+v")
     combos = []
     monkeypatch.setattr(
         app_mod, "paste_active_window", lambda ids, **k: combos.append(k.get("combo")) or True
@@ -468,7 +486,7 @@ def test_result_ready_uses_profile_paste_combo(ctx, monkeypatch):
 def test_result_ready_uses_type_when_profile_paste_is_type(ctx, monkeypatch):
     from dikte.config import AppProfile
 
-    ctx.active_profile = AppProfile(name="Kod", match="code", paste="type")
+    ctx.controller._active_profile = AppProfile(name="Kod", match="code", paste="type")
     typed = []
     pasted = []
     monkeypatch.setattr(app_mod, "type_unicode_text", lambda text: typed.append(text) or True)
@@ -483,7 +501,7 @@ def test_result_ready_appends_profile_trailing(ctx, monkeypatch):
 
     from dikte.config import AppProfile
 
-    ctx.active_profile = AppProfile(name="Terminal", match="wt", trailing="\n")
+    ctx.controller._active_profile = AppProfile(name="Terminal", match="wt", trailing="\n")
     monkeypatch.setattr(app_mod, "paste_active_window", lambda *a, **k: True)
     app_mod._on_result_ready(ctx, "Merhaba.")
     assert QApplication.clipboard().text() == "Merhaba.\n"
@@ -563,8 +581,19 @@ def test_history_selection_loads_into_window(ctx):
 def test_text_edited_reaches_controller_apply_edit(ctx):
     ctx.controller._update_session(raw_text="a", corrected_text="A.")
     ctx.controller._state = DictationState.RESULT
-    ctx.window.text_edited.emit("A düzenlendi.")
+    ctx.window.text_edited.emit(ctx.controller.session.id, "A düzenlendi.")
     assert ctx.controller.session.corrected_text == "A düzenlendi."
+
+
+def test_text_edited_for_history_session_does_not_touch_live_session(ctx):
+    from dikte.core.state import Session
+
+    ctx.controller._update_session(raw_text="a", corrected_text="A.")
+    ctx.controller._state = DictationState.RESULT
+    ctx.history.append(Session(id="old-1", raw_text="eski", corrected_text="Eski."))
+    ctx.window.text_edited.emit("old-1", "Eski düzenlendi.")
+    assert ctx.controller.session.corrected_text == "A."
+    assert [s.corrected_text for s in ctx.history.load() if s.id == "old-1"] == ["Eski düzenlendi."]
 
 
 def test_session_update_while_result_updates_history(ctx):
@@ -607,7 +636,7 @@ def test_add_dictionary_entry_saves_and_updates_settings(ctx, monkeypatch):
 def test_repaste_hides_window_and_re_delivers_text(ctx, monkeypatch, qtbot):
     ctx.window.show()
     delivered = []
-    monkeypatch.setattr(app_mod, "_on_result_ready", lambda c, t: delivered.append(t))
+    monkeypatch.setattr(app_mod, "_on_result_ready", lambda c, t, **k: delivered.append(t))
     ctx.window.repaste_requested.emit("yeniden yapıştırılan metin")
     assert not ctx.window.isVisible()
     qtbot.waitUntil(lambda: delivered == ["yeniden yapıştırılan metin"], timeout=1000)
@@ -684,7 +713,7 @@ def test_error_shows_on_overlay(ctx):
     assert "Konuşma" in ctx.overlay._status.text()
 
 
-def test_stt_model_load_error_shows_health_dialog(ctx, monkeypatch):
+def test_stt_model_load_error_shows_health_dialog(ctx, monkeypatch, qtbot):
     from dikte.core.health import HealthItem
 
     fake_items = (
@@ -695,8 +724,11 @@ def test_stt_model_load_error_shows_health_dialog(ctx, monkeypatch):
     monkeypatch.setattr(app_mod, "check_health", lambda *a, **k: fake_items)
     assert ctx.health_dialog is None
     ctx.controller.error.emit("STT modeli yüklenemedi: dosya bulunamadı")
-    assert ctx.health_dialog is not None
-    assert len(ctx.health_dialog._labels) == 3
+    # check_health artık arka planda (QThreadPool) çalışıyor; GUI iş parçacığı bloke olmasın diye.
+    qtbot.waitUntil(lambda: ctx.health_dialog is not None, timeout=3000)
+    dialog = ctx.health_dialog
+    assert dialog is not None
+    assert len(dialog._labels) == 3
 
 
 def test_unrelated_error_does_not_show_health_dialog(ctx):
