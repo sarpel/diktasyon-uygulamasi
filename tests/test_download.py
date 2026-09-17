@@ -1,4 +1,5 @@
 import io
+import sys
 
 from dikte.stt.download import download_model
 
@@ -22,6 +23,27 @@ def test_download_model_reports_progress_via_injected_downloader(tmp_path):
     )
     assert result == tmp_path / "snapshot"
     assert calls == [(40, 100), (100, 100)]
+
+
+def test_download_model_works_when_stderr_is_none(tmp_path, monkeypatch):
+    """F: paketlenmiş derlemede (console=False) sys.stderr None; tqdm varsayılan olarak
+    oraya yazıp "'NoneType' object has no attribute 'write'" ile indirmeyi düşürüyordu."""
+    monkeypatch.setattr(sys, "stderr", None)
+    calls = []
+
+    def fake_downloader(*, repo_id, cache_dir, tqdm_class):
+        bar = tqdm_class(total=10)  # hf_hub `file` geçmez
+        bar.update(10)
+        bar.close()
+        return str(tmp_path)
+
+    download_model(
+        "large-v3-turbo",
+        tmp_path,
+        progress=lambda done, total: calls.append((done, total)),
+        downloader=fake_downloader,
+    )
+    assert calls == [(10, 10)]
 
 
 def test_download_model_resolves_repo_id_from_model_name(tmp_path):

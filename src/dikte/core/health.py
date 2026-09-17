@@ -1,8 +1,9 @@
 from __future__ import annotations
 
 import logging
+import os
 import re
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -19,6 +20,35 @@ class HealthItem:
     hint: str
 
 
+_MODEL_FILE = "model.bin"
+
+
+def _iter_model_files(root: Path) -> Iterator[Path]:
+    """`root` altındaki tüm `model.bin` dosyalarını üretir; okunamayan girdileri atlar.
+
+    `Path.glob` her adayı `stat()` ile doğrular ve symlink'i izler. Windows'ta HF
+    önbelleği `snapshots/<rev>/model.bin`i `blobs/<sha>`ya symlink'lediğinden bu
+    doğrulama "WinError 448: güvenilmeyen bağlama noktası" ile patlayabiliyor ve
+    uygulamayı açılışta düşürüyordu. Bu yüzden dizin listesi üzerinden, symlink
+    izlemeden ilerlenir ve her OSError yutulur.
+    """
+    stack = [root]
+    while stack:
+        current = stack.pop()
+        try:
+            with os.scandir(current) as entries:
+                for entry in entries:
+                    try:
+                        if entry.is_dir(follow_symlinks=False):
+                            stack.append(Path(entry.path))
+                        elif entry.name == _MODEL_FILE:
+                            yield Path(entry.path)
+                    except OSError as exc:  # tek bir girdi okunamadı; tarama sürmeli
+                        log.debug("Model önbelleği girdisi okunamadı (%s): %s", entry.path, exc)
+        except OSError as exc:  # dizin listelenemedi (izin, symlink, ağ sürücüsü)
+            log.debug("Model önbelleği dizini taranamadı (%s): %s", current, exc)
+
+
 def model_is_cached(model: str, root: Path) -> bool:
     """Varsayılan model_probe: `root` altında `*<model>*/**/model.bin` eşleşmesi arar.
 
@@ -27,7 +57,13 @@ def model_is_cached(model: str, root: Path) -> bool:
     (isteğe bağlı bir "-" ile) başka bir alfasayısal karakter gelmemesi şartı aranır.
     """
     guard = re.compile(re.escape(model) + r"(?!-?[0-9a-zA-Z])")
-    return any(guard.search(str(p)) for p in root.glob(f"*{model}*/**/model.bin"))
+    for path in _iter_model_files(root):
+        parts = path.relative_to(root).parts
+        if len(parts) < 2 or model not in parts[0]:
+            continue
+        if guard.search(str(path)):
+            return True
+    return False
 
 
 def check_health(

@@ -6,12 +6,21 @@ paket eklenmedi.
 
 from __future__ import annotations
 
+import io
 import logging
+import sys
 from collections.abc import Callable
 from pathlib import Path
 from typing import cast
 
 log = logging.getLogger(__name__)
+
+
+class _NullStream(io.StringIO):
+    """tqdm'in yazdıklarını yutar; bellekte biriktirmez."""
+
+    def write(self, s: str) -> int:
+        return len(s)
 
 
 def download_model(
@@ -31,6 +40,14 @@ def download_model(
     repo_id = _MODELS.get(model, model)
 
     class _ProgressTqdm(tqdm):
+        def __init__(self, *args, **kwargs):
+            # Paketlenmiş derlemede (PyInstaller, console=False) sys.stderr None'dır;
+            # tqdm varsayılan olarak oraya yazmaya çalışıp indirmeyi
+            # "'NoneType' object has no attribute 'write'" ile düşürür.
+            if kwargs.get("file") is None:
+                kwargs["file"] = sys.stderr or _NullStream()
+            super().__init__(*args, **kwargs)
+
         def update(self, n=1):
             super().update(n)
             progress(self.n, self.total or 0)

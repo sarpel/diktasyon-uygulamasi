@@ -71,3 +71,47 @@ def test_model_is_cached_does_not_match_turbo_as_plain_large_v3(tmp_path):
     d.mkdir(parents=True)
     (d / "model.bin").write_bytes(b"x")
     assert model_is_cached("large-v3", tmp_path) is False
+
+
+def test_model_is_cached_survives_unreadable_entry(tmp_path, monkeypatch):
+    """F: Windows'ta HF önbelleğindeki symlink'ler dizin gezilirken OSError (WinError 448)
+    fırlatabiliyor; tarama çökmek yerine o girdiyi atlamalı."""
+    import os as _os
+
+    broken = tmp_path / "models--x--broken"
+    broken.mkdir()
+    good = tmp_path / "models--x--faster-whisper-large-v3-turbo" / "snapshots" / "a"
+    good.mkdir(parents=True)
+    (good / "model.bin").write_bytes(b"x")
+
+    real_scandir = _os.scandir
+
+    def fake_scandir(path):
+        if str(path) == str(broken):
+            raise OSError(448, "The path cannot be traversed")
+        return real_scandir(path)
+
+    monkeypatch.setattr("dikte.core.health.os.scandir", fake_scandir)
+    assert model_is_cached("large-v3-turbo", tmp_path) is True
+
+
+def test_model_is_cached_is_false_when_every_entry_is_unreadable(tmp_path, monkeypatch):
+    (tmp_path / "models--x--faster-whisper-large-v3-turbo").mkdir()
+
+    def fake_scandir(path):
+        raise OSError(448, "The path cannot be traversed")
+
+    monkeypatch.setattr("dikte.core.health.os.scandir", fake_scandir)
+    assert model_is_cached("large-v3-turbo", tmp_path) is False
+
+
+def test_model_is_cached_finds_model_bin_behind_symlink(tmp_path):
+    """HF önbelleği snapshots/<rev>/model.bin'i blobs/<sha>'ya symlink'ler."""
+    blobs = tmp_path / "models--x--faster-whisper-large-v3-turbo" / "blobs"
+    blobs.mkdir(parents=True)
+    blob = blobs / "deadbeef"
+    blob.write_bytes(b"x")
+    snap = tmp_path / "models--x--faster-whisper-large-v3-turbo" / "snapshots" / "a"
+    snap.mkdir(parents=True)
+    (snap / "model.bin").symlink_to(blob)
+    assert model_is_cached("large-v3-turbo", tmp_path) is True
