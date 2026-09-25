@@ -3,6 +3,7 @@ from __future__ import annotations
 import ctypes
 import logging
 import sys
+from typing import Protocol
 
 from PySide6.QtCore import QAbstractNativeEventFilter, QCoreApplication, QObject, Signal
 
@@ -31,12 +32,38 @@ class _Filter(QAbstractNativeEventFilter):
         return False, 0
 
 
+class NativeHotkeyApi(Protocol):
+    def register(self, hotkey_id: int, modifiers: int, vk: int) -> bool: ...
+    def unregister(self, hotkey_id: int) -> None: ...
+    def last_error(self) -> int: ...
+
+
+class _Win32HotkeyApi:
+    """user32 RegisterHotKey/UnregisterHotKey; yalnızca win32'de çağrılır."""
+
+    def register(self, hotkey_id: int, modifiers: int, vk: int) -> bool:
+        return bool(ctypes.windll.user32.RegisterHotKey(None, hotkey_id, modifiers, vk))
+
+    def unregister(self, hotkey_id: int) -> None:
+        ctypes.windll.user32.UnregisterHotKey(None, hotkey_id)
+
+    def last_error(self) -> int:
+        return ctypes.GetLastError()
+
+
 class GlobalHotkey(QObject):
     activated = Signal()
 
-    def __init__(self, hotkey_id: int = HOTKEY_ID, parent=None):
+    def __init__(
+        self,
+        hotkey_id: int = HOTKEY_ID,
+        parent=None,
+        *,
+        native: NativeHotkeyApi | None = None,
+    ):
         super().__init__(parent)
         self._id = hotkey_id  # her örnek kendi kimliğiyle kaydolur
+        self._native: NativeHotkeyApi = native or _Win32HotkeyApi()
         self._filter: _Filter | None = None
         self._spec: HotkeySpec | None = None
 
@@ -47,6 +74,7 @@ class GlobalHotkey(QObject):
         except HotkeyParseError as exc:
             log.error("kısayol ayrıştırılamadı (%s): %s", spec, exc)
             return False
+        previous = self._spec
         self.unregister()
         if sys.platform != "win32":
             log.warning("Global kısayol yalnızca Windows'ta desteklenir (%s)", parsed.label)
@@ -55,20 +83,37 @@ class GlobalHotkey(QObject):
         if app is None:
             log.error("QCoreApplication yok; kısayol kaydedilemez (%s)", parsed.label)
             return False
-        ok = ctypes.windll.user32.RegisterHotKey(None, self._id, parsed.modifiers, parsed.vk)
-        if not ok:
-            err = ctypes.GetLastError()
+        if not self._native.register(self._id, parsed.modifiers, parsed.vk):
+            err = self._native.last_error()
             log.error("RegisterHotKey başarısız (%s), hata=%s", parsed.label, err)
+            self._restore(previous, app)
             return False
-        self._filter = _Filter(self.activated.emit, self._id)
-        app.installNativeEventFilter(self._filter)
-        self._spec = parsed
+        self._install(parsed, app)
         log.info("Global kısayol kaydedildi: %s", parsed.label)
         return True
 
+    def _install(self, spec: HotkeySpec, app: QCoreApplication) -> None:
+        self._filter = _Filter(self.activated.emit, self._id)
+        app.installNativeEventFilter(self._filter)
+        self._spec = spec
+
+    def _restore(self, previous: HotkeySpec | None, app: QCoreApplication) -> None:
+        """Yeni kısayol alınamadıysa kullanıcı kısayolsuz kalmasın: eskisini geri kaydet."""
+        if previous is None:
+            return
+        if self._native.register(self._id, previous.modifiers, previous.vk):
+            self._install(previous, app)
+            log.info("Önceki kısayol geri yüklendi: %s", previous.label)
+        else:
+            log.error(
+                "önceki kısayol da geri kaydedilemedi (%s), hata=%s",
+                previous.label,
+                self._native.last_error(),
+            )
+
     def unregister(self) -> None:
         if sys.platform == "win32" and self._spec is not None:
-            ctypes.windll.user32.UnregisterHotKey(None, self._id)
+            self._native.unregister(self._id)
         if self._filter is not None:
             app = QCoreApplication.instance()
             if app is not None:
