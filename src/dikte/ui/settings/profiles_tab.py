@@ -21,8 +21,16 @@ Mode = Literal["correct", "translate", "prompt"]
 Paste = Literal["ctrl+v", "ctrl+shift+v", "type"]
 Trailing = Literal["", " ", "\n"]
 
-_MODES: tuple[Mode, ...] = ("correct", "translate", "prompt")
-_PASTES: tuple[Paste, ...] = ("ctrl+v", "ctrl+shift+v", "type")
+_MODE_LABELS: dict[Mode, str] = {
+    "correct": "Düzelt",
+    "translate": "İngilizce'ye çevir",
+    "prompt": "Agent prompt'u",
+}
+_PASTE_LABELS: dict[Paste, str] = {
+    "ctrl+v": "Ctrl+V",
+    "ctrl+shift+v": "Ctrl+Shift+V (terminal)",
+    "type": "Tuş tuş yaz",
+}
 _TRAILING_LABELS: dict[Trailing, str] = {"": "(yok)", " ": "boşluk", "\n": "yeni satır"}
 _TRAILING_VALUES: dict[str, Trailing] = {label: value for value, label in _TRAILING_LABELS.items()}
 
@@ -64,13 +72,20 @@ class ProfilesTab(QWidget):
         self.profiles_table.setItem(row, MATCH_COL, QTableWidgetItem(profile.match))
 
         mode_combo = QComboBox()
-        mode_combo.addItems(list(_MODES))
-        mode_combo.setCurrentText(profile.mode)
+        for mode, label in _MODE_LABELS.items():
+            mode_combo.addItem(label, mode)
+        mode_combo.setCurrentIndex(max(mode_combo.findData(profile.mode), 0))
+        mode_combo.setToolTip("Bu uygulamada kısayolun varsayılan olarak yaptığı iş")
         self.profiles_table.setCellWidget(row, MODE_COL, mode_combo)
 
         paste_combo = QComboBox()
-        paste_combo.addItems(list(_PASTES))
-        paste_combo.setCurrentText(profile.paste)
+        for paste, label in _PASTE_LABELS.items():
+            paste_combo.addItem(label, paste)
+        paste_combo.setCurrentIndex(max(paste_combo.findData(profile.paste), 0))
+        paste_combo.setToolTip(
+            "Metnin nasıl yapıştırılacağı: Ctrl+V, terminaller için Ctrl+Shift+V ya da "
+            "yapıştırmayı engelleyen alanlar için tuş tuş yazma"
+        )
         self.profiles_table.setCellWidget(row, PASTE_COL, paste_combo)
 
         llm_check = QCheckBox()
@@ -100,8 +115,8 @@ class ProfilesTab(QWidget):
                 AppProfile(
                     name=(name_item.text() if name_item else "").strip(),
                     match=(match_item.text() if match_item else "").strip(),
-                    mode=cast(Mode, mode_combo.currentText()),
-                    paste=cast(Paste, paste_combo.currentText()),
+                    mode=cast(Mode, mode_combo.currentData()),
+                    paste=cast(Paste, paste_combo.currentData()),
                     llm_enabled=llm_check.isChecked(),
                     trailing=_TRAILING_VALUES[trailing_combo.currentText()],
                 )
