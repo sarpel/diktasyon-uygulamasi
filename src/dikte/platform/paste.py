@@ -20,9 +20,16 @@ from typing import Literal
 log = logging.getLogger(__name__)
 
 VK_CONTROL, VK_SHIFT, VK_V, KEYEVENTF_KEYUP = 0x11, 0x10, 0x56, 0x0002
+VK_RETURN = 0x0D
 KEYEVENTF_UNICODE = 0x0004
 INPUT_KEYBOARD = 1
 _PASTE_TIMEOUT_S = 3
+# xdotool'un varsayılan 12 ms/karakter gecikmesi ~250 karakterden uzun metinleri sabit
+# zaman aşımında yarıda kestiriyordu; 1 ms ile yazılır, zaman aşımı uzunlukla ölçeklenir
+# (xdotool Unicode karakterler için tuş haritası değiştirdiğinden karakter başına pay
+# bırakılır).
+_XDOTOOL_TYPE_DELAY_MS = "1"
+_TYPE_TIMEOUT_PER_CHAR_S = 0.02
 _warned = {"tools": False}
 
 KeyCombo = Literal["ctrl+v", "ctrl+shift+v"]
@@ -119,16 +126,45 @@ def _utf16_code_units(text: str) -> list[int]:
     return list(struct.unpack(f"<{len(raw) // 2}H", raw))
 
 
+def type_timeout_s(length: int) -> float:
+    """Doğrudan yazma alt süreci için zaman aşımı: en az 3 sn, uzunlukla artar."""
+    return _PASTE_TIMEOUT_S + length * _TYPE_TIMEOUT_PER_CHAR_S
+
+
+_SHIFT_ENTER: tuple[tuple[int, int, int], ...] = (
+    (VK_SHIFT, 0, 0),
+    (VK_RETURN, 0, 0),
+    (VK_RETURN, 0, KEYEVENTF_KEYUP),
+    (VK_SHIFT, 0, KEYEVENTF_KEYUP),
+)
+
+
+def build_type_events(text: str) -> list[tuple[int, int, int]]:
+    """Windows "yaz" modu için (wVk, wScan, dwFlags) listesi.
+
+    Satır sonu Unicode tuş vuruşu olarak gönderilince bazı uygulamalar onu düşürüyor,
+    sohbet uygulamaları ise Enter sayıp mesajı gönderiyordu; bu yüzden `\n` (ve `\r\n`,
+    `\r`) sanal Shift+Enter olarak gönderilir — çoğu uygulamada "yeni satır" demektir."""
+    normalized = text.replace("\r\n", "\n").replace("\r", "\n")
+    events: list[tuple[int, int, int]] = []
+    for i, line in enumerate(normalized.split("\n")):
+        if i:
+            events.extend(_SHIFT_ENTER)
+        for scan in _utf16_code_units(line) if line else ():
+            events.append((0, scan, KEYEVENTF_UNICODE))
+            events.append((0, scan, KEYEVENTF_UNICODE | KEYEVENTF_KEYUP))
+    return events
+
+
 def _type_windows(text: str) -> bool:
-    events: list[tuple[int, int]] = []
-    for scan in _utf16_code_units(text):
-        events.append((scan, KEYEVENTF_UNICODE))
-        events.append((scan, KEYEVENTF_UNICODE | KEYEVENTF_KEYUP))
+    events = build_type_events(text)
+    if not events:
+        return True
     user32 = ctypes.windll.user32
     arr = (_INPUT * len(events))(
         *(
-            _INPUT(type=INPUT_KEYBOARD, ki=_KEYBDINPUT(0, scan, flags, 0, None))
-            for scan, flags in events
+            _INPUT(type=INPUT_KEYBOARD, ki=_KEYBDINPUT(vk, scan, flags, 0, None))
+            for vk, scan, flags in events
         )
     )
     sent = user32.SendInput(len(arr), arr, ctypes.sizeof(_INPUT))
@@ -163,14 +199,15 @@ def _type_linux(text: str) -> bool:
     """Önce xdotool (X11), başarısız olursa wtype (Wayland) ile metni doğrudan yazar."""
     found_tool = False
     for name, args in (
-        ("xdotool", ["type", "--clearmodifiers", "--", text]),
+        ("xdotool", ["type", "--clearmodifiers", "--delay", _XDOTOOL_TYPE_DELAY_MS, "--", text]),
         ("wtype", ["--", text]),
     ):
         path = shutil.which(name)
         if not path:
             continue
         found_tool = True
-        result = subprocess.run([path, *args], check=False, timeout=_PASTE_TIMEOUT_S)
+        timeout = type_timeout_s(len(text))
+        result = subprocess.run([path, *args], check=False, timeout=timeout)
         if result.returncode == 0:
             return True
         log.warning("%s yazma komutu başarısız (çıkış kodu %s)", name, result.returncode)

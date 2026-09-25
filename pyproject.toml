@@ -18,6 +18,8 @@ cuda = ["nvidia-cublas-cu12", "nvidia-cudnn-cu12>=9"]
 anthropic = ["anthropic>=1.0"]  # 0.x ANTHROPIC_AUTH_TOKEN'ı Bearer olarak sızdırabilir
 openai = ["openai>=2"]
 gemini = ["google-genai>=1.30"]
+# Windows'ta kayıt sırasında medyayı duraklatma (WinRT oturum yöneticisi); Linux playerctl kullanır.
+media = ["winsdk>=1.0.0b10; sys_platform == 'win32'"]
 dev = [
   "pytest>=8",
   "pytest-qt>=4.4",

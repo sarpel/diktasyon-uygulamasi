@@ -2,12 +2,15 @@ from __future__ import annotations
 
 import logging
 import subprocess
+import sys
 from collections.abc import Callable
 from dataclasses import dataclass
 
 log = logging.getLogger(__name__)
 
 LOW_VRAM_MB = 1536
+# subprocess.CREATE_NO_WINDOW yalnızca Windows'ta tanımlı; Linux/pyright için sabit yedek.
+_CREATE_NO_WINDOW = getattr(subprocess, "CREATE_NO_WINDOW", 0x08000000)
 
 
 @dataclass(frozen=True)
@@ -16,11 +19,19 @@ class VramInfo:
     total_mb: int
 
 
-def _run_nvidia_smi() -> str:
-    return subprocess.check_output(
+def _run_nvidia_smi(
+    *,
+    platform: str = sys.platform,
+    check_output: Callable[..., str] = subprocess.check_output,
+) -> str:
+    """Pencereli (paketlenmiş) uygulamada her çağrıda konsol penceresi yanıp sönmesin
+    diye Windows'ta CREATE_NO_WINDOW verilir."""
+    kwargs: dict[str, object] = {"timeout": 3, "text": True}
+    if platform == "win32":
+        kwargs["creationflags"] = _CREATE_NO_WINDOW
+    return check_output(
         ["nvidia-smi", "--query-gpu=memory.used,memory.total", "--format=csv,noheader,nounits"],
-        timeout=3,
-        text=True,
+        **kwargs,
     )
 
 
