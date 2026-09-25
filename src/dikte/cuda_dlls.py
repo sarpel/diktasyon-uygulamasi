@@ -9,11 +9,16 @@ from pathlib import Path
 
 log = logging.getLogger(__name__)
 _PACKAGES = ("nvidia.cublas", "nvidia.cudnn")
+_registered: list[str] | None = None  # ilk başarılı kayıttan sonra tekrar yapılmaz
 
 
 def register_nvidia_dll_dirs() -> list[str]:
+    """Idempotent: motor, sağlık denetimi vb. her çağırdığında PATH büyümesin."""
+    global _registered
     if sys.platform != "win32":
         return []
+    if _registered is not None:
+        return list(_registered)
     added: list[str] = []
     for pkg in _PACKAGES:
         spec = importlib.util.find_spec(pkg)
@@ -25,4 +30,5 @@ def register_nvidia_dll_dirs() -> list[str]:
             os.environ["PATH"] = f"{bin_dir};{os.environ.get('PATH', '')}"
             added.append(str(bin_dir))
     log.info("NVIDIA DLL dizinleri: %s", added)
-    return added
+    _registered = added
+    return list(added)

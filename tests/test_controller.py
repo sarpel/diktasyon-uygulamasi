@@ -18,10 +18,12 @@ class FakeRecorder(QObject):
     silence_reached = Signal()
     chunk_ready = Signal(object)
     error = Signal(str)
+    warning = Signal(str)
 
     def __init__(self, fail_to_start=False):
         super().__init__()
         self.started = self.stopped = False
+        self.chunks_emitted = 0  # gerçek kayıtçı durdurma anına kadar kestiği parça sayısı
         self.audio = np.ones(16000, dtype=np.float32) * 0.1
         self.chunking = None
         self._fail_to_start = fail_to_start
@@ -33,6 +35,7 @@ class FakeRecorder(QObject):
 
     def start(self):
         self.started = True
+        self.chunks_emitted = 0
         if self._fail_to_start:
             self.error.emit("mikrofon açılamadı")
             return
@@ -784,3 +787,294 @@ def test_live_chunk_error_sets_idle_and_emits_error(qtbot):
     rec.chunk_ready.emit(np.ones(1600, dtype=np.float32) * 0.1)
     qtbot.waitUntil(lambda: c.state is DictationState.IDLE, timeout=3000)
     assert errors and "çözümleme koptu" in errors[-1]
+
+
+def test_many_in_flight_jobs_all_deliver_callbacks(qtbot):
+    """_track eskiden yalnızca son 16 sinyal nesnesini tutuyordu; 16'dan fazla eşzamanlı
+    işte ilk işlerin sinyal nesneleri teslimattan önce çöpe gidip geri çağrılar kayboluyordu."""
+    import gc
+    import time
+
+    llm = FakeLlm()
+    pool = QThreadPool()
+    pool.setMaxThreadCount(32)
+    c = DictationController(Settings(), recorder=FakeRecorder(), stt=FakeStt(), llm=llm, pool=pool)
+    delivered = []
+    c.session_updated.connect(lambda s: delivered.append(s.translation))
+    for i in range(24):
+        c.request_translation(f"metin {i}")
+    pool.waitForDone(5000)  # tüm işler bitti ve sonuçlarını kuyruğa koydu
+    time.sleep(0.05)
+    gc.collect()
+    qtbot.waitUntil(lambda: len(delivered) == 24, timeout=3000)
+    qtbot.waitUntil(lambda: len(c._jobs) == 0, timeout=3000)  # teslim edilen işler bırakılır
+
+
+# ---- durdurma anında kuyrukta kalan parça (ses kaybı regresyonu)
+
+
+def test_chunk_arriving_after_stop_is_not_lost(qtbot):
+    """Kayıtçı, durdurmadan hemen önceki sessiz blokta bir parça keser; kuyruklu sinyali
+    stop() sonrası (TRANSCRIBING) gelir. Eskiden atılıyordu: 45 sn'ye kadar konuşma kaybı."""
+    rec = FakeRecorder()
+    stt = SequentialStt(["Birinci.", "Gecikmiş.", "Kuyruk."])
+    c = DictationController(
+        _live_chunk_settings(), recorder=rec, stt=stt, llm=FakeLlm(), pool=QThreadPool()
+    )
+    partials = []
+    c.partial_text.connect(partials.append)
+    c.toggle()
+    rec.chunks_emitted = 1
+    rec.chunk_ready.emit(np.ones(1600, dtype=np.float32) * 0.1)
+    qtbot.waitUntil(lambda: len(partials) == 1, timeout=3000)
+    rec.chunks_emitted = 2  # ikinci parça kesildi ama sinyali henüz teslim edilmedi
+    c.toggle()
+    assert c.state is DictationState.TRANSCRIBING
+    rec.chunk_ready.emit(np.ones(1600, dtype=np.float32) * 0.2)  # geç teslimat
+    qtbot.waitUntil(lambda: c.state is DictationState.RESULT, timeout=3000)
+    assert c.session.raw_text == "Birinci. Gecikmiş. Kuyruk."
+    assert stt.calls == ["", "Birinci.", "Birinci. Gecikmiş."]  # kuyruk en sonda
+
+
+def test_missing_late_chunk_does_not_hang_forever(qtbot, monkeypatch):
+    import dikte.core.controller as ctl_mod
+
+    monkeypatch.setattr(ctl_mod, "LATE_CHUNK_TIMEOUT_MS", 50)
+    rec = FakeRecorder()
+    stt = SequentialStt(["Kuyruk."])
+    c = DictationController(
+        _live_chunk_settings(), recorder=rec, stt=stt, llm=FakeLlm(), pool=QThreadPool()
+    )
+    c.toggle()
+    rec.chunks_emitted = 1  # parça kesildi ama hiç teslim edilmeyecek
+    c.toggle()
+    qtbot.waitUntil(lambda: c.state is DictationState.RESULT, timeout=3000)
+    assert c.session.raw_text == "Kuyruk."
+
+
+def test_late_chunk_after_cancel_is_ignored(qtbot):
+    rec = FakeRecorder()
+    stt = SequentialStt(["x", "y"])
+    c = DictationController(
+        _live_chunk_settings(), recorder=rec, stt=stt, llm=FakeLlm(), pool=QThreadPool()
+    )
+    c.toggle()
+    rec.chunks_emitted = 1
+    c.toggle()
+    c.cancel()
+    rec.chunk_ready.emit(np.ones(1600, dtype=np.float32))
+    qtbot.wait(100)
+    assert c.state is DictationState.IDLE and stt.calls == []
+
+
+# ---- kayıt ortasında ayar değişikliği
+
+
+def test_chunk_mode_is_fixed_for_the_whole_recording(qtbot):
+    rec = FakeRecorder()
+    stt = SequentialStt(["Birinci.", "Son."])
+    c = DictationController(
+        _live_chunk_settings(), recorder=rec, stt=stt, llm=FakeLlm(), pool=QThreadPool()
+    )
+    partials = []
+    c.partial_text.connect(partials.append)
+    c.toggle()
+    rec.chunks_emitted = 1
+    rec.chunk_ready.emit(np.ones(1600, dtype=np.float32) * 0.1)
+    qtbot.waitUntil(lambda: len(partials) == 1, timeout=3000)
+    c.update_settings(_live_chunk_settings(live_chunk_s=0))
+    assert rec.chunking == (1.0, 45.0)  # süren kayıtta parçalama değişmez
+    c.toggle()
+    qtbot.waitUntil(lambda: c.state is DictationState.RESULT, timeout=3000)
+    assert c.session.raw_text == "Birinci. Son."
+    c.toggle()  # yeni kayıt: yeni ayar artık geçerli
+    assert rec.chunking == (0, 45.0)
+
+
+# ---- parça sırası ve bağlam
+
+
+class GatedSequentialStt(SequentialStt):
+    """İlk çağrı kapı açılana kadar bekler; sonraki çağrılar hemen döner."""
+
+    def __init__(self, texts):
+        super().__init__(texts)
+        self.gate = threading.Event()
+        self.active = 0
+        self.max_active = 0
+        self._lock = threading.Lock()
+
+    def transcribe(self, audio, language=None, **kwargs):
+        with self._lock:
+            self.active += 1
+            self.max_active = max(self.max_active, self.active)
+            first = len(self.calls) == 0
+        try:
+            if first:
+                self.gate.wait(timeout=5)
+            return super().transcribe(audio, language, **kwargs)
+        finally:
+            with self._lock:
+                self.active -= 1
+
+
+def test_chunks_are_transcribed_in_order_with_gui_thread_context(qtbot):
+    rec = FakeRecorder()
+    stt = GatedSequentialStt(["A", "B", "C"])
+    pool = QThreadPool()
+    pool.setMaxThreadCount(4)
+    c = DictationController(_live_chunk_settings(), recorder=rec, stt=stt, llm=FakeLlm(), pool=pool)
+    c.toggle()
+    rec.chunk_ready.emit(np.ones(1600, dtype=np.float32) * 0.1)
+    rec.chunk_ready.emit(np.ones(1600, dtype=np.float32) * 0.1)
+    rec.chunks_emitted = 2
+    qtbot.wait(100)
+    assert stt.max_active == 1  # ikinci parça, birincisi bitmeden başlamadı
+    stt.gate.set()
+    c.toggle()
+    qtbot.waitUntil(lambda: c.state is DictationState.RESULT, timeout=3000)
+    assert c.session.raw_text == "A B C"
+    assert stt.calls == ["", "A", "A B"]
+    assert stt.max_active == 1
+
+
+# ---- kayıtçı uyarıları / hataları
+
+
+def test_recorder_warning_is_forwarded(ctl):
+    c, rec, *_ = ctl
+    warnings = []
+    c.warning.connect(warnings.append)
+    rec.warning.emit("Mikrofondan ses gelmiyor.")
+    assert warnings == ["Mikrofondan ses gelmiyor."]
+
+
+def test_recorder_error_while_recording_stops_stream_and_goes_idle(ctl):
+    c, rec, *_ = ctl
+    c.toggle()
+    errors = []
+    c.error.connect(errors.append)
+    rec.error.emit("Mikrofon bağlantısı kesildi")
+    assert c.state is DictationState.IDLE and rec.stopped
+    assert errors and errors[0].startswith("Mikrofon bağlantısı kesildi")
+
+
+# ---- başarısız sesi saklama ve yeniden deneme
+
+
+def _failing_ctl(tmp_path, stt, settings=None, recorder=None):
+    return DictationController(
+        settings or Settings(),
+        recorder=recorder or FakeRecorder(),
+        stt=stt,
+        llm=FakeLlm(),
+        pool=QThreadPool(),
+        failed_audio_path=tmp_path / "failed" / "last.wav",
+    )
+
+
+class FailingStt(FakeStt):
+    def transcribe(self, audio, language=None, **kwargs):
+        raise RuntimeError("CUDA belleği doldu")
+
+
+def test_failed_transcription_keeps_audio_and_hints_retry(qtbot, tmp_path):
+    from dikte.audio.wav import load_wav
+
+    c = _failing_ctl(tmp_path, FailingStt())
+    errors, changed = [], []
+    c.error.connect(errors.append)
+    c.failed_audio_changed.connect(changed.append)
+    assert not c.has_failed_audio
+    c.toggle()
+    c.toggle()
+    qtbot.waitUntil(lambda: c.state is DictationState.IDLE, timeout=3000)
+    wav = tmp_path / "failed" / "last.wav"
+    assert wav.exists() and c.has_failed_audio and changed == [True]
+    assert load_wav(wav).shape == (16000,)
+    assert "CUDA belleği doldu" in errors[-1] and "yeniden dene" in errors[-1]
+
+
+def test_empty_transcription_keeps_audio(qtbot, tmp_path):
+    c = _failing_ctl(tmp_path, FakeStt(text=""))
+    c.toggle()
+    c.toggle()
+    qtbot.waitUntil(lambda: c.state is DictationState.IDLE, timeout=3000)
+    assert c.has_failed_audio
+
+
+def test_failed_audio_not_kept_when_disabled(qtbot, tmp_path):
+    c = _failing_ctl(tmp_path, FailingStt(), settings=Settings(keep_failed_audio=False))
+    errors = []
+    c.error.connect(errors.append)
+    c.toggle()
+    c.toggle()
+    qtbot.waitUntil(lambda: c.state is DictationState.IDLE, timeout=3000)
+    assert not c.has_failed_audio and "yeniden dene" not in errors[-1]
+
+
+def test_failed_live_chunk_session_keeps_all_chunks(qtbot, tmp_path):
+    from dikte.audio.wav import load_wav
+
+    rec = FakeRecorder()
+    c = _failing_ctl(tmp_path, FakeStt(text=""), settings=_live_chunk_settings(), recorder=rec)
+    c.toggle()
+    rec.chunks_emitted = 1
+    rec.chunk_ready.emit(np.ones(8000, dtype=np.float32) * 0.1)
+    c.toggle()  # kuyruk: 16000 örnek
+    qtbot.waitUntil(lambda: c.state is DictationState.IDLE, timeout=3000)
+    assert load_wav(tmp_path / "failed" / "last.wav").shape == (24000,)
+
+
+def test_retry_last_failed_runs_full_flow_and_deletes_file(qtbot, tmp_path):
+    stt = FailingStt()
+    c = _failing_ctl(tmp_path, stt)
+    c.toggle()
+    c.toggle()
+    qtbot.waitUntil(lambda: c.state is DictationState.IDLE, timeout=3000)
+    seen = []
+    stt.transcribe = lambda audio, language=None, **kw: (  # type: ignore[method-assign]
+        seen.append(audio.shape) or TranscriptResult("merhaba dünya", "tr", 1.0, ())
+    )
+    results = []
+    c.result_ready.connect(results.append)
+    assert c.retry_last_failed() is True
+    qtbot.waitUntil(lambda: c.state is DictationState.RESULT, timeout=3000)
+    assert seen == [(16000,)]
+    assert results == ["Merhaba dünya."]  # LLM düzeltmesi dahil normal akış
+    assert not c.has_failed_audio
+
+
+def test_retry_failure_keeps_file(qtbot, tmp_path):
+    c = _failing_ctl(tmp_path, FailingStt())
+    c.toggle()
+    c.toggle()
+    qtbot.waitUntil(lambda: c.state is DictationState.IDLE, timeout=3000)
+    assert c.retry_last_failed()
+    qtbot.waitUntil(lambda: c.state is DictationState.IDLE, timeout=3000)
+    assert c.has_failed_audio
+
+
+def test_retry_without_file_returns_false(qtbot, tmp_path):
+    c = _failing_ctl(tmp_path, FakeStt())
+    errors = []
+    c.error.connect(errors.append)
+    assert c.retry_last_failed() is False
+    assert errors == ["Yeniden denenecek kayıt yok."]
+
+
+def test_retry_rejected_while_busy(qtbot, tmp_path):
+    c = _failing_ctl(tmp_path, FakeStt())
+    c.toggle()
+    assert c.retry_last_failed() is False
+    assert c.state is DictationState.RECORDING
+
+
+def test_no_failed_audio_path_disables_feature(qtbot):
+    c = DictationController(
+        Settings(), recorder=FakeRecorder(), stt=FailingStt(), llm=FakeLlm(), pool=QThreadPool()
+    )
+    c.toggle()
+    c.toggle()
+    qtbot.waitUntil(lambda: c.state is DictationState.IDLE, timeout=3000)
+    assert not c.has_failed_audio
