@@ -183,3 +183,69 @@ def test_paste_active_window_forwards_combo(monkeypatch):
     monkeypatch.setattr(paste, "send_paste_keystroke", fake_send)
     assert paste.paste_active_window({42}, combo="ctrl+shift+v") is True
     assert seen["combo"] == "ctrl+shift+v"
+
+
+def test_linux_type_uses_fast_delay_and_length_scaled_timeout(monkeypatch):
+    monkeypatch.setattr(paste.sys, "platform", "linux")
+    monkeypatch.setattr(
+        paste.shutil, "which", lambda n: "/usr/bin/xdotool" if n == "xdotool" else None
+    )
+    calls = []
+    monkeypatch.setattr(
+        paste.subprocess,
+        "run",
+        lambda cmd, **k: calls.append((cmd, k)) or SimpleNamespace(returncode=0),
+    )
+    text = "a" * 2000
+    assert paste.type_unicode_text(text) is True
+    cmd, kwargs = calls[0]
+    assert "--delay" in cmd and cmd[cmd.index("--delay") + 1] == "1"
+    assert kwargs["timeout"] > paste.type_timeout_s(10)
+    assert kwargs["timeout"] >= 2000 * 0.005
+
+
+def test_type_timeout_grows_with_length():
+    assert paste.type_timeout_s(0) >= 3
+    assert paste.type_timeout_s(5000) > paste.type_timeout_s(100)
+
+
+def test_windows_type_events_send_newline_as_shift_enter():
+    events = paste.build_type_events("a\nb")
+    shift_enter = [
+        (paste.VK_SHIFT, 0, 0),
+        (paste.VK_RETURN, 0, 0),
+        (paste.VK_RETURN, 0, paste.KEYEVENTF_KEYUP),
+        (paste.VK_SHIFT, 0, paste.KEYEVENTF_KEYUP),
+    ]
+    a, b = ord("a"), ord("b")
+    uni, up = paste.KEYEVENTF_UNICODE, paste.KEYEVENTF_UNICODE | paste.KEYEVENTF_KEYUP
+    assert events == [(0, a, uni), (0, a, up), *shift_enter, (0, b, uni), (0, b, up)]
+
+
+def test_windows_type_events_treat_crlf_as_single_newline():
+    events = paste.build_type_events("a\r\nb")
+    assert sum(1 for vk, _s, f in events if vk == paste.VK_RETURN and f == 0) == 1
+    events = paste.build_type_events("a\rb")
+    assert sum(1 for vk, _s, f in events if vk == paste.VK_RETURN and f == 0) == 1
+
+
+def test_windows_type_events_keep_surrogate_pairs():
+    events = paste.build_type_events("😀")
+    assert [s for _vk, s, f in events if f == paste.KEYEVENTF_UNICODE] == [0xD83D, 0xDE00]
+
+
+def test_linux_combo_ctrl_z_for_undo(monkeypatch):
+    monkeypatch.setattr(paste.sys, "platform", "linux")
+    monkeypatch.setattr(
+        paste.shutil, "which", lambda n: "/usr/bin/xdotool" if n == "xdotool" else None
+    )
+    ran = []
+    monkeypatch.setattr(
+        paste.subprocess, "run", lambda cmd, **k: ran.append(cmd) or SimpleNamespace(returncode=0)
+    )
+    assert paste.send_paste_keystroke(combo="ctrl+z") is True
+    assert ran[0][-1] == "ctrl+z"
+
+
+def test_windows_ctrl_z_vks():
+    assert paste._COMBO_VKS["ctrl+z"] == (paste.VK_CONTROL, paste.VK_Z)

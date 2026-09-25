@@ -7,8 +7,9 @@ import logging
 from collections.abc import Callable
 
 from dikte.config import LlmSettings
+from dikte.llm.jsontext import extract_json_object
 from dikte.llm.keys import read_api_key
-from dikte.llm.provider import LlmError
+from dikte.llm.provider import LlmError, LlmTruncatedError
 
 log = logging.getLogger(__name__)
 SCHEMA_NAME = "dikte"
@@ -76,7 +77,7 @@ class OpenAiCompatProvider:
         try:
             if json_schema is None:
                 return self._text(self._create(messages, temperature, None))
-            return self._complete_json(messages, temperature, json_schema)
+            return extract_json_object(self._complete_json(messages, temperature, json_schema))
         except LlmError:
             raise
         except Exception as exc:  # SDK hata sınıfları isteğe bağlı bağımlılıkta, genel yakalanır
@@ -110,9 +111,11 @@ class OpenAiCompatProvider:
             kwargs["response_format"] = response_format
         return self._client.chat.completions.create(**kwargs)
 
-    @staticmethod
-    def _text(response) -> str:
+    def _text(self, response) -> str:
         choices = getattr(response, "choices", None) or []
+        if choices and getattr(choices[0], "finish_reason", None) == "length":
+            log.warning("OpenAI-uyumlu yanıt çıktı sınırında kesildi (%s)", self._model)
+            raise LlmTruncatedError(self.name)
         content = (
             getattr(getattr(choices[0], "message", None), "content", None) if choices else None
         )

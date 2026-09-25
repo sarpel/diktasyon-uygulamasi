@@ -1,5 +1,9 @@
 from dataclasses import dataclass
 
+# VAD ön-kontrolü konuşma bulamadığında motorun yükselttiği hata; denetleyici bunu gerçek bir
+# arızadan ayırır (sessiz kaydın sesi "yeniden dene" için saklanmaz).
+NO_SPEECH_MESSAGE = "Konuşma algılanmadı; mikrofon ve VAD eşiğini kontrol edin"
+
 
 @dataclass(frozen=True)
 class Segment:

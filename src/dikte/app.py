@@ -8,7 +8,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import cast
 
-from PySide6.QtCore import QCoreApplication, QMimeData, QThreadPool, QTimer
+from PySide6.QtCore import QCoreApplication, QMimeData, QObject, QThreadPool, QTimer
 from PySide6.QtWidgets import QApplication, QDialog, QMessageBox, QSystemTrayIcon
 
 from dikte import APP_NAME, __version__, paths
@@ -18,7 +18,7 @@ from dikte.config import (
     DictionaryEntry,
     Settings,
     SettingsError,
-    load_settings,
+    load_settings_with_issues,
     save_settings,
 )
 from dikte.core.controller import DictationController
@@ -35,12 +35,14 @@ from dikte.core.state import BUSY_STATES, MODES, DictationState
 from dikte.core.workers import run_in_pool
 from dikte.llm import LlmError, make_provider
 from dikte.logging_setup import setup_logging
-from dikte.platform.autostart import set_autostart
+from dikte.platform.autostart import AutostartError, set_autostart
+from dikte.platform.clipboard import build_mime, restore_delay_ms, should_restore
 from dikte.platform.foreground import foreground_process_name
 from dikte.platform.gpu_info import LOW_VRAM_MB, query_vram
 from dikte.platform.hold_detect import HoldDetector
 from dikte.platform.hotkey import HOTKEY_ID, GlobalHotkey
 from dikte.platform.hotkey_parse import HotkeyParseError, parse_hotkey
+from dikte.platform.media import MediaPauser
 from dikte.platform.paste import foreground_window_id, paste_active_window, type_unicode_text
 from dikte.platform.single_instance import (
     DEFAULT_NAME,
@@ -63,8 +65,6 @@ from dikte.ui.tray import TrayIcon
 log = logging.getLogger(__name__)
 # Windows dışında global kısayol yoktur; masaüstü ortamı bu komuta bir tuş bağlar.
 CLI_TOGGLE_HINT = "dikte --toggle"
-# Yapıştırma işletim sisteminde işlenip aktif pencereye ulaşana kadarki bekleme süresi.
-RESTORE_CLIPBOARD_DELAY_MS = 300
 # check_health'in LLM kontrolü ağ isteği yapar; SDK varsayılan yeniden deneme + zaman
 # aşımıyla en kötü durumda dakikalarca sürebilir. Senkron çağrı GUI iş parçacığını
 # (ve bu iş parçacığında dönen IPC sunucusunu — bkz. single_instance.py) bloke ederdi.
@@ -90,6 +90,12 @@ class AppContext:
     hold_mode: str = "correct"  # hold'un hangi kısayol için silahlandığını taşır
     health_dialog: HealthDialog | None = None  # ilk çalıştırmada/STT hatasında gösterilir
     active_profile: AppProfile | None = None  # son kısayolda ön plandaki uygulamayla eşleşen profil
+    media: MediaPauser | None = None  # pause_media açıkken ilk kayıtta kurulur
+    media_paused: bool = False
+    # Medya çağrıları 1,5 sn'ye kadar sürebilir; tek iş parçacıklı havuz sırayı korur
+    # (resume, kendi pause'undan önce çalışamaz).
+    media_pool: QThreadPool | None = None
+    hotkey_paste_last: GlobalHotkey | None = None  # isteğe bağlı: son sonucu yeniden yapıştırır
 
 
 class _NullLlm:
@@ -123,7 +129,7 @@ def _safe_hotkey(settings: Settings) -> Settings:
             fallback,
         )
         settings = settings.model_copy(update={"hotkey": fallback})
-    for field_name in ("hotkey_translate", "hotkey_prompt"):
+    for field_name in ("hotkey_translate", "hotkey_prompt", "hotkey_paste_last"):
         spec = getattr(settings, field_name)
         if not spec:
             continue
@@ -145,6 +151,7 @@ def build_app(settings: Settings) -> AppContext:
         stt=stt,
         llm=_make_llm(settings),
         pool=QThreadPool.globalInstance(),
+        failed_audio_path=paths.failed_audio_path(),
     )
     hotkey = GlobalHotkey()
     cancel_hotkey = GlobalHotkey(hotkey_id=HOTKEY_ID + 1)  # iptal için ikinci kayıt
@@ -153,7 +160,7 @@ def build_app(settings: Settings) -> AppContext:
     tray = TrayIcon(parse_hotkey(settings.hotkey).label)
     overlay = RecordingOverlay()
     window = ResultWindow()
-    history = History(paths.history_path(), settings.history_limit)
+    history = _make_history(settings)
     sounds = SoundPlayer(settings.sounds_enabled)
     hold = HoldDetector()
     ctx = AppContext(
@@ -172,8 +179,22 @@ def build_app(settings: Settings) -> AppContext:
         sounds,
         hold,
     )
+    ctx.hotkey_paste_last = GlobalHotkey(hotkey_id=HOTKEY_ID + 4)
+    overlay.set_position(settings.overlay_position, settings.overlay_xy)
     _wire(ctx)
     return ctx
+
+
+def _prune_history(ctx: AppContext) -> None:
+    ctx.history.prune()
+
+
+def _make_history(settings: Settings) -> History:
+    return History(
+        paths.history_path(),
+        settings.history_limit,
+        retention_days=settings.history_retention_days,
+    )
 
 
 def _wire(ctx: AppContext) -> None:
@@ -210,6 +231,16 @@ def _wire(ctx: AppContext) -> None:
     ctx.tray.cancel_requested.connect(c.cancel)
     ctx.cancel_hotkey.activated.connect(c.cancel)
     c.state_changed.connect(lambda s: _sync_cancel_hotkey(ctx, s))
+    c.state_changed.connect(lambda s: _sync_media(ctx, s))
+    ctx.overlay.moved.connect(lambda x, y: _save_overlay_position(ctx, x, y))
+    ctx.tray.paste_last_requested.connect(lambda: _paste_last(ctx))
+    c.warning.connect(ctx.overlay.show_warning)
+    c.failed_audio_changed.connect(ctx.tray.set_retry_available)
+    ctx.tray.set_retry_available(c.has_failed_audio)
+    ctx.tray.retry_failed_requested.connect(c.retry_last_failed)
+    c.undo_requested.connect(lambda: _undo_last_paste(ctx))
+    if ctx.hotkey_paste_last is not None:
+        ctx.hotkey_paste_last.activated.connect(lambda: _paste_last(ctx))
     c.result_ready.connect(lambda text: _on_result_ready(ctx, text))
     ctx.window.history_panel.delete_requested.connect(lambda sid: _delete_session(ctx, sid))
     ctx.window.history_panel.clear_requested.connect(lambda: _clear_history(ctx))
@@ -288,7 +319,12 @@ def _clear_history(ctx: AppContext) -> None:
 
 def _export_history(ctx: AppContext, path: str) -> None:
     """Geçmişi dosyaya yazar; uzantı `.md` ise Markdown, aksi hâlde düz metin kullanılır."""
-    sessions = ctx.history.load()
+    try:
+        sessions = ctx.history.load()
+    except HistoryError as exc:
+        log.exception("dışa aktarım için geçmiş okunamadı")
+        ctx.tray.notify(APP_NAME, str(exc), critical=True)
+        return
     content = to_markdown(sessions) if path.lower().endswith(".md") else to_text(sessions)
     try:
         Path(path).write_text(content, encoding="utf-8")
@@ -359,6 +395,41 @@ def _repaste(ctx: AppContext, text: str) -> None:
     QTimer.singleShot(200, lambda: _on_result_ready(ctx, text, force_paste=True))
 
 
+def _last_result_text(ctx: AppContext) -> str:
+    """Son teslim edilen metin: canlı oturum, o yoksa geçmişteki en yeni kayıt."""
+    text = ctx.controller.session.output_text
+    if text:
+        return text
+    try:
+        sessions = ctx.history.load()
+    except HistoryError:
+        log.exception("son sonuç için geçmiş okunamadı")
+        return ""
+    return sessions[-1].output_text if sessions else ""
+
+
+def _undo_last_paste(ctx: AppContext) -> None:
+    """Sesli "geri al" komutu: ön plandaki uygulamaya (kendi pencerelerimize değil) Ctrl+Z."""
+    own_ids = {int(ctx.window.winId()), int(ctx.overlay.winId())}
+    if not paste_active_window(own_ids, combo="ctrl+z"):
+        ctx.tray.notify(APP_NAME, "Geri alma gönderilemedi; hedef uygulamada Ctrl+Z'ye basın.")
+
+
+def _paste_last(ctx: AppContext) -> None:
+    text = _last_result_text(ctx)
+    if not text:
+        ctx.tray.notify(APP_NAME, "Yapıştırılacak bir sonuç yok; önce bir dikte yapın.")
+        return
+    _on_result_ready(ctx, text, force_paste=True)
+
+
+def _save_overlay_position(ctx: AppContext, x: int, y: int) -> None:
+    """Overlay sürüklenince yeri hatırlanır ve konum "özel"e geçer."""
+    new = ctx.settings.model_copy(update={"overlay_position": "custom", "overlay_xy": (x, y)})
+    if _guard_settings(ctx, lambda: save_settings(new)):
+        ctx.settings = new
+
+
 def _refresh_status_info(ctx: AppContext) -> None:
     llm = ctx.settings.llm.active_model if ctx.settings.llm.enabled else "kapalı"
     ctx.window.set_status_info(ctx.stt.active_model, ctx.stt.compute_type, llm)
@@ -366,7 +437,17 @@ def _refresh_status_info(ctx: AppContext) -> None:
 
 
 def _warn_if_low_vram(ctx: AppContext) -> None:
-    info = query_vram()
+    """`nvidia-smi` 3 sn'ye kadar sürebilir; GUI iş parçacığını bloke etmemek için arka planda."""
+    job = run_in_pool(
+        query_vram,
+        lambda info: _show_low_vram_warning(ctx, info),
+        lambda e: log.warning("VRAM sorgusu başarısız: %s", e),
+        QThreadPool.globalInstance(),
+    )
+    _keep_job(job)
+
+
+def _show_low_vram_warning(ctx: AppContext, info) -> None:
     if info is None:
         return
     free_mb = info.total_mb - info.used_mb
@@ -434,7 +515,7 @@ def _on_result_ready(ctx: AppContext, text: str, *, force_paste: bool = False) -
     # hâlde panoda bir resim varken dikte sonrası geri yükleme onu sessizce kaybederdi.
     # mimeData() clipboard'a ait olduğundan, clipboard değişmeden önce kopyalanmalı.
     previous_mime = _clone_mime(clipboard.mimeData()) if ctx.settings.restore_clipboard else None
-    clipboard.setText(text)
+    clipboard.setMimeData(build_mime(text, exclude_history=ctx.settings.clipboard_exclude_history))
     if ctx.controller.session.source_path and not force_paste:
         return  # dosyadan çözümlenen sonuç otomatik olarak yalnızca panoya kopyalanır
     if not ctx.settings.auto_paste or ctx.window.isActiveWindow():
@@ -452,7 +533,40 @@ def _on_result_ready(ctx: AppContext, text: str, *, force_paste: bool = False) -
         log.info("yapıştırma atlandı; metin panoda")
         return
     if ctx.settings.restore_clipboard and previous_mime is not None and previous_mime.formats():
-        QTimer.singleShot(RESTORE_CLIPBOARD_DELAY_MS, lambda: clipboard.setMimeData(previous_mime))
+        QTimer.singleShot(
+            restore_delay_ms(text), lambda: _restore_clipboard(clipboard, previous_mime, text)
+        )
+
+
+def _restore_clipboard(clipboard, previous_mime: QMimeData, pasted_text: str) -> None:
+    """Kullanıcı bu arada yeni bir şey kopyaladıysa onu ezmez."""
+    if should_restore(clipboard.text(), pasted_text):
+        clipboard.setMimeData(previous_mime)
+    else:
+        log.info("pano geri yüklenmedi: bu arada yeni içerik kopyalanmış")
+
+
+def _sync_media(ctx: AppContext, state: DictationState) -> None:
+    """Kayıt başlarken çalan medyayı duraklatır, kayıt bitince yalnızca onları sürdürür."""
+    recording = state is DictationState.RECORDING
+    if recording == ctx.media_paused:
+        return
+    if recording and not ctx.settings.pause_media:
+        return
+    if ctx.media is None:
+        ctx.media = MediaPauser()
+    if ctx.media_pool is None:
+        ctx.media_pool = QThreadPool()
+        ctx.media_pool.setMaxThreadCount(1)
+    ctx.media_paused = recording
+    action = ctx.media.pause if recording else ctx.media.resume
+    job = run_in_pool(
+        action,
+        lambda _r: None,
+        lambda e: log.warning("medya denetimi başarısız: %s", e),
+        ctx.media_pool,
+    )
+    _keep_job(job)
 
 
 def _sync_cancel_hotkey(ctx: AppContext, state: DictationState) -> None:
@@ -484,7 +598,18 @@ def _check_health_async(ctx: AppContext, on_done: Callable[[tuple[HealthItem, ..
         lambda e: log.error("durum kontrolü başarısız: %s", e),
         QThreadPool.globalInstance(),
     )
+    _keep_job(job)
+
+
+def _keep_job(job) -> None:
+    """run_in_pool sinyallerini iş bitene kadar canlı tutar; biten işler listeden düşer."""
     _background_jobs.append(job)
+    for signal_name in ("result", "error"):
+        signal = getattr(job, signal_name, None)
+        if signal is not None:
+            signal.connect(
+                lambda *_a, job=job: job in _background_jobs and _background_jobs.remove(job)
+            )
 
 
 def _show_health_dialog(ctx: AppContext, items: tuple[HealthItem, ...] | None = None) -> None:
@@ -496,13 +621,39 @@ def _show_health_dialog(ctx: AppContext, items: tuple[HealthItem, ...] | None = 
         # seferinde yeni bir pencere açardı; eskisi kapatılmadan referans üzerine
         # yazılınca kapanmamış pencereler birikirdi.
         ctx.health_dialog.close()
-    ctx.health_dialog = HealthDialog(
+    llm = ctx.settings.llm
+    dialog = HealthDialog(
         items,
         on_download=lambda progress: _download_model_for_ctx(ctx, progress),
+        ollama_model=llm.model if llm.enabled and llm.provider == "ollama" else None,
+        ollama_host=llm.ollama_host,
+        health_probe=lambda: check_health(
+            ctx.settings,
+            cuda_probe=default_cuda_probe,
+            model_probe=default_model_probe,
+            llm_probe=default_llm_probe,
+        ),
         parent=ctx.window,
     )
-    ctx.health_dialog.setModal(False)
-    ctx.health_dialog.show()
+    # Pencere kapanınca kendini siler (WA_DeleteOnClose); silinmiş nesneye erişilmesin.
+    dialog.destroyed.connect(lambda *_a: _forget_health_dialog(ctx, dialog))
+    dialog.model_downloaded.connect(lambda: _on_model_downloaded(ctx))
+    ctx.health_dialog = dialog
+    dialog.setModal(False)
+    dialog.show()
+
+
+def _forget_health_dialog(ctx: AppContext, dialog: HealthDialog) -> None:
+    if ctx.health_dialog is dialog:
+        ctx.health_dialog = None
+
+
+def _on_model_downloaded(ctx: AppContext) -> None:
+    """İndirilen modelle yükleme yeniden denenir; tepsi "Model yükleniyor…"da takılmaz."""
+    if ctx.controller.state in BUSY_STATES:
+        _warm_up_when_idle(ctx)
+    else:
+        _reload_model(ctx)
 
 
 def _download_model_for_ctx(ctx: AppContext, progress: Callable[[int, int], None]) -> None:
@@ -527,11 +678,26 @@ def _hotkey_spec(ctx: AppContext, mode: str) -> str:
     }[mode]
 
 
-def _on_hotkey(ctx: AppContext, mode: str = "correct") -> None:
-    """Kısayola basılınca çağrılır: bas-konuş yalnızca Windows'ta anlamlıdır."""
+def _resolve_profile(ctx: AppContext) -> AppProfile | None:
+    """Ön plandaki uygulamaya uyan profili bulur ve `ctx.active_profile`'a yazar."""
     # Profil tanımlı değilse ön plan sürecini hiç sorgulama (win32 API'sini gereksiz çağırmaz).
     exe = foreground_process_name() if ctx.settings.profiles else ""
     ctx.active_profile = match_profile(ctx.settings.profiles, exe)
+    return ctx.active_profile
+
+
+def _on_ipc_toggle(ctx: AppContext, mode: str) -> None:
+    """Linux'ta tek tetikleyici IPC'dir (`dikte --toggle`); profiller burada da uygulanır."""
+    ctx.controller.toggle(mode, profile=_resolve_profile(ctx))
+
+
+def _on_ipc_start(ctx: AppContext, mode: str) -> None:
+    ctx.controller.start_recording(mode, profile=_resolve_profile(ctx))
+
+
+def _on_hotkey(ctx: AppContext, mode: str = "correct") -> None:
+    """Kısayola basılınca çağrılır: bas-konuş yalnızca Windows'ta anlamlıdır."""
+    _resolve_profile(ctx)
     if not ctx.settings.push_to_talk or sys.platform != "win32":
         ctx.controller.toggle(mode, profile=ctx.active_profile)
         return
@@ -556,11 +722,29 @@ def _apply_hotkey(ctx: AppContext) -> None:
             "Başka bir uygulama kullanıyor olabilir.",
             critical=True,
         )
-        ctx.tray.set_hotkey_label(ctx.settings.hotkey)
+        # Yeni kısayol kaydedilemezse GlobalHotkey eskisini geri kaydeder; etiket onu gösterir.
+        ctx.tray.set_hotkey_label(ctx.hotkey.label or ctx.settings.hotkey)
     else:
         log.info("global kısayol bu platformda yok; '%s' komutuna tuş bağlayın", CLI_TOGGLE_HINT)
         ctx.tray.set_hotkey_label(CLI_TOGGLE_HINT)
     _apply_mode_hotkeys(ctx)
+    _apply_paste_last_hotkey(ctx)
+
+
+def _apply_paste_last_hotkey(ctx: AppContext) -> None:
+    hk = ctx.hotkey_paste_last
+    if hk is None:
+        return
+    hk.unregister()
+    spec = ctx.settings.hotkey_paste_last
+    if not spec or sys.platform != "win32":
+        return
+    if not hk.register(spec):
+        ctx.tray.notify(
+            APP_NAME,
+            f"Son sonucu yapıştırma kısayolu kaydedilemedi: {spec}. "
+            "Başka bir uygulama kullanıyor olabilir; Ayarlar'dan değiştirin.",
+        )
 
 
 def _apply_mode_hotkeys(ctx: AppContext) -> None:
@@ -598,16 +782,21 @@ def _run_toggle(mode: str = "correct") -> int:
 
 def _open_settings(ctx: AppContext) -> None:
     dlg = SettingsDialog(ctx.settings, list_input_devices(), ctx.window)
-    if dlg.exec() != QDialog.DialogCode.Accepted:
-        return
-    new = dlg.result_settings()
+    try:
+        if dlg.exec() != QDialog.DialogCode.Accepted:
+            return
+        new = dlg.result_settings()
+    finally:
+        # Her açılışta 8 sekmeli yeni bir pencere kurulur; silinmezse bellekte birikir.
+        if isinstance(dlg, QObject):
+            dlg.deleteLater()
     if not _guard_settings(ctx, lambda: save_settings(new)):
         return
     needs_reload = ctx.stt.update_settings(new.stt)
     ctx.recorder.update_settings(new.audio)
     llm_changed = new.llm != ctx.settings.llm
     ctx.settings = new
-    set_autostart(new.autostart)
+    _apply_autostart(ctx, new.autostart)
     ctx.controller.update_settings(new)
     if llm_changed:  # sağlayıcı yeniden kurulur, yeniden başlatma gerekmez
         ctx.controller.set_llm(_make_llm(new))
@@ -616,7 +805,10 @@ def _open_settings(ctx: AppContext) -> None:
     ctx.window.close_after_copy = new.close_after_copy
     ctx.window.raise_on_result = new.raise_window_on_result
     ctx.sounds.set_enabled(new.sounds_enabled)
-    ctx.history = History(paths.history_path(), new.history_limit)
+    ctx.overlay.set_position(new.overlay_position, new.overlay_xy)
+    ctx.history = _make_history(new)
+    # Sınır/saklama süresi düşürüldüyse (ör. 0 = geçmiş kapalı) eski dikteler diskte kalmasın.
+    _guard_history(ctx, lambda: _prune_history(ctx))
     _refresh_history(ctx)
     _refresh_status_info(ctx)
     _apply_hotkey(ctx)
@@ -625,23 +817,59 @@ def _open_settings(ctx: AppContext) -> None:
             QMessageBox.information(
                 ctx.window,
                 APP_NAME,
-                "Model değişikliği süren iş bittikten sonra "
-                "Ayarlar'ı yeniden kaydedince uygulanır.",
+                "Model değişikliği süren iş bittiğinde otomatik olarak uygulanacak.",
             )
+            _warm_up_when_idle(ctx)
         else:
-            ctx.controller.ready_changed.emit(False)
-            ctx.controller.warm_up()
+            _reload_model(ctx)
+
+
+def _reload_model(ctx: AppContext) -> None:
+    ctx.controller.ready_changed.emit(False)
+    ctx.controller.warm_up()
+
+
+def _warm_up_when_idle(ctx: AppContext) -> None:
+    """Süren iş bitince (motor modeli zaten düşürdü) yeni modeli bir kez yükler."""
+
+    def _on_state(state: DictationState) -> None:
+        if state in BUSY_STATES:
+            return
+        ctx.controller.state_changed.disconnect(_on_state)
+        _reload_model(ctx)
+
+    ctx.controller.state_changed.connect(_on_state)
+
+
+def _apply_autostart(ctx: AppContext, enabled: bool) -> None:
+    try:
+        set_autostart(enabled)
+    except AutostartError as exc:
+        ctx.tray.notify(APP_NAME, str(exc), critical=True)
 
 
 def _quit(ctx: AppContext) -> None:
+    if ctx.media is not None and ctx.media_paused:
+        ctx.media.resume()  # kayıt sürerken çıkılırsa duraklatılan medya askıda kalmasın
     ctx.hotkey.unregister()
     ctx.cancel_hotkey.unregister()
     ctx.hotkey_translate.unregister()
     ctx.hotkey_prompt.unregister()
+    if ctx.hotkey_paste_last is not None:
+        ctx.hotkey_paste_last.unregister()
     ctx.tray.hide()
     app = QApplication.instance()
     if app is not None:
         app.quit()
+
+
+def _notify_config_issues(ctx: AppContext, issues: tuple[str, ...]) -> None:
+    backup = paths.config_path().with_suffix(".json.bak")
+    if issues == ("*",):
+        detail = "Ayar dosyası okunamadı; varsayılanlar kullanılıyor."
+    else:
+        detail = "Geçersiz ayarlar varsayılana döndü: " + ", ".join(issues) + "."
+    ctx.tray.notify(APP_NAME, f"{detail} Eski dosyanın yedeği: {backup}", critical=True)
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -692,7 +920,7 @@ def main(argv: list[str] | None = None) -> int:
 
     try:
         first_run = not paths.config_path().exists()
-        settings = load_settings()
+        settings, config_issues = load_settings_with_issues()
         ctx = build_app(settings)
     except OSError as exc:
         # Veri klasörü (paths.app_data_dir()) oluşturulamadı/yazılamadı — paketlenmiş
@@ -716,8 +944,8 @@ def main(argv: list[str] | None = None) -> int:
         except SettingsError:
             log.exception("düzeltilmiş kısayol ayarları kaydedilemedi")
     single.activated.connect(ctx.tray.show_requested)
-    single.toggle_requested.connect(ctx.controller.toggle)
-    single.start_requested.connect(ctx.controller.start_recording)
+    single.toggle_requested.connect(lambda mode: _on_ipc_toggle(ctx, mode))
+    single.start_requested.connect(lambda mode: _on_ipc_start(ctx, mode))
     single.stop_requested.connect(ctx.controller.stop_recording)
     ctx.tray.show()
     if ctx.settings.hotkey != settings.hotkey:
@@ -732,8 +960,10 @@ def main(argv: list[str] | None = None) -> int:
             APP_NAME,
             "Ayarlardaki çeviri/prompt kısayollarından biri geçersizdi; kapatıldı.",
         )
+    if config_issues:
+        _notify_config_issues(ctx, config_issues)
     _apply_hotkey(ctx)
-    set_autostart(settings.autostart)
+    _apply_autostart(ctx, settings.autostart)
     ctx.controller.warm_up()
 
     def _after_startup_health_check(items: tuple[HealthItem, ...]) -> None:

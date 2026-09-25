@@ -1,5 +1,9 @@
 #define AppName "Dikte"
-#define AppVersion "0.2.0"
+; Sürüm build betiğinden gelir: ISCC /DAppVersion=<pyproject.toml sürümü>.
+; Yedek değer yalnızca ISCC elle, parametresiz çalıştırıldığında kullanılır.
+#ifndef AppVersion
+  #define AppVersion "0.0.0-dev"
+#endif
 [Setup]
 AppId={{7B1C0E52-3D7A-4B54-9C8F-2E1D6A5F0D1E}
 AppName={#AppName}

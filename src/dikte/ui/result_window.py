@@ -139,7 +139,7 @@ class ResultWindow(QMainWindow):
         self.toolbar = QToolBar("Ana")
         self.toolbar.setObjectName("mainToolBar")
         self.toolbar.setMovable(False)
-        self.record_action = QAction("Kaydet", self)
+        self.record_action = QAction("Kaydı başlat", self)
         self.record_action.setToolTip("Kaydı başlat / durdur")
         self.record_action.triggered.connect(self.record_requested)
         self.cancel_action = QAction("Vazgeç", self)
@@ -228,7 +228,9 @@ class ResultWindow(QMainWindow):
         self._show_session_stats(s)  # _finish_pending mesajı temizledikten sonra yazılır
 
     def on_state(self, state: DictationState) -> None:
-        self.record_action.setText("Durdur" if state is DictationState.RECORDING else "Kaydet")
+        self.record_action.setText(
+            "Kaydı durdur" if state is DictationState.RECORDING else "Kaydı başlat"
+        )
         self.record_action.setEnabled(
             state not in (DictationState.TRANSCRIBING, DictationState.CORRECTING)
         )

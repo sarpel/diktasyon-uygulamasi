@@ -115,3 +115,14 @@ def test_model_is_cached_finds_model_bin_behind_symlink(tmp_path):
     snap.mkdir(parents=True)
     (snap / "model.bin").symlink_to(blob)
     assert model_is_cached("large-v3-turbo", tmp_path) is True
+
+
+def test_default_cuda_probe_registers_nvidia_dll_dirs_first(monkeypatch):
+    """Windows'ta motor DLL dizinlerini kaydedip GPU'yu bulurken sağlık denetimi
+    kaydetmeden sorgulayıp 'GPU yok' demesin: ikisi aynı sonucu vermeli."""
+    from dikte.core import health
+
+    calls = []
+    monkeypatch.setattr("dikte.cuda_dlls.register_nvidia_dll_dirs", lambda: calls.append(1) or [])
+    health.default_cuda_probe()
+    assert calls == [1]

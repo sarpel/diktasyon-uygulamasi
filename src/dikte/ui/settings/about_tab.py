@@ -31,6 +31,8 @@ from dikte.ui.health_dialog import HealthDialog
 
 log = logging.getLogger(__name__)
 PACKAGES = ("PySide6", "faster-whisper", "ctranslate2", "pydantic", "ollama")
+PROBING = "Sorgulanıyor…"
+UNKNOWN = "bilinmiyor"
 
 
 def package_version(name: str) -> str:
@@ -50,7 +52,7 @@ def _default_gpu_probe() -> str:
         return f"CUDA aygıtı var · desteklenen: {types}"
     except Exception as exc:  # noqa: BLE001 - bilgi amaçlı; hata uygulamayı durdurmamalı
         log.debug("GPU bilgisi alınamadı: %s", exc)
-        return "bilinmiyor"
+        return UNKNOWN
 
 
 def _default_vram_probe() -> str:
@@ -74,15 +76,17 @@ class AboutTab(QWidget):
         super().__init__(parent)
         self._settings = settings
         self._health_job = None
+        # run_in_pool'un döndürdüğü sinyal nesnesi iş bitene kadar canlı tutulur.
+        self._probe_job: object | None = None
         form = QFormLayout()
         form.addRow("Uygulama", QLabel(f"{APP_NAME} {__version__}"))
         form.addRow("Python", QLabel(sys.version.split()[0]))
         for name in PACKAGES:
             form.addRow(name, QLabel(package_version(name)))
-        self.gpu_label = QLabel((gpu_probe or _default_gpu_probe)())
+        self.gpu_label = QLabel(PROBING)
         self.gpu_label.setWordWrap(True)
         form.addRow("GPU", self.gpu_label)
-        self.vram_label = QLabel((vram_probe or _default_vram_probe)())
+        self.vram_label = QLabel(PROBING)
         form.addRow("VRAM", self.vram_label)
 
         self.open_log_btn = QPushButton("Log dosyasını aç")
@@ -101,6 +105,29 @@ class AboutTab(QWidget):
         lay.addLayout(form)
         lay.addLayout(buttons)
         lay.addStretch(1)
+
+        # ctranslate2 içe aktarımı ve nvidia-smi birkaç saniye sürebilir; ayarlar her
+        # açıldığında GUI iş parçacığını bloke etmemek için arka planda sorgulanır.
+        gpu = gpu_probe or _default_gpu_probe
+        vram = vram_probe or _default_vram_probe
+        self._probe_job = run_in_pool(
+            lambda: (gpu(), vram()),
+            self._on_probed,
+            self._on_probe_failed,
+            QThreadPool.globalInstance(),
+        )
+
+    def _on_probed(self, result) -> None:
+        self._probe_job = None
+        gpu_text, vram_text = result
+        self.gpu_label.setText(gpu_text)
+        self.vram_label.setText(vram_text)
+
+    def _on_probe_failed(self, _message: str) -> None:
+        # Ayrıntı run_in_pool tarafından log.exception ile günlüğe yazıldı.
+        self._probe_job = None
+        self.gpu_label.setText(UNKNOWN)
+        self.vram_label.setText(UNKNOWN)
 
     def _open(self, path) -> None:
         try:

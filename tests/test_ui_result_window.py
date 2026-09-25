@@ -234,9 +234,15 @@ def test_toolbar_actions_emit_signals(qtbot):
 def test_record_action_label_follows_state(qtbot):
     w, c = make(qtbot)
     c.state_changed.emit(DictationState.RECORDING)
-    assert w.record_action.text() == "Durdur" and w.cancel_action.isEnabled()
+    assert w.record_action.text() == "Kaydı durdur" and w.cancel_action.isEnabled()
     c.state_changed.emit(DictationState.IDLE)
-    assert w.record_action.text() == "Kaydet" and not w.cancel_action.isEnabled()
+    assert w.record_action.text() == "Kaydı başlat" and not w.cancel_action.isEnabled()
+
+
+def test_record_action_initial_label_is_not_ambiguous_save(qtbot):
+    """Türkçede "Kaydet" "Save" okunur; eylem ise kaydı başlatır."""
+    w, _ = make(qtbot)
+    assert w.record_action.text() == "Kaydı başlat"
 
 
 def test_late_llm_result_does_not_overwrite_loaded_history(qtbot):
@@ -429,3 +435,18 @@ def test_open_file_action_does_nothing_when_dialog_cancelled(qtbot):
     w.file_requested.connect(got.append)
     w.open_file_action.trigger()
     assert got == []
+
+
+def test_escape_in_docked_history_search_clears_text_only(qtbot):
+    from PySide6.QtCore import Qt
+
+    w, _ = make(qtbot)
+    w.show()
+    qtbot.waitExposed(w)
+    w._open_history_search()
+    panel = w.history_panel
+    panel.search_edit.setText("docker")
+    qtbot.waitUntil(panel.search_edit.hasFocus, timeout=1000)
+    qtbot.keyClick(panel.search_edit, Qt.Key.Key_Escape)
+    assert panel.search_edit.text() == ""
+    assert w.isVisible()  # pencerenin Esc kısayolu (gizle) tetiklenmemeli

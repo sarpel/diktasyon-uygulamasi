@@ -27,3 +27,29 @@ def test_format_vram_renders_turkish_decimal_comma():
 
 def test_format_vram_none_is_unknown():
     assert format_vram(None) == "bilinmiyor"
+
+
+def test_nvidia_smi_hides_console_window_on_windows():
+    from dikte.platform.gpu_info import _run_nvidia_smi
+
+    seen = {}
+
+    def fake(cmd, **kwargs):
+        seen.update(kwargs)
+        return "1, 2\n"
+
+    assert _run_nvidia_smi(platform="win32", check_output=fake) == "1, 2\n"
+    assert seen["creationflags"] == 0x08000000
+
+
+def test_nvidia_smi_has_no_creationflags_on_linux():
+    from dikte.platform.gpu_info import _run_nvidia_smi
+
+    seen = {}
+
+    def fake(cmd, **kwargs):
+        seen.update(kwargs)
+        return ""
+
+    _run_nvidia_smi(platform="linux", check_output=fake)
+    assert "creationflags" not in seen

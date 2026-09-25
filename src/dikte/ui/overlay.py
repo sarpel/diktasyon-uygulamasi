@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from PySide6.QtCore import QElapsedTimer, Qt, QTimer, Signal
-from PySide6.QtGui import QCursor, QGuiApplication
+from PySide6.QtCore import QElapsedTimer, QPoint, QRect, Qt, QTimer, Signal
+from PySide6.QtGui import QCursor, QGuiApplication, QMouseEvent
 from PySide6.QtWidgets import QHBoxLayout, QLabel, QPushButton, QVBoxLayout, QWidget
 
 from dikte.core.state import DictationState
@@ -12,10 +12,12 @@ _STATUS = {
     DictationState.CORRECTING: "Düzeltiliyor…",
 }
 PARTIAL_MAX_CHARS = 70
+EDGE_MARGIN = 80  # alt/üst konumda ekran kenarından uzaklık (piksel)
 
 
 class RecordingOverlay(QWidget):
     cancel_requested = Signal()
+    moved = Signal(int, int)  # sürükleme bırakıldığında yeni sol-üst köşe (global)
 
     def __init__(self, parent=None):
         super().__init__(
@@ -50,16 +52,22 @@ class RecordingOverlay(QWidget):
         self.cancel_btn = QPushButton("Vazgeç")
         self.cancel_btn.setToolTip("Kaydı iptal et (Esc)")
         self.cancel_btn.clicked.connect(self.cancel_requested)
+        self.cancel_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.setCursor(Qt.CursorShape.OpenHandCursor)  # panel sürüklenerek taşınabilir
         for w in (self._dot, self._wave, self._time, self._status, self.cancel_btn):
             row.addWidget(w)
         self._partial = QLabel("")
         self._partial.setStyleSheet("color:#BBBBBB;font-size:12px;")
         self._partial.hide()
+        self._warning = QLabel("")
+        self._warning.setStyleSheet("color:#F5A623;font-size:12px;")
+        self._warning.hide()
         panel_lay = QVBoxLayout(panel)
         panel_lay.setContentsMargins(16, 10, 16, 10)
         panel_lay.setSpacing(6)
         panel_lay.addLayout(row)
         panel_lay.addWidget(self._partial)
+        panel_lay.addWidget(self._warning)
         outer = QHBoxLayout(self)
         outer.setContentsMargins(0, 0, 0, 0)
         outer.addWidget(panel)
@@ -77,9 +85,25 @@ class RecordingOverlay(QWidget):
         self._error_timer = QTimer(self)
         self._error_timer.setSingleShot(True)
         self._error_timer.timeout.connect(self._on_error_timeout)
+        self._warning_timer = QTimer(self)
+        self._warning_timer.setSingleShot(True)
+        self._warning_timer.timeout.connect(self._hide_warning)
+        self._position = "bottom"
+        self._custom_xy: tuple[int, int] | None = None
+        self._drag_offset: QPoint | None = None
+        self._drag_start: QPoint | None = None
 
     # ---- kamu
+    def set_position(self, position: str, xy: tuple[int, int] | None) -> None:
+        """ "bottom"/"top": imlecin ekranında alt/üst orta; "custom": kaydedilmiş sol-üst köşe."""
+        self._position = position
+        self._custom_xy = (int(xy[0]), int(xy[1])) if xy is not None else None
+        if self.isVisible():
+            self._place()
+
     def show_recording(self) -> None:
+        self._showing_error = False
+        self._clear_warning()
         self._wave.clear()
         self._wave.show()
         self._time.show()
@@ -97,6 +121,8 @@ class RecordingOverlay(QWidget):
         self.show()
 
     def show_status(self, text: str) -> None:
+        self._showing_error = False
+        self._clear_warning()
         self._blink.stop()
         self._clock.stop()
         self._dot.setStyleSheet("color:#F5A623;font-size:22px;")
@@ -110,6 +136,7 @@ class RecordingOverlay(QWidget):
         self.show()
 
     def show_error(self, text: str, ms: int = 2500) -> None:
+        self._clear_warning()
         self._blink.stop()
         self._clock.stop()
         self._error_timer.stop()
@@ -137,10 +164,21 @@ class RecordingOverlay(QWidget):
         self._blink.stop()
         self._clock.stop()
         self._showing_error = False
+        self._clear_warning()
         self._dot.setStyleSheet("color:#E53935;font-size:22px;")
         self._partial.setText("")
         self._partial.hide()
         self.hide()
+
+    def show_warning(self, text: str, ms: int = 4000) -> None:
+        """Kaydı bozmadan ölümcül olmayan bir uyarı satırı gösterir; `ms` sonra kendisi kalkar.
+
+        Hata yolundan (show_error) bilerek ayrıdır: kayıt modu, dalga ve süre sayacı sürer.
+        """
+        self._warning.setText(f"⚠ {text}")
+        self._warning.show()
+        self._resize_keeping_anchor()
+        self._warning_timer.start(ms)
 
     def show_partial(self, text: str) -> None:
         """Kayıt sırasında henüz teslim edilmemiş canlı transkripti dalganın altında gösterir."""
@@ -168,7 +206,55 @@ class RecordingOverlay(QWidget):
             self._error_token += 1
             self.hide_overlay()
 
+    # ---- sürükleme
+    def mousePressEvent(self, event: QMouseEvent) -> None:
+        if event.button() == Qt.MouseButton.LeftButton:
+            global_pos = event.globalPosition().toPoint()
+            self._drag_start = global_pos
+            self._drag_offset = global_pos - self.frameGeometry().topLeft()
+            self.setCursor(Qt.CursorShape.ClosedHandCursor)
+            event.accept()
+            return
+        super().mousePressEvent(event)
+
+    def mouseMoveEvent(self, event: QMouseEvent) -> None:
+        if self._drag_offset is not None and event.buttons() & Qt.MouseButton.LeftButton:
+            self.move(event.globalPosition().toPoint() - self._drag_offset)
+            event.accept()
+            return
+        super().mouseMoveEvent(event)
+
+    def mouseReleaseEvent(self, event: QMouseEvent) -> None:
+        if event.button() == Qt.MouseButton.LeftButton and self._drag_offset is not None:
+            dragged = event.globalPosition().toPoint() != self._drag_start
+            self._drag_offset = self._drag_start = None
+            self.setCursor(Qt.CursorShape.OpenHandCursor)
+            event.accept()
+            if dragged:
+                # Uygulama ayarı kaydedene kadar da sonraki gösterimler bu konumda kalsın.
+                self._position = "custom"
+                self._custom_xy = (self.x(), self.y())
+                self.moved.emit(self.x(), self.y())
+            return
+        super().mouseReleaseEvent(event)
+
     # ---- iç
+    def _hide_warning(self) -> None:
+        self._warning.hide()
+        self._resize_keeping_anchor()
+
+    def _clear_warning(self) -> None:
+        self._warning_timer.stop()
+        self._warning.setText("")
+        self._warning.hide()
+
+    def _resize_keeping_anchor(self) -> None:
+        """Yükseklik değişince alt konumda alt kenarı sabit tutar (panel yukarı büyür)."""
+        old = self.geometry()
+        self.adjustSize()
+        if self._position == "bottom" and self.isVisible():
+            self.move(old.x(), old.y() + old.height() - self.height())
+
     def _toggle_dot(self) -> None:
         self._dot_on = not self._dot_on
         self._dot.setVisible(self._dot_on)
@@ -179,7 +265,33 @@ class RecordingOverlay(QWidget):
 
     def _place(self) -> None:
         self.adjustSize()
+        if self._position == "custom":
+            target = self._custom_target()
+            if target is not None:
+                self.move(target)
+                return
         # Overlay imlecin bulunduğu ekrana konur; çok ekranlı kurulumda birincil ekrana kaçmaz.
         current = QGuiApplication.screenAt(QCursor.pos()) or QGuiApplication.primaryScreen()
         screen = current.availableGeometry()
-        self.move(screen.center().x() - self.width() // 2, screen.bottom() - self.height() - 80)
+        x = screen.center().x() - self.width() // 2
+        if self._position == "top":
+            self.move(x, screen.top() + EDGE_MARGIN)
+        else:
+            self.move(x, screen.bottom() - self.height() - EDGE_MARGIN)
+
+    def _custom_target(self) -> QPoint | None:
+        """Kaydedilmiş konumu içeren ekrana sığacak biçimde kırpar; hiçbir ekranda değilse
+        (ör. ikinci monitör çıkarıldı) None döner ve varsayılan alt konuma düşülür."""
+        if self._custom_xy is None:
+            return None
+        point = QPoint(*self._custom_xy)
+        screen = QGuiApplication.screenAt(point)
+        if screen is None:
+            return None
+        return _clamp(point, self.size().width(), self.size().height(), screen.availableGeometry())
+
+
+def _clamp(point: QPoint, width: int, height: int, area: QRect) -> QPoint:
+    x = max(area.left(), min(point.x(), area.right() - width + 1))
+    y = max(area.top(), min(point.y(), area.bottom() - height + 1))
+    return QPoint(x, y)

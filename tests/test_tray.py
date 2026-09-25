@@ -106,3 +106,25 @@ def test_recent_disabled_when_no_history(qtbot):
     t = make(qtbot)
     t.set_recent(())
     assert not t._copy_recent_action.isEnabled() and not t._recent_menu.isEnabled()
+
+
+def _action(t, text):
+    return next(a for a in t.contextMenu().actions() if a.text() == text)
+
+
+def test_paste_last_action_emits_signal(qtbot):
+    t = make(qtbot)
+    with qtbot.waitSignal(t.paste_last_requested):
+        _action(t, "Son sonucu yapıştır").trigger()
+
+
+def test_retry_action_disabled_until_retry_available(qtbot):
+    t = make(qtbot)
+    action = _action(t, "Başarısız kaydı yeniden dene")
+    assert not action.isEnabled()
+    t.set_retry_available(True)
+    assert action.isEnabled()
+    with qtbot.waitSignal(t.retry_failed_requested):
+        action.trigger()
+    t.set_retry_available(False)
+    assert not action.isEnabled()
