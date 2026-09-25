@@ -838,3 +838,74 @@ def test_config_issues_are_reported(ctx, monkeypatch):
     assert "stt.beam_size, llm.provider" in notes[0][1]
     app_mod._notify_config_issues(ctx, ("*",))
     assert "okunamadı" in notes[1][1]
+
+
+def test_restore_clipboard_skipped_when_user_copied_meanwhile(ctx, monkeypatch, qtbot):
+    from PySide6.QtWidgets import QApplication
+
+    ctx.settings = ctx.settings.model_copy(update={"restore_clipboard": True})
+    QApplication.clipboard().setText("eski")
+    monkeypatch.setattr(app_mod, "paste_active_window", lambda ids, **k: True)
+    app_mod._on_result_ready(ctx, "yeni")
+    QApplication.clipboard().setText("kullanıcının yeni kopyası")
+    qtbot.wait(app_mod.restore_delay_ms("yeni") + 200)
+    assert QApplication.clipboard().text() == "kullanıcının yeni kopyası"
+
+
+def test_result_uses_history_excluding_mime(ctx, monkeypatch):
+    built = []
+
+    def fake_build(text, *, exclude_history):
+        built.append(exclude_history)
+        from PySide6.QtCore import QMimeData
+
+        m = QMimeData()
+        m.setText(text)
+        return m
+
+    monkeypatch.setattr(app_mod, "build_mime", fake_build)
+    monkeypatch.setattr(app_mod, "paste_active_window", lambda ids, **k: True)
+    app_mod._on_result_ready(ctx, "metin")
+    assert built == [True]
+
+
+class _FakeMedia:
+    def __init__(self):
+        self.calls = []
+
+    def pause(self):
+        self.calls.append("pause")
+
+    def resume(self):
+        self.calls.append("resume")
+
+
+def test_media_paused_during_recording_and_resumed_after(ctx, qtbot):
+    ctx.settings = ctx.settings.model_copy(update={"pause_media": True})
+    ctx.media = _FakeMedia()
+    ctx.controller.state_changed.emit(DictationState.RECORDING)
+    ctx.controller.state_changed.emit(DictationState.RECORDING)
+    ctx.controller.state_changed.emit(DictationState.TRANSCRIBING)
+    ctx.controller.state_changed.emit(DictationState.RESULT)
+    qtbot.waitUntil(lambda: ctx.media.calls == ["pause", "resume"], timeout=2000)
+
+
+def test_media_untouched_when_setting_off(ctx, qtbot):
+    ctx.media = _FakeMedia()
+    ctx.controller.state_changed.emit(DictationState.RECORDING)
+    ctx.controller.state_changed.emit(DictationState.IDLE)
+    qtbot.wait(100)
+    assert ctx.media.calls == []
+
+
+def test_autostart_failure_is_reported(ctx, monkeypatch):
+    from dikte.platform.autostart import AutostartError
+
+    def boom(enabled):
+        raise AutostartError("Otomatik başlatma ayarlanamadı")
+
+    notes = []
+    monkeypatch.setattr(app_mod, "set_autostart", boom)
+    monkeypatch.setattr(ctx.tray, "notify", lambda *a, **k: notes.append(a))
+    app_mod._apply_autostart(ctx, True)
+    assert "Otomatik başlatma" in notes[0][1]

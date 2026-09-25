@@ -35,12 +35,14 @@ from dikte.core.state import BUSY_STATES, MODES, DictationState
 from dikte.core.workers import run_in_pool
 from dikte.llm import LlmError, make_provider
 from dikte.logging_setup import setup_logging
-from dikte.platform.autostart import set_autostart
+from dikte.platform.autostart import AutostartError, set_autostart
+from dikte.platform.clipboard import build_mime, restore_delay_ms, should_restore
 from dikte.platform.foreground import foreground_process_name
 from dikte.platform.gpu_info import LOW_VRAM_MB, query_vram
 from dikte.platform.hold_detect import HoldDetector
 from dikte.platform.hotkey import HOTKEY_ID, GlobalHotkey
 from dikte.platform.hotkey_parse import HotkeyParseError, parse_hotkey
+from dikte.platform.media import MediaPauser
 from dikte.platform.paste import foreground_window_id, paste_active_window, type_unicode_text
 from dikte.platform.single_instance import (
     DEFAULT_NAME,
@@ -63,8 +65,6 @@ from dikte.ui.tray import TrayIcon
 log = logging.getLogger(__name__)
 # Windows dışında global kısayol yoktur; masaüstü ortamı bu komuta bir tuş bağlar.
 CLI_TOGGLE_HINT = "dikte --toggle"
-# Yapıştırma işletim sisteminde işlenip aktif pencereye ulaşana kadarki bekleme süresi.
-RESTORE_CLIPBOARD_DELAY_MS = 300
 # check_health'in LLM kontrolü ağ isteği yapar; SDK varsayılan yeniden deneme + zaman
 # aşımıyla en kötü durumda dakikalarca sürebilir. Senkron çağrı GUI iş parçacığını
 # (ve bu iş parçacığında dönen IPC sunucusunu — bkz. single_instance.py) bloke ederdi.
@@ -90,6 +90,11 @@ class AppContext:
     hold_mode: str = "correct"  # hold'un hangi kısayol için silahlandığını taşır
     health_dialog: HealthDialog | None = None  # ilk çalıştırmada/STT hatasında gösterilir
     active_profile: AppProfile | None = None  # son kısayolda ön plandaki uygulamayla eşleşen profil
+    media: MediaPauser | None = None  # pause_media açıkken ilk kayıtta kurulur
+    media_paused: bool = False
+    # Medya çağrıları 1,5 sn'ye kadar sürebilir; tek iş parçacıklı havuz sırayı korur
+    # (resume, kendi pause'undan önce çalışamaz).
+    media_pool: QThreadPool | None = None
 
 
 class _NullLlm:
@@ -210,6 +215,7 @@ def _wire(ctx: AppContext) -> None:
     ctx.tray.cancel_requested.connect(c.cancel)
     ctx.cancel_hotkey.activated.connect(c.cancel)
     c.state_changed.connect(lambda s: _sync_cancel_hotkey(ctx, s))
+    c.state_changed.connect(lambda s: _sync_media(ctx, s))
     c.result_ready.connect(lambda text: _on_result_ready(ctx, text))
     ctx.window.history_panel.delete_requested.connect(lambda sid: _delete_session(ctx, sid))
     ctx.window.history_panel.clear_requested.connect(lambda: _clear_history(ctx))
@@ -449,7 +455,7 @@ def _on_result_ready(ctx: AppContext, text: str, *, force_paste: bool = False) -
     # hâlde panoda bir resim varken dikte sonrası geri yükleme onu sessizce kaybederdi.
     # mimeData() clipboard'a ait olduğundan, clipboard değişmeden önce kopyalanmalı.
     previous_mime = _clone_mime(clipboard.mimeData()) if ctx.settings.restore_clipboard else None
-    clipboard.setText(text)
+    clipboard.setMimeData(build_mime(text, exclude_history=ctx.settings.clipboard_exclude_history))
     if ctx.controller.session.source_path and not force_paste:
         return  # dosyadan çözümlenen sonuç otomatik olarak yalnızca panoya kopyalanır
     if not ctx.settings.auto_paste or ctx.window.isActiveWindow():
@@ -467,7 +473,40 @@ def _on_result_ready(ctx: AppContext, text: str, *, force_paste: bool = False) -
         log.info("yapıştırma atlandı; metin panoda")
         return
     if ctx.settings.restore_clipboard and previous_mime is not None and previous_mime.formats():
-        QTimer.singleShot(RESTORE_CLIPBOARD_DELAY_MS, lambda: clipboard.setMimeData(previous_mime))
+        QTimer.singleShot(
+            restore_delay_ms(text), lambda: _restore_clipboard(clipboard, previous_mime, text)
+        )
+
+
+def _restore_clipboard(clipboard, previous_mime: QMimeData, pasted_text: str) -> None:
+    """Kullanıcı bu arada yeni bir şey kopyaladıysa onu ezmez."""
+    if should_restore(clipboard.text(), pasted_text):
+        clipboard.setMimeData(previous_mime)
+    else:
+        log.info("pano geri yüklenmedi: bu arada yeni içerik kopyalanmış")
+
+
+def _sync_media(ctx: AppContext, state: DictationState) -> None:
+    """Kayıt başlarken çalan medyayı duraklatır, kayıt bitince yalnızca onları sürdürür."""
+    recording = state is DictationState.RECORDING
+    if recording == ctx.media_paused:
+        return
+    if recording and not ctx.settings.pause_media:
+        return
+    if ctx.media is None:
+        ctx.media = MediaPauser()
+    if ctx.media_pool is None:
+        ctx.media_pool = QThreadPool()
+        ctx.media_pool.setMaxThreadCount(1)
+    ctx.media_paused = recording
+    action = ctx.media.pause if recording else ctx.media.resume
+    job = run_in_pool(
+        action,
+        lambda _r: None,
+        lambda e: log.warning("medya denetimi başarısız: %s", e),
+        ctx.media_pool,
+    )
+    _keep_job(job)
 
 
 def _sync_cancel_hotkey(ctx: AppContext, state: DictationState) -> None:
@@ -597,7 +636,8 @@ def _apply_hotkey(ctx: AppContext) -> None:
             "Başka bir uygulama kullanıyor olabilir.",
             critical=True,
         )
-        ctx.tray.set_hotkey_label(ctx.settings.hotkey)
+        # Yeni kısayol kaydedilemezse GlobalHotkey eskisini geri kaydeder; etiket onu gösterir.
+        ctx.tray.set_hotkey_label(ctx.hotkey.label or ctx.settings.hotkey)
     else:
         log.info("global kısayol bu platformda yok; '%s' komutuna tuş bağlayın", CLI_TOGGLE_HINT)
         ctx.tray.set_hotkey_label(CLI_TOGGLE_HINT)
@@ -653,7 +693,7 @@ def _open_settings(ctx: AppContext) -> None:
     ctx.recorder.update_settings(new.audio)
     llm_changed = new.llm != ctx.settings.llm
     ctx.settings = new
-    set_autostart(new.autostart)
+    _apply_autostart(ctx, new.autostart)
     ctx.controller.update_settings(new)
     if llm_changed:  # sağlayıcı yeniden kurulur, yeniden başlatma gerekmez
         ctx.controller.set_llm(_make_llm(new))
@@ -695,7 +735,16 @@ def _warm_up_when_idle(ctx: AppContext) -> None:
     ctx.controller.state_changed.connect(_on_state)
 
 
+def _apply_autostart(ctx: AppContext, enabled: bool) -> None:
+    try:
+        set_autostart(enabled)
+    except AutostartError as exc:
+        ctx.tray.notify(APP_NAME, str(exc), critical=True)
+
+
 def _quit(ctx: AppContext) -> None:
+    if ctx.media is not None and ctx.media_paused:
+        ctx.media.resume()  # kayıt sürerken çıkılırsa duraklatılan medya askıda kalmasın
     ctx.hotkey.unregister()
     ctx.cancel_hotkey.unregister()
     ctx.hotkey_translate.unregister()
@@ -806,7 +855,7 @@ def main(argv: list[str] | None = None) -> int:
     if config_issues:
         _notify_config_issues(ctx, config_issues)
     _apply_hotkey(ctx)
-    set_autostart(settings.autostart)
+    _apply_autostart(ctx, settings.autostart)
     ctx.controller.warm_up()
 
     def _after_startup_health_check(items: tuple[HealthItem, ...]) -> None:
