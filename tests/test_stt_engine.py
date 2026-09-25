@@ -55,6 +55,8 @@ def make_engine(settings: SttSettings | None = None):
         model_factory=factory,
         pipeline_factory=pipeline_factory,
         cuda_probe=lambda: 1,
+        # Gerçek ctranslate2/GPU sorgulanmaz: testler makinenin kartından bağımsız olmalı.
+        supported_types_probe=lambda: {"float16", "int8_float16", "float32"},
         speech_probe=lambda audio, s: True,  # gerçek VAD yerine: sessizlik testleri ayrı
     )
     return eng, created
@@ -407,3 +409,32 @@ def test_short_path_does_not_pass_clip_timestamps():
     eng, created = make_engine()
     eng.transcribe(np.zeros(16000, dtype=np.float32))
     assert "clip_timestamps" not in created["model"].calls[0]
+
+
+def test_transcribe_survives_model_reset_between_load_and_inference():
+    """Başka bir iş parçacığı `update_settings` ile modeli yükleme ile çözümleme arasında
+    düşürse bile transcribe çıplak assert/None model hatasına düşmemeli."""
+    eng, created = make_engine()
+    original_load = eng.load
+
+    def racing_load():
+        original_load()
+        eng.update_settings(SttSettings(model="small"))  # eşzamanlı ayar değişikliği
+
+    eng.load = racing_load  # type: ignore[method-assign]
+    res = eng.transcribe(np.ones(16000, dtype=np.float32) * 0.1)
+    assert res.text == "merhaba dünya"
+    assert eng.is_loaded
+
+
+def test_warm_up_survives_model_reset_between_load_and_inference():
+    eng, created = make_engine()
+    original_load = eng.load
+
+    def racing_load():
+        original_load()
+        eng.update_settings(SttSettings(model="small"))
+
+    eng.load = racing_load  # type: ignore[method-assign]
+    eng.warm_up()
+    assert eng.is_loaded and created["model"].calls  # ısınma gerçekten çalıştı

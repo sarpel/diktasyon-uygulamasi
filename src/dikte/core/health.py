@@ -101,7 +101,12 @@ def check_health(
 
 
 def default_cuda_probe() -> int:
+    from dikte.cuda_dlls import register_nvidia_dll_dirs
+
+    # Motorla aynı koşullarda sorgula: Windows'ta DLL dizinleri kaydedilmeden ctranslate2
+    # GPU'yu göremeyebilir ve denetim, çalışan motorla çelişen "GPU yok" derdi.
     try:
+        register_nvidia_dll_dirs()
         import ctranslate2
 
         return ctranslate2.get_cuda_device_count()
