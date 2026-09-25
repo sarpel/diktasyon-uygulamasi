@@ -68,7 +68,9 @@ CLI_TOGGLE_HINT = "dikte --toggle"
 # check_health'in LLM kontrolü ağ isteği yapar; SDK varsayılan yeniden deneme + zaman
 # aşımıyla en kötü durumda dakikalarca sürebilir. Senkron çağrı GUI iş parçacığını
 # (ve bu iş parçacığında dönen IPC sunucusunu — bkz. single_instance.py) bloke ederdi.
-_background_jobs: list = []  # run_in_pool sinyalleri iş bitene kadar canlı tutulmalı
+_background_jobs: list = []
+# Çıkışta kuyruktaki medya pause() çağrısı için en fazla bekleme (MediaPauser zaman aşımı ~1,5 sn).
+MEDIA_QUIT_WAIT_MS = 2000  # run_in_pool sinyalleri iş bitene kadar canlı tutulmalı
 
 
 @dataclass
@@ -258,6 +260,8 @@ def _wire(ctx: AppContext) -> None:
     c.session_updated.connect(lambda s: _sync_history_on_edit(ctx, s))
     c.edit_learned.connect(lambda changes: _suggest(ctx, changes))
     c.ready_changed.connect(lambda ready: ready and _refresh_status_info(ctx))
+    # Saklama süresi dolmuş dikteler yalnızca listeden gizlenmez, açılışta diskten de silinir.
+    _guard_history(ctx, lambda: _prune_history(ctx))
     _refresh_history(ctx)
 
 
@@ -850,7 +854,12 @@ def _apply_autostart(ctx: AppContext, enabled: bool) -> None:
 
 def _quit(ctx: AppContext) -> None:
     if ctx.media is not None and ctx.media_paused:
-        ctx.media.resume()  # kayıt sürerken çıkılırsa duraklatılan medya askıda kalmasın
+        # Kayıt sürerken çıkılırsa duraklatılan medya askıda kalmasın. pause() medya
+        # havuzunda hâlâ sürüyor olabilir; önce onu beklemezsek resume() boşa gider ve
+        # ardından biten pause() medyayı duraklatılmış bırakır.
+        if ctx.media_pool is not None:
+            ctx.media_pool.waitForDone(MEDIA_QUIT_WAIT_MS)
+        ctx.media.resume()
     ctx.hotkey.unregister()
     ctx.cancel_hotkey.unregister()
     ctx.hotkey_translate.unregister()
