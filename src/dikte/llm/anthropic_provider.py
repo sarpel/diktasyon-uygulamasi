@@ -6,8 +6,9 @@ from collections.abc import Callable
 from typing import Any
 
 from dikte.config import LlmSettings
+from dikte.llm.jsontext import extract_json_object
 from dikte.llm.keys import read_api_key
-from dikte.llm.provider import LlmError
+from dikte.llm.provider import LlmError, LlmTruncatedError
 
 log = logging.getLogger(__name__)
 # Anahtar istemeyen özel uç noktalar da bir değer bekler; SDK boş dizeyi (aksine ortam
@@ -84,9 +85,10 @@ class AnthropicProvider:
         except Exception as exc:
             log.exception("Anthropic isteği başarısız")
             raise LlmError(f"Anthropic API hatası ({self._model}): {exc}") from exc
+        if getattr(msg, "stop_reason", None) == "max_tokens":
+            log.warning("Anthropic yanıtı max_tokens sınırında kesildi (%s)", self._model)
+            raise LlmTruncatedError(self.name)
         text = "".join(getattr(b, "text", "") for b in msg.content)
         if json_schema is not None:
-            start, end = text.find("{"), text.rfind("}")
-            if start >= 0 and end > start:
-                text = text[start : end + 1]
+            text = extract_json_object(text)
         return text

@@ -4,9 +4,27 @@ import logging
 from collections.abc import Callable
 
 from dikte.config import LlmSettings
-from dikte.llm.provider import LlmError
+from dikte.llm.provider import LlmError, LlmTruncatedError
 
 log = logging.getLogger(__name__)
+
+# Türkçe metinde kaba tahmin: ~3 karakter/token. Çıktı (düzeltme/çeviri/prompt) girdinin
+# yaklaşık iki katına kadar büyüyebilir; bağlam 2048'in katına yuvarlanır, VRAM için tavanlı.
+_CHARS_PER_TOKEN = 3
+_OUTPUT_FACTOR = 2
+_CTX_STEP = 2048
+_CTX_CAP = 32768
+
+
+def estimate_num_ctx(system: str, user: str, *, base: int) -> int:
+    """İstek için num_ctx: en az base; tahmini giriş+çıkış sığacak kadar büyür (tavan 32768).
+
+    base tavandan büyükse kullanıcının açık ayarına dokunulmaz.
+    """
+    prompt_tokens = (len(system) + len(user)) / _CHARS_PER_TOKEN
+    output_tokens = len(user) / _CHARS_PER_TOKEN * _OUTPUT_FACTOR
+    needed = -(-int(prompt_tokens + output_tokens) // _CTX_STEP) * _CTX_STEP
+    return max(base, min(needed, _CTX_CAP))
 
 
 def _default_client_factory(host: str, timeout: float):
@@ -67,7 +85,7 @@ class OllamaProvider:
                     "temperature": temperature,
                     "top_p": self._settings.top_p,
                     "top_k": self._settings.top_k,
-                    "num_ctx": self._settings.num_ctx,
+                    "num_ctx": estimate_num_ctx(system, user, base=self._settings.num_ctx),
                 },
                 keep_alive=self._settings.keep_alive,
             )
@@ -76,6 +94,9 @@ class OllamaProvider:
             raise LlmError(
                 f"Ollama'ya ulaşılamadı veya yanıt vermedi ({self._settings.ollama_host}): {exc}"
             ) from exc
+        if getattr(resp, "done_reason", None) == "length":
+            log.warning("Ollama yanıtı bağlam/çıktı sınırında kesildi (%s)", self._settings.model)
+            raise LlmTruncatedError(self.name)
         content = getattr(getattr(resp, "message", None), "content", None)
         if not isinstance(content, str) or not content.strip():
             raise LlmError("Ollama boş yanıt döndürdü")

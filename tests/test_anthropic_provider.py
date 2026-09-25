@@ -76,3 +76,17 @@ def test_missing_optional_key_is_sent_as_empty_not_env_fallback(monkeypatch):
         name="custom-anthropic",
     )
     assert captured["api_key"] == ""
+
+
+def test_max_tokens_stop_reason_raises_truncation_error(monkeypatch):
+    p, c = make(monkeypatch, [])
+    c.messages.create = lambda **kw: SimpleNamespace(
+        content=[SimpleNamespace(text="yarım")], stop_reason="max_tokens"
+    )
+    with pytest.raises(LlmError, match="yarıda kesildi"):
+        p.complete("s", "u")
+
+
+def test_json_output_strips_code_fence(monkeypatch):
+    p, _ = make(monkeypatch, [SimpleNamespace(text='```json\n{"a": 1}\n```')])
+    assert p.complete("s", "u", json_schema={"type": "object"}) == '{"a": 1}'
