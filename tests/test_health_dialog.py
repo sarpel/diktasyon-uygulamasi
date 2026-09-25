@@ -114,7 +114,11 @@ def test_successful_download_emits_model_downloaded(qtbot):
 
 def test_failed_download_does_not_emit_model_downloaded(qtbot, monkeypatch):
     monkeypatch.setattr(hd_mod.QMessageBox, "warning", staticmethod(lambda *a, **k: None))
-    d = HealthDialog(MODEL_MISSING_ITEMS, on_download=lambda progress: 1 / 0)
+
+    def boom(progress):
+        raise ZeroDivisionError
+
+    d = HealthDialog(MODEL_MISSING_ITEMS, on_download=boom)
     qtbot.addWidget(d)
     fired = []
     d.model_downloaded.connect(lambda: fired.append(1))

@@ -151,6 +151,7 @@ def build_app(settings: Settings) -> AppContext:
         stt=stt,
         llm=_make_llm(settings),
         pool=QThreadPool.globalInstance(),
+        failed_audio_path=paths.failed_audio_path(),
     )
     hotkey = GlobalHotkey()
     cancel_hotkey = GlobalHotkey(hotkey_id=HOTKEY_ID + 1)  # iptal için ikinci kayıt
@@ -159,7 +160,7 @@ def build_app(settings: Settings) -> AppContext:
     tray = TrayIcon(parse_hotkey(settings.hotkey).label)
     overlay = RecordingOverlay()
     window = ResultWindow()
-    history = History(paths.history_path(), settings.history_limit)
+    history = _make_history(settings)
     sounds = SoundPlayer(settings.sounds_enabled)
     hold = HoldDetector()
     ctx = AppContext(
@@ -182,6 +183,18 @@ def build_app(settings: Settings) -> AppContext:
     overlay.set_position(settings.overlay_position, settings.overlay_xy)
     _wire(ctx)
     return ctx
+
+
+def _prune_history(ctx: AppContext) -> None:
+    ctx.history.prune()
+
+
+def _make_history(settings: Settings) -> History:
+    return History(
+        paths.history_path(),
+        settings.history_limit,
+        retention_days=settings.history_retention_days,
+    )
 
 
 def _wire(ctx: AppContext) -> None:
@@ -221,6 +234,11 @@ def _wire(ctx: AppContext) -> None:
     c.state_changed.connect(lambda s: _sync_media(ctx, s))
     ctx.overlay.moved.connect(lambda x, y: _save_overlay_position(ctx, x, y))
     ctx.tray.paste_last_requested.connect(lambda: _paste_last(ctx))
+    c.warning.connect(ctx.overlay.show_warning)
+    c.failed_audio_changed.connect(ctx.tray.set_retry_available)
+    ctx.tray.set_retry_available(c.has_failed_audio)
+    ctx.tray.retry_failed_requested.connect(c.retry_last_failed)
+    c.undo_requested.connect(lambda: _undo_last_paste(ctx))
     if ctx.hotkey_paste_last is not None:
         ctx.hotkey_paste_last.activated.connect(lambda: _paste_last(ctx))
     c.result_ready.connect(lambda text: _on_result_ready(ctx, text))
@@ -388,6 +406,13 @@ def _last_result_text(ctx: AppContext) -> str:
         log.exception("son sonuç için geçmiş okunamadı")
         return ""
     return sessions[-1].output_text if sessions else ""
+
+
+def _undo_last_paste(ctx: AppContext) -> None:
+    """Sesli "geri al" komutu: ön plandaki uygulamaya (kendi pencerelerimize değil) Ctrl+Z."""
+    own_ids = {int(ctx.window.winId()), int(ctx.overlay.winId())}
+    if not paste_active_window(own_ids, combo="ctrl+z"):
+        ctx.tray.notify(APP_NAME, "Geri alma gönderilemedi; hedef uygulamada Ctrl+Z'ye basın.")
 
 
 def _paste_last(ctx: AppContext) -> None:
@@ -781,7 +806,9 @@ def _open_settings(ctx: AppContext) -> None:
     ctx.window.raise_on_result = new.raise_window_on_result
     ctx.sounds.set_enabled(new.sounds_enabled)
     ctx.overlay.set_position(new.overlay_position, new.overlay_xy)
-    ctx.history = History(paths.history_path(), new.history_limit)
+    ctx.history = _make_history(new)
+    # Sınır/saklama süresi düşürüldüyse (ör. 0 = geçmiş kapalı) eski dikteler diskte kalmasın.
+    _guard_history(ctx, lambda: _prune_history(ctx))
     _refresh_history(ctx)
     _refresh_status_info(ctx)
     _apply_hotkey(ctx)

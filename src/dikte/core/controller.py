@@ -16,7 +16,7 @@ from dikte.llm.diff import word_changes
 from dikte.llm.provider import LlmProvider
 from dikte.stt.engine import SttEngine
 from dikte.stt.result import TranscriptResult
-from dikte.text.commands import apply_commands
+from dikte.text.commands import apply_commands, is_undo_command
 from dikte.text.dictionary import apply_compiled, compile_rules, hotwords, prompt_terms
 
 log = logging.getLogger(__name__)
@@ -48,6 +48,7 @@ class DictationController(QObject):
     partial_text = Signal(str)
     warning = Signal(str)  # kaydı durdurmayan uyarılar (ör. mikrofondan ses gelmiyor)
     failed_audio_changed = Signal(bool)  # yeniden denenebilir kayıt var/yok
+    undo_requested = Signal()  # dikte yalnızca "geri al"dı: yapıştırma yerine geri alma
 
     def __init__(
         self,
@@ -481,6 +482,10 @@ class DictationController(QObject):
         self._session_audio = []
         if self._source == "retry":
             self._discard_failed_audio()
+        if self._settings.voice_commands and is_undo_command(result.text):
+            self.undo_requested.emit()
+            self._set_state(DictationState.IDLE)
+            return
         entries = self._settings.dictionary.entries
         text = apply_compiled(result.text, self._compiled_dictionary_rules)
         if self._settings.voice_commands:
@@ -499,7 +504,9 @@ class DictationController(QObject):
             [e.term for e in entries], self._settings.dictionary.user_instructions
         )
         self._spawn(
-            lambda: tasks.correct(self._llm, raw, glossary=glossary),
+            lambda: tasks.correct(
+                self._llm, raw, glossary=glossary, sanity_check=self._settings.llm.sanity_check
+            ),
             self._on_corrected,
             self._on_llm_error,
         )

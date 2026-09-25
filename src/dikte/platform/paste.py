@@ -20,6 +20,7 @@ from typing import Literal
 log = logging.getLogger(__name__)
 
 VK_CONTROL, VK_SHIFT, VK_V, KEYEVENTF_KEYUP = 0x11, 0x10, 0x56, 0x0002
+VK_Z = 0x5A  # "geri al" sesli komutu Ctrl+Z gönderir
 VK_RETURN = 0x0D
 KEYEVENTF_UNICODE = 0x0004
 INPUT_KEYBOARD = 1
@@ -32,15 +33,17 @@ _XDOTOOL_TYPE_DELAY_MS = "1"
 _TYPE_TIMEOUT_PER_CHAR_S = 0.02
 _warned = {"tools": False}
 
-KeyCombo = Literal["ctrl+v", "ctrl+shift+v"]
+KeyCombo = Literal["ctrl+v", "ctrl+shift+v", "ctrl+z"]
 
 _COMBO_VKS: dict[KeyCombo, tuple[int, ...]] = {
     "ctrl+v": (VK_CONTROL, VK_V),
     "ctrl+shift+v": (VK_CONTROL, VK_SHIFT, VK_V),
+    "ctrl+z": (VK_CONTROL, VK_Z),
 }
 _WTYPE_ARGS: dict[KeyCombo, list[str]] = {
     "ctrl+v": ["-M", "ctrl", "v", "-m", "ctrl"],
     "ctrl+shift+v": ["-M", "ctrl", "-M", "shift", "v", "-m", "shift", "-m", "ctrl"],
+    "ctrl+z": ["-M", "ctrl", "z", "-m", "ctrl"],
 }
 
 

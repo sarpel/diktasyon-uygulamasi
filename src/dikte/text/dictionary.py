@@ -50,7 +50,7 @@ def apply_compiled(text: str, rules: list[CompiledRule]) -> str:
         pos = 0
         match = pattern.search(text, pos)
         while match:
-            term = terms[match.lastindex - 1]
+            term = terms[(match.lastindex or 1) - 1]
             if _term_already_present(text, match.start(), term):
                 end = match.start() + len(term)
                 parts.append(text[pos:end])

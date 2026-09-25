@@ -97,7 +97,7 @@ class RecordingOverlay(QWidget):
     def set_position(self, position: str, xy: tuple[int, int] | None) -> None:
         """ "bottom"/"top": imlecin ekranında alt/üst orta; "custom": kaydedilmiş sol-üst köşe."""
         self._position = position
-        self._custom_xy = tuple(xy) if xy is not None else None
+        self._custom_xy = (int(xy[0]), int(xy[1])) if xy is not None else None
         if self.isVisible():
             self._place()
 

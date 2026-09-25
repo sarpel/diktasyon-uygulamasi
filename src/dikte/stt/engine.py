@@ -3,7 +3,7 @@ from __future__ import annotations
 import logging
 import threading
 from collections.abc import Callable
-from typing import Protocol
+from typing import Any, Protocol
 
 import numpy as np
 
@@ -198,10 +198,10 @@ class FasterWhisperEngine:
         with self._lock:
             self._load_locked()
 
-    def _load_locked(self) -> None:
-        """Kilit altında çağrılır; model yüklüyse hiçbir şey yapmaz."""
+    def _load_locked(self) -> Any:
+        """Kilit altında çağrılır; model yüklüyse yalnızca onu döndürür."""
         if self._model is not None:
-            return
+            return self._model
         if self._cuda_probe() < 1:
             raise SttError(
                 "CUDA destekli GPU bulunamadı. Dikte yalnızca GPU üzerinde çalışır; "
@@ -225,6 +225,7 @@ class FasterWhisperEngine:
             self._settings.device,
             self._compute_type,
         )
+        return self._model
 
     def warm_up(self) -> None:
         """Modeli yükler ve ilk gerçek isteğin yavaş olmaması için kısa bir çözümleme yapar."""
@@ -235,9 +236,9 @@ class FasterWhisperEngine:
         audio = (rng.standard_normal(int(SAMPLE_RATE * WARM_UP_SECONDS)) * 0.01).astype(np.float32)
         with self._lock:
             # load() ile bu kilit arasında update_settings modeli düşürmüş olabilir.
-            self._load_locked()
+            model = self._load_locked()
             try:
-                seg_iter, _info = self._model.transcribe(
+                seg_iter, _info = model.transcribe(
                     audio, language=self._settings.language, beam_size=1, vad_filter=False
                 )
                 list(seg_iter)
@@ -355,6 +356,7 @@ class FasterWhisperEngine:
                         for x in (t["start"] / SAMPLE_RATE, t["end"] / SAMPLE_RATE)
                     ]
                 target = self._model
+                assert target is not None  # _run_locked yalnızca model yüklüyken çağrılır
                 kwargs["condition_on_previous_text"] = True
             seg_iter, info = target.transcribe(audio.astype(np.float32, copy=False), **kwargs)
             segments = tuple(

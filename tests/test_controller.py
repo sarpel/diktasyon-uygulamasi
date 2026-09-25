@@ -1078,3 +1078,57 @@ def test_no_failed_audio_path_disables_feature(qtbot):
     c.toggle()
     qtbot.waitUntil(lambda: c.state is DictationState.IDLE, timeout=3000)
     assert not c.has_failed_audio
+
+
+# ---- düzeltme sağlamlık kontrolü ve "geri al" sesli komutu
+
+
+def _long_stt_ctl(settings):
+    rec, stt, llm = FakeRecorder(), FakeStt("bir iki üç dört beş altı yedi sekiz"), FakeLlm()
+    c = DictationController(settings, recorder=rec, stt=stt, llm=llm, pool=QThreadPool())
+    return c, llm
+
+
+def test_sanity_check_rejects_collapsed_correction(qtbot):
+    c, _llm = _long_stt_ctl(Settings())
+    errors = []
+    c.error.connect(errors.append)
+    c.toggle()
+    c.toggle()
+    qtbot.waitUntil(lambda: c.state is DictationState.RESULT, timeout=5000)
+    assert c.session.corrected_text == "bir iki üç dört beş altı yedi sekiz"
+    assert errors
+
+
+def test_sanity_check_off_accepts_correction(qtbot):
+    s = Settings()
+    s = s.model_copy(update={"llm": s.llm.model_copy(update={"sanity_check": False})})
+    c, _llm = _long_stt_ctl(s)
+    c.toggle()
+    c.toggle()
+    qtbot.waitUntil(lambda: c.state is DictationState.RESULT, timeout=5000)
+    assert c.session.corrected_text == "Merhaba dünya."
+
+
+def test_undo_voice_command_requests_undo_instead_of_result(qtbot):
+    rec, stt, llm = FakeRecorder(), FakeStt("Geri al."), FakeLlm()
+    c = DictationController(Settings(), recorder=rec, stt=stt, llm=llm, pool=QThreadPool())
+    undone, results = [], []
+    c.undo_requested.connect(lambda: undone.append(True))
+    c.result_ready.connect(results.append)
+    c.toggle()
+    c.toggle()
+    qtbot.waitUntil(lambda: undone == [True], timeout=5000)
+    assert c.state is DictationState.IDLE
+    assert results == [] and llm.calls == []
+
+
+def test_undo_phrase_is_plain_text_when_voice_commands_off(qtbot):
+    rec, stt, llm = FakeRecorder(), FakeStt("Geri al."), FakeLlm()
+    s = Settings(voice_commands=False)
+    s = s.model_copy(update={"llm": s.llm.model_copy(update={"enabled": False})})
+    c = DictationController(s, recorder=rec, stt=stt, llm=llm, pool=QThreadPool())
+    c.toggle()
+    c.toggle()
+    qtbot.waitUntil(lambda: c.state is DictationState.RESULT, timeout=5000)
+    assert c.session.corrected_text == "Geri al."

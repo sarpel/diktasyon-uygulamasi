@@ -232,3 +232,20 @@ def test_windows_type_events_treat_crlf_as_single_newline():
 def test_windows_type_events_keep_surrogate_pairs():
     events = paste.build_type_events("😀")
     assert [s for _vk, s, f in events if f == paste.KEYEVENTF_UNICODE] == [0xD83D, 0xDE00]
+
+
+def test_linux_combo_ctrl_z_for_undo(monkeypatch):
+    monkeypatch.setattr(paste.sys, "platform", "linux")
+    monkeypatch.setattr(
+        paste.shutil, "which", lambda n: "/usr/bin/xdotool" if n == "xdotool" else None
+    )
+    ran = []
+    monkeypatch.setattr(
+        paste.subprocess, "run", lambda cmd, **k: ran.append(cmd) or SimpleNamespace(returncode=0)
+    )
+    assert paste.send_paste_keystroke(combo="ctrl+z") is True
+    assert ran[0][-1] == "ctrl+z"
+
+
+def test_windows_ctrl_z_vks():
+    assert paste._COMBO_VKS["ctrl+z"] == (paste.VK_CONTROL, paste.VK_Z)

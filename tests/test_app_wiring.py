@@ -16,6 +16,7 @@ from dikte.ui.toast import Toast
 @pytest.fixture
 def ctx(qtbot, tmp_path, monkeypatch):
     monkeypatch.setattr(app_mod.paths, "history_path", lambda: tmp_path / "history.jsonl")
+    monkeypatch.setattr(app_mod.paths, "failed_audio_path", lambda: tmp_path / "failed.wav")
     c = app_mod.build_app(Settings())
     for w in (c.window, c.overlay):
         qtbot.addWidget(w)
@@ -969,3 +970,60 @@ def test_model_download_triggers_reload(ctx, monkeypatch):
 def test_invalid_paste_last_hotkey_is_disabled():
     s = app_mod._safe_hotkey(Settings(hotkey_paste_last="ctrl+alt+bozuk tuş"))
     assert s.hotkey_paste_last == ""
+
+
+def test_controller_warning_reaches_overlay(ctx):
+    ctx.controller.warning.emit("Mikrofondan ses gelmiyor.")
+    assert "Mikrofondan ses gelmiyor." in ctx.overlay._warning.text()
+
+
+def test_failed_audio_toggles_tray_retry_action(ctx):
+    ctx.controller.failed_audio_changed.emit(True)
+    assert ctx.tray._retry_action.isEnabled()
+    ctx.controller.failed_audio_changed.emit(False)
+    assert not ctx.tray._retry_action.isEnabled()
+
+
+def test_tray_retry_reaches_controller(ctx, tmp_path, qtbot):
+    """Saklanmış kayıt yoksa yeniden deneme hata yayınlar; bağlantı controller'a ulaşır."""
+    errors = []
+    ctx.controller.error.connect(errors.append)
+    ctx.tray.retry_failed_requested.emit()
+    assert errors
+
+
+def test_undo_command_sends_ctrl_z(ctx, monkeypatch):
+    sent = []
+    monkeypatch.setattr(
+        app_mod, "paste_active_window", lambda ids, **k: sent.append(k["combo"]) or True
+    )
+    ctx.controller.undo_requested.emit()
+    assert sent == ["ctrl+z"]
+
+
+def test_history_uses_retention_setting(tmp_path, monkeypatch):
+    monkeypatch.setattr(app_mod.paths, "history_path", lambda: tmp_path / "h.jsonl")
+    h = app_mod._make_history(Settings(history_retention_days=7))
+    assert h._retention_days == 7
+
+
+def test_lowering_history_limit_to_zero_deletes_file(ctx, monkeypatch, tmp_path):
+    monkeypatch.setattr(app_mod, "save_settings", lambda s: None)
+    monkeypatch.setattr(app_mod, "set_autostart", lambda *a, **k: None)
+    monkeypatch.setattr(app_mod, "list_input_devices", lambda: ())
+    ctx.history.append(Session(raw_text="gizli", corrected_text="Gizli."))
+    assert (tmp_path / "history.jsonl").exists()
+
+    class FakeDialog:
+        def __init__(self, settings, devices, parent=None):
+            self._settings = settings
+
+        def exec(self):
+            return 1
+
+        def result_settings(self):
+            return self._settings.model_copy(update={"history_limit": 0})
+
+    monkeypatch.setattr(app_mod, "SettingsDialog", FakeDialog)
+    app_mod._open_settings(ctx)
+    assert not (tmp_path / "history.jsonl").exists()

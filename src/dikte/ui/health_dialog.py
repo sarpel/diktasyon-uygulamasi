@@ -201,7 +201,9 @@ class HealthDialog(QDialog):
                 hint_label = QLabel(item.hint)
                 hint_label.setForegroundRole(QPalette.ColorRole.PlaceholderText)
                 rows_layout.addWidget(hint_label)
-        self.layout().replaceWidget(old, self._rows)
+        layout = self.layout()
+        assert layout is not None  # __init__ bir düzen kurar
+        layout.replaceWidget(old, self._rows)
         old.deleteLater()
 
         model_item = next((i for i in items if i.name == MODEL_ITEM_NAME), None)
