@@ -84,7 +84,7 @@
 ## LLM sağlayıcıları
 
 - [ ] Ollama (varsayılan): yerel model çalışırken düzeltme yapılıyor, keep_alive uygulanıyor.
-- [ ] Ollama portu değiştirildiğinde (ör. 11500) "Host" kutusundan yeni adres girilip düzeltme çalışıyor;
+- [ ] Ollama portu değiştirildiğinde (ör. 11500) "Sunucu adresi" kutusundan yeni adres girilip düzeltme çalışıyor;
       boş bırakılırsa Kaydet engelleniyor.
 - [ ] LM Studio: Developer > Start Server açıkken, model kimliği girilip düzeltme çalışıyor;
       anahtar alanı boş bırakılabiliyor ve gizlilik uyarısı görünmüyor (yerel sağlayıcı).
@@ -147,3 +147,28 @@
 - [ ] "Yok say" tıklanınca öneri çubuğu kapanıyor, sözlüğe hiçbir şey eklenmiyor.
 - [ ] Ayarlar → Genel → "Elle düzeltmelerden tek kelimelik sözlük önerisi çıkar" kapatılınca
       öneri çubuğu hiç görünmüyor.
+
+## İnceleme sonrası eklenenler (yalnızca gerçek cihazda doğrulanabilir)
+
+- [ ] Windows: dikte sonrası `Win+V` pano geçmişinde dikte metni görünmüyor (Ayarlar → Genel →
+      "Pano geçmişinden hariç tut" açıkken); kapatınca görünüyor.
+- [ ] "Eski pano içeriğini geri yükle" açıkken yapıştırmadan hemen sonra başka bir şey
+      kopyalanınca yeni kopya ezilmiyor.
+- [ ] Windows `.[media]` kurulu, Spotify/YouTube çalarken "Kayıtta medyayı duraklat" açık:
+      kayıt başlayınca duruyor, bitince devam ediyor; hiçbir şey çalmıyorken kayıt başlatınca
+      oynatma **başlamıyor**. Linux'ta aynısı `playerctl` ile.
+- [ ] Profilde "Yazarak" yapıştırma: çok satırlı metin Windows'ta Shift+Enter ile satır atlıyor
+      (sohbet uygulamasında mesaj erken gönderilmiyor); Linux'ta 500+ karakterlik metin yarıda
+      kesilmiyor.
+- [ ] Kayıt sırasında USB mikrofon çıkarılınca kayıt duruyor ve hata bildiriliyor; mikrofon
+      sessize alınınca ~3 sn sonra overlay'de "Mikrofondan ses gelmiyor" uyarısı çıkıyor.
+- [ ] Kayıtlı USB mikrofon takılı değilken açılışta varsayılan mikrofon kullanılıyor ve uyarı
+      veriliyor; Ayarlar → Ses'te "(bulunamadı)" görünüyor.
+- [ ] Sessiz/boş bir kayıttan sonra tepsi → "Başarısız kaydı yeniden dene" etkin; tıklayınca
+      aynı ses yeniden çözümleniyor.
+- [ ] "Geri al" diye tek başına dikte edince önceki yapıştırma hedef uygulamada geri alınıyor.
+- [ ] Overlay sürüklenip bırakılınca sonraki kayıtta aynı yerde açılıyor.
+- [ ] Linux: ikinci bir kullanıcı oturumunda `dikte --toggle` kendi örneğini tetikliyor.
+- [ ] Linux: otomatik başlatmayla (başlatıcı olmadan) açılan uygulama GPU'da modeli yüklüyor.
+- [ ] Paketlenmiş `Dikte.exe --version` sürümü yazıp 0 ile çıkıyor; açılışta ve Ayarlar
+      açılırken konsol penceresi yanıp sönmüyor.
