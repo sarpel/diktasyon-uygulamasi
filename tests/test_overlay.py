@@ -88,3 +88,157 @@ def test_error_hide_does_not_cancel_new_recording(qtbot):
     o.on_state(DictationState.RECORDING)
     qtbot.wait(80)
     assert o.isVisible() and o._wave.isVisible()
+
+
+def test_new_recording_during_error_window_does_not_leave_overlay_stuck(qtbot):
+    """Hata penceresinde başlayan yeni kayıt, sonraki RESULT/IDLE'da overlay'i gizleyebilmeli."""
+    o = RecordingOverlay()
+    qtbot.addWidget(o)
+    o.show_error("Konuşma algılanmadı", ms=30)
+    o.on_state(DictationState.RECORDING)
+    qtbot.wait(80)  # hata zamanlayıcısı jeton farkı yüzünden gizlemeyi atlar
+    o.on_state(DictationState.TRANSCRIBING)
+    o.on_state(DictationState.CORRECTING)
+    o.on_state(DictationState.RESULT)
+    assert not o.isVisible()
+    o.on_state(DictationState.RECORDING)
+    o.on_state(DictationState.IDLE)
+    assert not o.isVisible()
+
+
+def test_status_state_after_error_clears_error_flag(qtbot):
+    o = RecordingOverlay()
+    qtbot.addWidget(o)
+    o.show_error("x", ms=5000)
+    o.on_state(DictationState.TRANSCRIBING)
+    o.on_state(DictationState.IDLE)
+    assert not o.isVisible()
+
+
+def test_error_followed_by_idle_keeps_error_visible(qtbot):
+    o = RecordingOverlay()
+    qtbot.addWidget(o)
+    o.show_error("x", ms=5000)
+    o.on_state(DictationState.IDLE)
+    assert o.isVisible()
+
+
+# ---- konum
+def _avail():
+    from PySide6.QtGui import QGuiApplication
+
+    return QGuiApplication.primaryScreen().availableGeometry()
+
+
+def test_default_position_is_bottom_center(qtbot):
+    o = RecordingOverlay()
+    qtbot.addWidget(o)
+    o.show_recording()
+    avail = _avail()
+    assert o.y() == avail.bottom() - o.height() - 80
+    assert abs(o.x() + o.width() // 2 - avail.center().x()) <= 1
+
+
+def test_top_position_places_overlay_top_center(qtbot):
+    o = RecordingOverlay()
+    qtbot.addWidget(o)
+    o.set_position("top", None)
+    o.show_recording()
+    avail = _avail()
+    assert o.y() == avail.top() + 80
+    assert abs(o.x() + o.width() // 2 - avail.center().x()) <= 1
+
+
+def test_custom_position_uses_saved_xy(qtbot):
+    o = RecordingOverlay()
+    qtbot.addWidget(o)
+    avail = _avail()
+    o.set_position("custom", (avail.left() + 30, avail.top() + 40))
+    o.show_recording()
+    assert (o.x(), o.y()) == (avail.left() + 30, avail.top() + 40)
+
+
+def test_custom_position_is_clamped_onto_screen(qtbot):
+    o = RecordingOverlay()
+    qtbot.addWidget(o)
+    avail = _avail()
+    o.set_position("custom", (avail.right() - 5, avail.bottom() - 5))
+    o.show_recording()
+    assert o.x() + o.width() - 1 <= avail.right()
+    assert o.y() + o.height() - 1 <= avail.bottom()
+
+
+def test_custom_position_off_screen_falls_back_to_bottom(qtbot):
+    o = RecordingOverlay()
+    qtbot.addWidget(o)
+    o.set_position("custom", (-50000, -50000))
+    o.show_recording()
+    assert o.y() == _avail().bottom() - o.height() - 80
+
+
+def test_custom_without_xy_falls_back_to_bottom(qtbot):
+    o = RecordingOverlay()
+    qtbot.addWidget(o)
+    o.set_position("custom", None)
+    o.show_recording()
+    assert o.y() == _avail().bottom() - o.height() - 80
+
+
+def test_dragging_overlay_moves_it_and_emits_moved(qtbot):
+    from PySide6.QtCore import QPoint
+
+    o = RecordingOverlay()
+    qtbot.addWidget(o)
+    avail = _avail()
+    o.set_position("custom", (avail.left() + 100, avail.top() + 100))
+    o.show_recording()
+    qtbot.waitExposed(o)
+    start = QPoint(5, 5)
+    with qtbot.waitSignal(o.moved) as blocker:
+        qtbot.mousePress(o, Qt.MouseButton.LeftButton, pos=start)
+        qtbot.mouseMove(o, start + QPoint(20, 10))
+        qtbot.mouseRelease(o, Qt.MouseButton.LeftButton, pos=start + QPoint(20, 10))
+    assert blocker.args == [o.x(), o.y()]
+    assert (o.x(), o.y()) == (avail.left() + 120, avail.top() + 110)
+    # Uygulama ayarı kaydetmeden önce bile sonraki gösterim yeni konumda kalmalı.
+    o.show_status("Yazıya dökülüyor…")
+    assert (o.x(), o.y()) == (avail.left() + 120, avail.top() + 110)
+
+
+def test_click_without_drag_does_not_emit_moved(qtbot):
+    from PySide6.QtCore import QPoint
+
+    o = RecordingOverlay()
+    qtbot.addWidget(o)
+    o.show_recording()
+    qtbot.waitExposed(o)
+    fired = []
+    o.moved.connect(lambda x, y: fired.append((x, y)))
+    qtbot.mouseClick(o, Qt.MouseButton.LeftButton, pos=QPoint(5, 5))
+    assert fired == []
+
+
+# ---- uyarı
+def test_show_warning_keeps_recording_mode_and_auto_hides(qtbot):
+    o = RecordingOverlay()
+    qtbot.addWidget(o)
+    o.on_state(DictationState.RECORDING)
+    o.show_warning("Mikrofondan ses gelmiyor…", ms=50)
+    assert o._warning.isVisible() and "Mikrofondan ses gelmiyor" in o._warning.text()
+    assert o._wave.isVisible() and o._time.isVisible() and not o._status.isVisible()
+    assert o._clock.isActive()
+    qtbot.waitUntil(lambda: not o._warning.isVisible(), timeout=1000)
+    assert o.isVisible() and o._wave.isVisible()
+    o.on_state(DictationState.IDLE)  # hata yolu kullanılmadığından normal gizlenir
+    assert not o.isVisible()
+
+
+def test_new_recording_clears_previous_warning(qtbot):
+    o = RecordingOverlay()
+    qtbot.addWidget(o)
+    o.show_recording()
+    o.show_warning("uyarı", ms=5000)
+    o.on_state(DictationState.TRANSCRIBING)
+    assert not o._warning.isVisible()
+    o.on_state(DictationState.RECORDING)
+    assert not o._warning.isVisible()

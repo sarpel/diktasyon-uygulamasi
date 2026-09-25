@@ -150,3 +150,42 @@ def test_export_button_does_nothing_when_dialog_cancelled(qtbot):
     p.export_requested.connect(got.append)
     p.export_btn.click()
     assert got == []
+
+
+def test_search_placeholder_mentions_shortcut(qtbot):
+    p = _panel(qtbot)
+    assert p.search_edit.placeholderText() == "Geçmişte ara… (Ctrl+F)"
+
+
+def test_ctrl_f_focuses_search_field(qtbot):
+    from PySide6.QtCore import Qt
+
+    p = _panel(qtbot)
+    p.show()
+    qtbot.waitExposed(p)
+    p.activateWindow()
+    p.list_widget.setFocus()
+    qtbot.waitUntil(p.list_widget.hasFocus, timeout=1000)
+    qtbot.keyClick(p.list_widget, Qt.Key.Key_F, Qt.KeyboardModifier.ControlModifier)
+    assert p.search_edit.hasFocus()
+
+
+def test_escape_clears_search_field(qtbot):
+    from PySide6.QtCore import Qt
+
+    p = _panel(qtbot)
+    p.set_sessions((Session(corrected_text="Docker"), Session(corrected_text="Toplantı")))
+    p.search_edit.setText("docker")
+    assert len(_visible(p)) == 1
+    qtbot.keyClick(p.search_edit, Qt.Key.Key_Escape)
+    assert p.search_edit.text() == ""
+    assert len(_visible(p)) == 2
+
+
+def test_search_matches_turkish_capital_letters(qtbot):
+    p = _panel(qtbot)
+    p.set_sessions((Session(corrected_text="IRMAK kıyısı"), Session(corrected_text="İZMİR")))
+    p.search_edit.setText("ırmak")
+    assert [i.text().split("  ", 1)[1] for i in _visible(p)] == ["IRMAK kıyısı"]
+    p.search_edit.setText("izmir")
+    assert [i.text().split("  ", 1)[1] for i in _visible(p)] == ["İZMİR"]

@@ -25,6 +25,8 @@ class TrayIcon(QSystemTrayIcon):
     settings_requested = Signal()
     quit_requested = Signal()
     copy_requested = Signal(str)
+    paste_last_requested = Signal()
+    retry_failed_requested = Signal()
 
     def __init__(self, hotkey_label: str, parent=None):
         super().__init__(make_tray_icon("idle"), parent)
@@ -43,13 +45,25 @@ class TrayIcon(QSystemTrayIcon):
         self._copy_recent_action = QAction("Son metni kopyala", menu)
         self._copy_recent_action.setEnabled(False)
         self._copy_recent_action.triggered.connect(self._emit_copy_most_recent)
+        self._paste_last_action = QAction("Son sonucu yapıştır", menu)
+        self._paste_last_action.triggered.connect(self.paste_last_requested)
+        self._retry_action = QAction("Başarısız kaydı yeniden dene", menu)
+        self._retry_action.setEnabled(False)
+        self._retry_action.triggered.connect(self.retry_failed_requested)
         self._recent_menu = QMenu("Son dikteler", menu)
         self._recent_menu.setEnabled(False)
         settings = QAction("Ayarlar…", menu)
         settings.triggered.connect(self.settings_requested)
         quit_ = QAction("Çıkış", menu)
         quit_.triggered.connect(self.quit_requested)
-        for a in (self._toggle_action, self._cancel_action, show, self._copy_recent_action):
+        for a in (
+            self._toggle_action,
+            self._cancel_action,
+            show,
+            self._copy_recent_action,
+            self._paste_last_action,
+            self._retry_action,
+        ):
             menu.addAction(a)
         menu.addMenu(self._recent_menu)
         menu.addAction(settings)
@@ -71,6 +85,10 @@ class TrayIcon(QSystemTrayIcon):
             action = QAction(preview, self._recent_menu)
             action.triggered.connect(lambda checked=False, t=text: self.copy_requested.emit(t))
             self._recent_menu.addAction(action)
+
+    def set_retry_available(self, available: bool) -> None:
+        """Yeniden denenebilecek başarısız bir kayıt varsa menü eylemini etkinleştirir."""
+        self._retry_action.setEnabled(available)
 
     def _emit_copy_most_recent(self) -> None:
         if self._recent_sessions:
