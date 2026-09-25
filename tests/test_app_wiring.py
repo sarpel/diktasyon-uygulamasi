@@ -648,13 +648,15 @@ def test_status_info_set_when_ready(ctx):
     assert "float16" in ctx.window.status_info.text()
 
 
-def test_low_vram_shows_status_bar_warning(ctx, monkeypatch):
+def test_low_vram_shows_status_bar_warning(ctx, monkeypatch, qtbot):
     from dikte.platform.gpu_info import VramInfo
 
     monkeypatch.setattr(app_mod, "query_vram", lambda: VramInfo(7500, 8192))
     app_mod._refresh_status_info(ctx)
-    msg = ctx.window.statusBar().currentMessage()
-    assert "Boş VRAM düşük" in msg
+    # nvidia-smi arka planda sorgulanır (GUI iş parçacığı bloke olmaz)
+    qtbot.waitUntil(
+        lambda: "Boş VRAM düşük" in ctx.window.statusBar().currentMessage(), timeout=2000
+    )
 
 
 def test_sufficient_vram_shows_no_warning(ctx, monkeypatch):
@@ -751,3 +753,88 @@ def test_history_write_failure_notifies_user(ctx, monkeypatch):
     monkeypatch.setattr(ctx.history, "append", boom)
     ctx.controller.state_changed.emit(DictationState.RESULT)
     assert notified and notified[-1][1] is True and "Geçmiş kaydedilemedi" in notified[-1][0]
+
+
+# ---- inceleme düzeltmeleri
+
+
+def test_ipc_toggle_applies_matching_profile(ctx, monkeypatch):
+    from dikte.config import AppProfile
+
+    profile = AppProfile(name="Terminal", match="gnome-terminal-server", mode="prompt")
+    ctx.settings = ctx.settings.model_copy(update={"profiles": (profile,)})
+    monkeypatch.setattr(app_mod, "foreground_process_name", lambda: "gnome-terminal-server")
+    app_mod._on_ipc_toggle(ctx, "correct")
+    assert ctx.controller.state is DictationState.RECORDING
+    assert ctx.controller.active_profile is profile
+    assert ctx.controller.session.mode == "prompt"
+
+
+def test_ipc_start_applies_matching_profile(ctx, monkeypatch):
+    from dikte.config import AppProfile
+
+    profile = AppProfile(name="Kod", match="code", mode="translate")
+    ctx.settings = ctx.settings.model_copy(update={"profiles": (profile,)})
+    monkeypatch.setattr(app_mod, "foreground_process_name", lambda: "code")
+    app_mod._on_ipc_start(ctx, "correct")
+    assert ctx.controller.session.mode == "translate"
+
+
+def test_export_history_reports_unreadable_history(ctx, tmp_path, monkeypatch):
+    from dikte.core.history import HistoryError
+
+    def boom():
+        raise HistoryError("Geçmiş okunamadı")
+
+    notes = []
+    monkeypatch.setattr(ctx.history, "load", boom)
+    monkeypatch.setattr(ctx.tray, "notify", lambda *a, **k: notes.append(a))
+    out = tmp_path / "out.md"
+    app_mod._export_history(ctx, str(out))
+    assert not out.exists()
+    assert notes and "Geçmiş okunamadı" in notes[0][1]
+
+
+def test_model_change_while_busy_reloads_when_idle(ctx, monkeypatch):
+    monkeypatch.setattr(app_mod, "save_settings", lambda s: None)
+    monkeypatch.setattr(app_mod, "set_autostart", lambda *a, **k: None)
+    monkeypatch.setattr(app_mod, "list_input_devices", lambda: ())
+    informed = []
+    monkeypatch.setattr(
+        app_mod.QMessageBox, "information", staticmethod(lambda *a, **k: informed.append(a))
+    )
+    warmed = []
+    monkeypatch.setattr(ctx.controller, "warm_up", lambda: warmed.append(True))
+    monkeypatch.setattr(
+        type(ctx.controller), "state", property(lambda self: DictationState.TRANSCRIBING)
+    )
+
+    class FakeDialog:
+        def __init__(self, settings, devices, parent=None):
+            self._settings = settings
+
+        def exec(self):
+            return 1
+
+        def result_settings(self):
+            return self._settings.model_copy(
+                update={"stt": self._settings.stt.model_copy(update={"model": "small"})}
+            )
+
+    monkeypatch.setattr(app_mod, "SettingsDialog", FakeDialog)
+    app_mod._open_settings(ctx)
+    assert warmed == [] and "otomatik" in informed[0][2]
+    ctx.controller.state_changed.emit(DictationState.CORRECTING)
+    assert warmed == []
+    ctx.controller.state_changed.emit(DictationState.RESULT)
+    ctx.controller.state_changed.emit(DictationState.IDLE)
+    assert warmed == [True]
+
+
+def test_config_issues_are_reported(ctx, monkeypatch):
+    notes = []
+    monkeypatch.setattr(ctx.tray, "notify", lambda *a, **k: notes.append(a))
+    app_mod._notify_config_issues(ctx, ("stt.beam_size", "llm.provider"))
+    assert "stt.beam_size, llm.provider" in notes[0][1]
+    app_mod._notify_config_issues(ctx, ("*",))
+    assert "okunamadı" in notes[1][1]
