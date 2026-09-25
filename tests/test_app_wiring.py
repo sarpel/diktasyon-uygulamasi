@@ -909,3 +909,63 @@ def test_autostart_failure_is_reported(ctx, monkeypatch):
     monkeypatch.setattr(ctx.tray, "notify", lambda *a, **k: notes.append(a))
     app_mod._apply_autostart(ctx, True)
     assert "Otomatik başlatma" in notes[0][1]
+
+
+def test_paste_last_repastes_latest_result(ctx, monkeypatch):
+    delivered = []
+    monkeypatch.setattr(
+        app_mod, "_on_result_ready", lambda c, text, **k: delivered.append((text, k))
+    )
+    ctx.controller._update_session(raw_text="a", corrected_text="Son metin.")
+    ctx.tray.paste_last_requested.emit()
+    assert delivered == [("Son metin.", {"force_paste": True})]
+
+
+def test_paste_last_falls_back_to_history(ctx, monkeypatch):
+    delivered = []
+    monkeypatch.setattr(app_mod, "_on_result_ready", lambda c, text, **k: delivered.append(text))
+    ctx.history.append(Session(raw_text="x", corrected_text="Geçmişteki."))
+    app_mod._paste_last(ctx)
+    assert delivered == ["Geçmişteki."]
+
+
+def test_paste_last_without_result_notifies(ctx, monkeypatch):
+    notes = []
+    monkeypatch.setattr(ctx.tray, "notify", lambda *a, **k: notes.append(a))
+    app_mod._paste_last(ctx)
+    assert "Yapıştırılacak" in notes[0][1]
+
+
+def test_overlay_drag_persists_custom_position(ctx, monkeypatch):
+    saved = []
+    monkeypatch.setattr(app_mod, "save_settings", lambda s: saved.append(s))
+    ctx.overlay.moved.emit(120, 340)
+    assert ctx.settings.overlay_position == "custom"
+    assert ctx.settings.overlay_xy == (120, 340)
+    assert saved and saved[0].overlay_xy == (120, 340)
+
+
+def test_health_dialog_reference_cleared_when_destroyed(ctx, qtbot):
+    app_mod._show_health_dialog(ctx, ())
+    dialog = ctx.health_dialog
+    assert dialog is not None
+    dialog.close()
+    qtbot.waitUntil(lambda: ctx.health_dialog is None, timeout=2000)
+    app_mod._show_health_dialog(ctx, ())  # silinmiş pencereye erişip çökmemeli
+    assert ctx.health_dialog is not None
+    ctx.health_dialog.close()
+
+
+def test_model_download_triggers_reload(ctx, monkeypatch):
+    warmed = []
+    monkeypatch.setattr(ctx.controller, "warm_up", lambda: warmed.append(True))
+    app_mod._show_health_dialog(ctx, ())
+    assert ctx.health_dialog is not None
+    ctx.health_dialog.model_downloaded.emit()
+    assert warmed == [True]
+    ctx.health_dialog.close()
+
+
+def test_invalid_paste_last_hotkey_is_disabled():
+    s = app_mod._safe_hotkey(Settings(hotkey_paste_last="ctrl+alt+bozuk tuş"))
+    assert s.hotkey_paste_last == ""
