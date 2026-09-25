@@ -8,7 +8,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import cast
 
-from PySide6.QtCore import QCoreApplication, QMimeData, QThreadPool, QTimer
+from PySide6.QtCore import QCoreApplication, QMimeData, QObject, QThreadPool, QTimer
 from PySide6.QtWidgets import QApplication, QDialog, QMessageBox, QSystemTrayIcon
 
 from dikte import APP_NAME, __version__, paths
@@ -18,7 +18,7 @@ from dikte.config import (
     DictionaryEntry,
     Settings,
     SettingsError,
-    load_settings,
+    load_settings_with_issues,
     save_settings,
 )
 from dikte.core.controller import DictationController
@@ -288,7 +288,12 @@ def _clear_history(ctx: AppContext) -> None:
 
 def _export_history(ctx: AppContext, path: str) -> None:
     """Geçmişi dosyaya yazar; uzantı `.md` ise Markdown, aksi hâlde düz metin kullanılır."""
-    sessions = ctx.history.load()
+    try:
+        sessions = ctx.history.load()
+    except HistoryError as exc:
+        log.exception("dışa aktarım için geçmiş okunamadı")
+        ctx.tray.notify(APP_NAME, str(exc), critical=True)
+        return
     content = to_markdown(sessions) if path.lower().endswith(".md") else to_text(sessions)
     try:
         Path(path).write_text(content, encoding="utf-8")
@@ -366,7 +371,17 @@ def _refresh_status_info(ctx: AppContext) -> None:
 
 
 def _warn_if_low_vram(ctx: AppContext) -> None:
-    info = query_vram()
+    """`nvidia-smi` 3 sn'ye kadar sürebilir; GUI iş parçacığını bloke etmemek için arka planda."""
+    job = run_in_pool(
+        query_vram,
+        lambda info: _show_low_vram_warning(ctx, info),
+        lambda e: log.warning("VRAM sorgusu başarısız: %s", e),
+        QThreadPool.globalInstance(),
+    )
+    _keep_job(job)
+
+
+def _show_low_vram_warning(ctx: AppContext, info) -> None:
     if info is None:
         return
     free_mb = info.total_mb - info.used_mb
@@ -484,7 +499,18 @@ def _check_health_async(ctx: AppContext, on_done: Callable[[tuple[HealthItem, ..
         lambda e: log.error("durum kontrolü başarısız: %s", e),
         QThreadPool.globalInstance(),
     )
+    _keep_job(job)
+
+
+def _keep_job(job) -> None:
+    """run_in_pool sinyallerini iş bitene kadar canlı tutar; biten işler listeden düşer."""
     _background_jobs.append(job)
+    for signal_name in ("result", "error"):
+        signal = getattr(job, signal_name, None)
+        if signal is not None:
+            signal.connect(
+                lambda *_a, job=job: job in _background_jobs and _background_jobs.remove(job)
+            )
 
 
 def _show_health_dialog(ctx: AppContext, items: tuple[HealthItem, ...] | None = None) -> None:
@@ -527,11 +553,26 @@ def _hotkey_spec(ctx: AppContext, mode: str) -> str:
     }[mode]
 
 
-def _on_hotkey(ctx: AppContext, mode: str = "correct") -> None:
-    """Kısayola basılınca çağrılır: bas-konuş yalnızca Windows'ta anlamlıdır."""
+def _resolve_profile(ctx: AppContext) -> AppProfile | None:
+    """Ön plandaki uygulamaya uyan profili bulur ve `ctx.active_profile`'a yazar."""
     # Profil tanımlı değilse ön plan sürecini hiç sorgulama (win32 API'sini gereksiz çağırmaz).
     exe = foreground_process_name() if ctx.settings.profiles else ""
     ctx.active_profile = match_profile(ctx.settings.profiles, exe)
+    return ctx.active_profile
+
+
+def _on_ipc_toggle(ctx: AppContext, mode: str) -> None:
+    """Linux'ta tek tetikleyici IPC'dir (`dikte --toggle`); profiller burada da uygulanır."""
+    ctx.controller.toggle(mode, profile=_resolve_profile(ctx))
+
+
+def _on_ipc_start(ctx: AppContext, mode: str) -> None:
+    ctx.controller.start_recording(mode, profile=_resolve_profile(ctx))
+
+
+def _on_hotkey(ctx: AppContext, mode: str = "correct") -> None:
+    """Kısayola basılınca çağrılır: bas-konuş yalnızca Windows'ta anlamlıdır."""
+    _resolve_profile(ctx)
     if not ctx.settings.push_to_talk or sys.platform != "win32":
         ctx.controller.toggle(mode, profile=ctx.active_profile)
         return
@@ -598,9 +639,14 @@ def _run_toggle(mode: str = "correct") -> int:
 
 def _open_settings(ctx: AppContext) -> None:
     dlg = SettingsDialog(ctx.settings, list_input_devices(), ctx.window)
-    if dlg.exec() != QDialog.DialogCode.Accepted:
-        return
-    new = dlg.result_settings()
+    try:
+        if dlg.exec() != QDialog.DialogCode.Accepted:
+            return
+        new = dlg.result_settings()
+    finally:
+        # Her açılışta 8 sekmeli yeni bir pencere kurulur; silinmezse bellekte birikir.
+        if isinstance(dlg, QObject):
+            dlg.deleteLater()
     if not _guard_settings(ctx, lambda: save_settings(new)):
         return
     needs_reload = ctx.stt.update_settings(new.stt)
@@ -625,12 +671,28 @@ def _open_settings(ctx: AppContext) -> None:
             QMessageBox.information(
                 ctx.window,
                 APP_NAME,
-                "Model değişikliği süren iş bittikten sonra "
-                "Ayarlar'ı yeniden kaydedince uygulanır.",
+                "Model değişikliği süren iş bittiğinde otomatik olarak uygulanacak.",
             )
+            _warm_up_when_idle(ctx)
         else:
-            ctx.controller.ready_changed.emit(False)
-            ctx.controller.warm_up()
+            _reload_model(ctx)
+
+
+def _reload_model(ctx: AppContext) -> None:
+    ctx.controller.ready_changed.emit(False)
+    ctx.controller.warm_up()
+
+
+def _warm_up_when_idle(ctx: AppContext) -> None:
+    """Süren iş bitince (motor modeli zaten düşürdü) yeni modeli bir kez yükler."""
+
+    def _on_state(state: DictationState) -> None:
+        if state in BUSY_STATES:
+            return
+        ctx.controller.state_changed.disconnect(_on_state)
+        _reload_model(ctx)
+
+    ctx.controller.state_changed.connect(_on_state)
 
 
 def _quit(ctx: AppContext) -> None:
@@ -642,6 +704,15 @@ def _quit(ctx: AppContext) -> None:
     app = QApplication.instance()
     if app is not None:
         app.quit()
+
+
+def _notify_config_issues(ctx: AppContext, issues: tuple[str, ...]) -> None:
+    backup = paths.config_path().with_suffix(".json.bak")
+    if issues == ("*",):
+        detail = "Ayar dosyası okunamadı; varsayılanlar kullanılıyor."
+    else:
+        detail = "Geçersiz ayarlar varsayılana döndü: " + ", ".join(issues) + "."
+    ctx.tray.notify(APP_NAME, f"{detail} Eski dosyanın yedeği: {backup}", critical=True)
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -692,7 +763,7 @@ def main(argv: list[str] | None = None) -> int:
 
     try:
         first_run = not paths.config_path().exists()
-        settings = load_settings()
+        settings, config_issues = load_settings_with_issues()
         ctx = build_app(settings)
     except OSError as exc:
         # Veri klasörü (paths.app_data_dir()) oluşturulamadı/yazılamadı — paketlenmiş
@@ -716,8 +787,8 @@ def main(argv: list[str] | None = None) -> int:
         except SettingsError:
             log.exception("düzeltilmiş kısayol ayarları kaydedilemedi")
     single.activated.connect(ctx.tray.show_requested)
-    single.toggle_requested.connect(ctx.controller.toggle)
-    single.start_requested.connect(ctx.controller.start_recording)
+    single.toggle_requested.connect(lambda mode: _on_ipc_toggle(ctx, mode))
+    single.start_requested.connect(lambda mode: _on_ipc_start(ctx, mode))
     single.stop_requested.connect(ctx.controller.stop_recording)
     ctx.tray.show()
     if ctx.settings.hotkey != settings.hotkey:
@@ -732,6 +803,8 @@ def main(argv: list[str] | None = None) -> int:
             APP_NAME,
             "Ayarlardaki çeviri/prompt kısayollarından biri geçersizdi; kapatıldı.",
         )
+    if config_issues:
+        _notify_config_issues(ctx, config_issues)
     _apply_hotkey(ctx)
     set_autostart(settings.autostart)
     ctx.controller.warm_up()
