@@ -1,18 +1,60 @@
 from __future__ import annotations
 
+import getpass
+import hashlib
 import logging
+import os
+import sys
+from collections.abc import Callable, Mapping
+from pathlib import Path
 
 from PySide6.QtCore import QEventLoop, QObject, QTimer, Signal
 from PySide6.QtNetwork import QLocalServer, QLocalSocket
 
 log = logging.getLogger(__name__)
-DEFAULT_NAME = "dikte-single-instance"
+_BASE_NAME = "dikte-single-instance"
 SHOW_MESSAGE = b"show"
 TOGGLE_MESSAGE = b"toggle"
 START_MESSAGE = b"start"
 STOP_MESSAGE = b"stop"
 ACK = b"ok"
 _TIMEOUT_MS = 2000
+
+
+def _current_user() -> str:
+    if hasattr(os, "getuid"):
+        return f"uid{os.getuid()}"
+    return getpass.getuser()
+
+
+def default_server_name(
+    *,
+    platform: str = sys.platform,
+    env: Mapping[str, str] | None = None,
+    user_probe: Callable[[], str] = _current_user,
+) -> str:
+    """Kullanıcıya özgü IPC adı. İstemci (`--toggle`) ve sunucu aynı işlevi çağırır.
+
+    Sabit bir ad tüm kullanıcılar için ortaktı: Linux'ta soket herkesin yazabildiği
+    /tmp altında açılır, ikinci kullanıcı dinleyemez (IPC ölür) ve başka bir kullanıcı
+    adı önceden kapıp komutları çalabilirdi. Linux'ta yalnızca kullanıcının erişebildiği
+    `$XDG_RUNTIME_DIR` (0700) tercih edilir; yoksa ve Windows'ta (named pipe'lar makine
+    genelinde ortak ad alanındadır) ada kullanıcı adının kısa bir özeti eklenir."""
+    env = os.environ if env is None else env
+    if not platform.startswith("win"):
+        runtime_dir = env.get("XDG_RUNTIME_DIR", "")
+        if runtime_dir and Path(runtime_dir).is_dir():
+            return str(Path(runtime_dir) / _BASE_NAME)
+    try:
+        user = user_probe()
+    except Exception:  # getpass.getuser: OSError/KeyError/ImportError olabilir
+        log.exception("kullanıcı adı alınamadı; IPC adı ortam değişkeninden türetiliyor")
+        user = env.get("USERNAME") or env.get("USER") or "bilinmeyen"
+    digest = hashlib.sha256(user.encode("utf-8")).hexdigest()[:12]
+    return f"{_BASE_NAME}-{digest}"
+
+
+DEFAULT_NAME = default_server_name()
 
 
 def send_command(name: str, message: bytes, timeout_ms: int = _TIMEOUT_MS) -> bool:
@@ -113,6 +155,8 @@ class SingleInstance(QObject):
             return False
         QLocalServer.removeServer(self._name)  # çökmüş önceki örnekten kalan soket
         self._server = QLocalServer(self)
+        # Yalnızca aynı kullanıcı bağlanabilsin (Unix: soket 0700; Windows: pipe DACL'i).
+        self._server.setSocketOptions(QLocalServer.SocketOption.UserAccessOption)
         self._server.newConnection.connect(self._on_connection)
         if not self._server.listen(self._name):
             log.error("QLocalServer dinleyemedi: %s", self._server.errorString())
@@ -154,9 +198,10 @@ _VALID_MODES = ("correct", "translate", "prompt")
 def _parse_mode(payload: bytes, prefix: bytes) -> str:
     """`b"toggle:translate"` → "translate"; salt `b"toggle"` → varsayılan "correct".
 
-    Aynı kullanıcının yerel süreçleri dışında kimse bu soketi kullanamaz (sertleştirme
-    notu, F054), ama yine de doğrulanmamış bir dize denetleyiciye `mode` olarak
-    ulaşmasın diye tanınmayan değerler "correct"a düşürülür."""
+    Soket `UserAccessOption` ile açılır ve adı kullanıcıya özgüdür (bkz.
+    `default_server_name`), yani yalnızca aynı kullanıcının yerel süreçleri bağlanabilir
+    (sertleştirme notu, F054). Yine de o süreçlerden gelen doğrulanmamış bir dize
+    denetleyiciye `mode` olarak ulaşmasın diye tanınmayan değerler "correct"a düşürülür."""
     rest = payload[len(prefix) :]
     if not rest.startswith(b":"):
         return "correct"

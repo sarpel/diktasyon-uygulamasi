@@ -28,6 +28,7 @@ jobs:
           cache: pip
       - run: pip install ruff==0.16.*
       - run: ruff check src tests scripts
+      - run: ruff format --check src tests scripts
 
   test:
     needs: lint

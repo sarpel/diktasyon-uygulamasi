@@ -1,11 +1,14 @@
 from __future__ import annotations
 
 import logging
+from collections import deque
 from collections.abc import Callable
+from pathlib import Path
 
 import numpy as np
-from PySide6.QtCore import QObject, QThreadPool, Signal, Slot
+from PySide6.QtCore import QObject, QThreadPool, QTimer, Signal, Slot
 
+from dikte.audio.recorder import DEVICE_LOST_MESSAGE
 from dikte.config import AppProfile, Settings
 from dikte.core.state import DictationState, Session
 from dikte.core.workers import run_in_pool
@@ -13,11 +16,17 @@ from dikte.llm import prompts, tasks
 from dikte.llm.diff import word_changes
 from dikte.llm.provider import LlmProvider
 from dikte.stt.engine import SttEngine
-from dikte.stt.result import TranscriptResult
-from dikte.text.commands import apply_commands
+from dikte.stt.result import NO_SPEECH_MESSAGE, TranscriptResult
+from dikte.text.commands import apply_commands, is_undo_command
 from dikte.text.dictionary import apply_compiled, compile_rules, hotwords, prompt_terms
 
 log = logging.getLogger(__name__)
+# Durdurma anında kayıtçının kestiği ama kuyruklu sinyali henüz gelmemiş parçalar için
+# azami bekleme; normalde milisaniyeler içinde gelir, bu yalnızca takılmaya karşı güvence.
+LATE_CHUNK_TIMEOUT_MS = 3000
+RETRY_HINT = (
+    " Ses kaydı saklandı; tepsideki “Başarısız kaydı yeniden dene” ile tekrar deneyebilirsiniz."
+)
 
 
 def _default_audio_loader(path: str) -> np.ndarray:
@@ -38,6 +47,9 @@ class DictationController(QObject):
     result_ready = Signal(str)
     edit_learned = Signal(object)
     partial_text = Signal(str)
+    warning = Signal(str)  # kaydı durdurmayan uyarılar (ör. mikrofondan ses gelmiyor)
+    failed_audio_changed = Signal(bool)  # yeniden denenebilir kayıt var/yok
+    undo_requested = Signal()  # dikte yalnızca "geri al"dı: yapıştırma yerine geri alma
 
     def __init__(
         self,
@@ -48,8 +60,11 @@ class DictationController(QObject):
         llm: LlmProvider,
         pool: QThreadPool | None = None,
         audio_loader: Callable[[str], np.ndarray] | None = None,
+        failed_audio_path: Path | None = None,
         parent=None,
     ):
+        """`failed_audio_path`: başarısız diktenin sesinin saklanacağı WAV yolu
+        (`paths.failed_audio_path()`); None ise saklama/yeniden deneme kapalıdır."""
         super().__init__(parent)
         self._settings = settings
         self._recorder, self._stt, self._llm = recorder, stt, llm
@@ -57,14 +72,25 @@ class DictationController(QObject):
         self._pool = pool or QThreadPool.globalInstance()
         self._state = DictationState.IDLE
         self._session = Session()
-        self._jobs: list = []  # canlı sinyal nesneleri
+        self._failed_audio_path = failed_audio_path
+        self._jobs: set = set()  # teslim edilene kadar canlı tutulan sinyal nesneleri
         self._gen = 0  # iptal sonrası gelen sonuçları ayırt etmek için
         self._active_profile: AppProfile | None = None
+        self._source = "mic"  # "mic" | "file" | "retry": başarısızlıkta ses saklanır mı
+        self._chunk_mode = False  # kayıt başında sabitlenir; kayıt ortası ayar değiştirmez
         self._chunk_seq = 0
         self._chunk_texts: dict[int, str] = {}
-        self._chunks_pending = 0
+        self._chunk_queue: deque[np.ndarray] = deque()
+        self._chunk_running = False  # parçalar sırayla, birer birer çözümlenir
+        self._chunks_received = 0
+        self._chunks_expected: int | None = None  # stop() anında kayıtçının kestiği sayı
+        self._pending_tail: np.ndarray | None = None  # geç parçalar gelince kuyruğa girer
         self._chunk_sample_total = 0
         self._recording_stopped = False
+        self._session_audio: list[np.ndarray] = []  # başarısızlıkta saklamak için
+        # Hata oldu ama kayıtçının kestiği bazı parçaların sinyali henüz gelmedi: sesi eksiksiz
+        # saklamak için onlar (en çok LATE_CHUNK_TIMEOUT_MS) beklenir. (mesaj, kuyruk, beklenen)
+        self._failure: tuple[str, np.ndarray | None, int] | None = None
         self._compiled_dictionary_rules: list = []
         recorder.level_changed.connect(self.level_changed)
         recorder.buckets_changed.connect(self.buckets_changed)
@@ -72,6 +98,9 @@ class DictationController(QObject):
         recorder.limit_reached.connect(self._on_limit_reached)
         recorder.silence_reached.connect(self._on_silence)
         recorder.chunk_ready.connect(self._on_chunk)
+        recorder_warning = getattr(recorder, "warning", None)
+        if recorder_warning is not None:
+            recorder_warning.connect(self.warning)
         self._push_dictionary()
         self._recorder.set_chunking(settings.stt.live_chunk_s, settings.stt.live_max_chunk_s)
 
@@ -84,10 +113,18 @@ class DictationController(QObject):
     def session(self) -> Session:
         return self._session
 
+    @property
+    def has_failed_audio(self) -> bool:
+        """Yeniden denenebilecek, saklanmış başarısız bir kayıt var mı?"""
+        return self._failed_audio_path is not None and self._failed_audio_path.exists()
+
     def update_settings(self, settings: Settings) -> None:
         self._settings = settings
         self._push_dictionary()
-        self._recorder.set_chunking(settings.stt.live_chunk_s, settings.stt.live_max_chunk_s)
+        # Süren kayıtta parçalama değişmez (parçalar yarıda farklı yola girip kaybolmasın);
+        # yeni değerler bir sonraki _start_recording'de uygulanır.
+        if self._state is not DictationState.RECORDING:
+            self._apply_chunking()
 
     def set_llm(self, llm: LlmProvider) -> None:
         """Ayar değişince sağlayıcıyı yeniden başlatmadan değiştirir."""
@@ -109,13 +146,10 @@ class DictationController(QObject):
     @Slot()
     def warm_up(self) -> None:
         # Isınma iptal kuşağının dışındadır: kullanıcı iptali modeli yüklemeyi bozmamalı.
-        self._track(
-            run_in_pool(
-                self._stt.warm_up,
-                lambda _: self.ready_changed.emit(True),
-                lambda e: self.error.emit(f"STT modeli yüklenemedi: {e}"),
-                self._pool,
-            )
+        self._run(
+            self._stt.warm_up,
+            lambda _: self.ready_changed.emit(True),
+            lambda e: self.error.emit(f"STT modeli yüklenemedi: {e}"),
         )
         self.prewarm_llm()
 
@@ -125,13 +159,10 @@ class DictationController(QObject):
         warm = getattr(self._llm, "warm_up", None)
         if not (self._settings.llm.enabled and self._settings.llm.prewarm and warm is not None):
             return
-        self._track(
-            run_in_pool(
-                warm,
-                lambda _: None,
-                lambda e: log.warning("LLM ısındırma başarısız: %s", e),
-                self._pool,
-            )
+        self._run(
+            warm,
+            lambda _: None,
+            lambda e: log.warning("LLM ısındırma başarısız: %s", e),
         )
 
     @Slot()
@@ -142,6 +173,7 @@ class DictationController(QObject):
         self._gen += 1  # bu kuşaktan önceki işlerin sonuçları yok sayılacak
         if self._state is DictationState.RECORDING:
             self._recorder.stop()  # ses atılır
+        self._reset_chunks()
         self._session = Session()
         self.session_updated.emit(self._session)
         self._set_state(DictationState.IDLE)
@@ -182,6 +214,7 @@ class DictationController(QObject):
             return
         self._gen += 1  # eski çeviri/prompt gibi bekleyen işler bu oturuma yazılmasın
         self._active_profile = None
+        self._source = "file"
         self._session = Session(source_path=path)
         self.session_updated.emit(self._session)
         self._set_state(DictationState.TRANSCRIBING)
@@ -191,6 +224,34 @@ class DictationController(QObject):
             self._on_transcribed,
             self._on_file_transcribe_error,
         )
+
+    @Slot()
+    def retry_last_failed(self) -> bool:
+        """Saklanmış başarısız kaydı yeniden çözümler (ardından normal LLM/teslim akışı).
+        Başarılı olursa dosya silinir. Başlatılamazsa `error` yayınlanır ve False döner."""
+        if self._state not in (DictationState.IDLE, DictationState.RESULT):
+            self.error.emit("Önce süren işi bitirin.")
+            return False
+        path = self._failed_audio_path
+        if path is None or not path.exists():
+            self.error.emit("Yeniden denenecek kayıt yok.")
+            return False
+        from dikte.audio.wav import load_wav
+
+        self._gen += 1
+        self._active_profile = None
+        self._source = "retry"
+        self._reset_chunks()
+        self._session = Session()
+        self.session_updated.emit(self._session)
+        self._set_state(DictationState.TRANSCRIBING)
+        lang = self._settings.stt.language
+        self._spawn(
+            lambda: self._stt.transcribe(load_wav(path), lang),
+            self._on_transcribed,
+            self._on_stt_error,
+        )
+        return True
 
     def _on_file_transcribe_error(self, msg: str) -> None:
         self.error.emit(f"Dosya çözümlenemedi: {msg}")
@@ -245,17 +306,34 @@ class DictationController(QObject):
         self.error.emit("LLM kapalı; Ayarlar'dan metin düzeltmeyi açın.")
         return False
 
+    def _apply_chunking(self) -> None:
+        stt = self._settings.stt
+        self._recorder.set_chunking(stt.live_chunk_s, stt.live_max_chunk_s)
+
+    def _reset_chunks(self) -> None:
+        self._chunk_seq = 0
+        self._chunk_texts = {}
+        self._chunk_queue.clear()
+        self._chunk_running = False
+        self._chunks_received = 0
+        self._chunks_expected = None
+        self._pending_tail = None
+        self._chunk_sample_total = 0
+        self._recording_stopped = False
+        self._session_audio = []
+        self._failure = None
+
     def _start_recording(self, mode: str = "correct", *, profile: AppProfile | None = None) -> None:
         self._gen += 1  # eski çeviri/prompt gibi bekleyen işler bu oturuma yazılmasın
         self._active_profile = profile
+        self._source = "mic"
         effective_mode = profile.mode if profile and mode == "correct" else mode
         self._session = Session(mode=effective_mode, profile=profile.name if profile else "")
         self.session_updated.emit(self._session)
-        self._chunk_seq = 0
-        self._chunk_texts = {}
-        self._chunks_pending = 0
-        self._chunk_sample_total = 0
-        self._recording_stopped = False
+        self._reset_chunks()
+        # Parçalama kipi bu kayıt boyunca sabittir (kayıt ortası update_settings değiştirmez).
+        self._apply_chunking()
+        self._chunk_mode = self._settings.stt.live_chunk_s > 0
         self._recorder.start()
         if not self._recorder.is_recording:
             # AudioRecorder.start() mikrofon açılamazsa hatayı zaten error sinyaliyle
@@ -267,52 +345,157 @@ class DictationController(QObject):
     def _stop_and_transcribe(self) -> None:
         audio: np.ndarray = self._recorder.stop()
         self._set_state(DictationState.TRANSCRIBING)
-        if self._settings.stt.live_chunk_s <= 0:
+        lang = self._settings.stt.language
+        if not self._chunk_mode:
+            # Beklenmedik biçimde gelmiş parçalar varsa (kayıtçı parçalıyorsa) başa eklenir.
+            full = np.concatenate([*self._session_audio, audio]) if self._session_audio else audio
+            self._session_audio = [full]
             self._spawn(
-                lambda: self._stt.transcribe(audio, self._settings.stt.language),
+                lambda: self._stt.transcribe(full, lang),
                 self._on_transcribed,
                 self._on_stt_error,
             )
             return
         self._recording_stopped = True
-        if audio.size:
-            self._spawn_chunk(audio)
+        emitted = getattr(self._recorder, "chunks_emitted", None)
+        expected = self._chunks_received
+        if isinstance(emitted, int) and emitted > expected:
+            expected = emitted
+        self._chunks_expected = expected
+        self._pending_tail = audio if audio.size else None
+        if self._chunks_received < expected:
+            # Kayıtçı durdurmadan hemen önce (çoğu zaman tuşa basmadan önceki sessizlikte)
+            # parça kesti; kuyruklu sinyali henüz gelmedi. Onu bekle, kuyruğu sonra ekle.
+            log.debug("%d geç parça bekleniyor", expected - self._chunks_received)
+            gen = self._gen
+            QTimer.singleShot(LATE_CHUNK_TIMEOUT_MS, self, lambda: self._on_late_timeout(gen))
+        self._release_tail_if_ready()
         self._maybe_finish_transcription()
 
     def _on_chunk(self, audio: np.ndarray) -> None:
-        if self._state is not DictationState.RECORDING:
+        if self._failure is not None and self._state is DictationState.TRANSCRIBING:
+            # Hata sonrası geç gelen parça: çözümlenmez, yalnızca saklanacak sese sırayla eklenir.
+            self._chunks_received += 1
+            self._session_audio.append(audio)
+            if self._chunks_received >= self._failure[2]:
+                self._finish_failure(self._gen)
             return
-        self._spawn_chunk(audio)
+        if self._state is DictationState.RECORDING:
+            self._chunks_received += 1
+            if self._chunk_mode:
+                self._enqueue_chunk(audio)
+            else:
+                # Parçalama bu kayıtta kapalıyken gelen parça: sesi kaybetme, sona ekle.
+                self._session_audio.append(audio)
+            return
+        if (
+            self._state is DictationState.TRANSCRIBING
+            and self._recording_stopped
+            and self._chunks_expected is not None
+            and self._chunks_received < self._chunks_expected
+        ):
+            # Durdurmadan önce kesilmiş, sinyali geç gelmiş parça: aynı oturuma aittir.
+            self._chunks_received += 1
+            self._enqueue_chunk(audio)
+            self._release_tail_if_ready()
+            return
+        log.debug("oturum dışı parça yok sayıldı (durum: %s)", self._state)
 
-    def _spawn_chunk(self, audio: np.ndarray) -> None:
+    def _on_late_timeout(self, gen: int) -> None:
+        if gen != self._gen or self._state is not DictationState.TRANSCRIBING:
+            return
+        if self._chunks_expected is None or self._chunks_received >= self._chunks_expected:
+            return
+        log.warning(
+            "%d geç parça %d ms içinde gelmedi; eldeki sesle devam ediliyor",
+            self._chunks_expected - self._chunks_received,
+            LATE_CHUNK_TIMEOUT_MS,
+        )
+        self._chunks_expected = self._chunks_received
+        self._release_tail_if_ready()
+        self._maybe_finish_transcription()
+
+    def _release_tail_if_ready(self) -> None:
+        if self._chunks_expected is None or self._chunks_received < self._chunks_expected:
+            return
+        if self._pending_tail is not None:
+            tail, self._pending_tail = self._pending_tail, None
+            self._enqueue_chunk(tail)
+
+    def _enqueue_chunk(self, audio: np.ndarray) -> None:
+        self._session_audio.append(audio)
+        self._chunk_sample_total += audio.shape[0]
+        self._chunk_queue.append(audio)
+        self._pump_chunks()
+
+    def _pump_chunks(self) -> None:
+        """Sıradaki parçayı, öncekisi bittiyse başlatır. Parçalar sırayla çözümlenir ve
+        bağlam (önceki metin) GUI iş parçacığında, gönderim anında hesaplanır."""
+        if self._chunk_running or not self._chunk_queue:
+            return
+        audio = self._chunk_queue.popleft()
+        self._chunk_running = True
         seq = self._chunk_seq
         self._chunk_seq += 1
-        self._chunks_pending += 1
-        self._chunk_sample_total += audio.shape[0]
         lang = self._settings.stt.language
+        previous = self._joined_text()
         self._spawn(
-            lambda: self._stt.transcribe(
-                audio, lang, previous_text=self._joined_text(), allow_empty=True
-            ),
+            lambda: self._stt.transcribe(audio, lang, previous_text=previous, allow_empty=True),
             lambda result: self._on_chunk_transcribed(seq, result),
             self._on_chunk_error,
         )
 
     def _on_chunk_transcribed(self, seq: int, result: TranscriptResult) -> None:
         self._chunk_texts[seq] = result.text
-        self._chunks_pending -= 1
+        self._chunk_running = False
         self.partial_text.emit(self._joined_text())
+        self._pump_chunks()
         self._maybe_finish_transcription()
 
     def _on_chunk_error(self, msg: str) -> None:
+        self._fail_after_drain(self._stt_error_message(msg))
+
+    def _fail_after_drain(self, message: str) -> None:
+        """Canlı kayıtta hata: mikrofonu kapatır, kayıtçının kestiği ama sinyali henüz
+        gelmemiş parçaları bekler ve sesi doğru sırayla (parçalar, geç parçalar, kuyruk)
+        saklayarak başarısız olur."""
         self._gen += 1  # bekleyen diğer parçaların geç gelen sonuçları da yok sayılsın
+        self._chunk_running = False
+        # Kuyrukta bekleyen (henüz çözümlenmemiş) parçaların sesi zaten _session_audio'da.
+        self._chunk_queue.clear()
+        tail = self._pending_tail
         if self._state is DictationState.RECORDING:
-            self._recorder.stop()  # ses atılır; mikrofon açık kalmasın
-        self._on_stt_error(msg)
+            tail = self._recorder.stop()  # mikrofon açık kalmasın; ses saklanabilir
+            self._set_state(DictationState.TRANSCRIBING)
+        self._pending_tail = None
+        self._recording_stopped = False
+        emitted = getattr(self._recorder, "chunks_emitted", None)
+        expected = max(self._chunks_received, emitted if isinstance(emitted, int) else 0)
+        kept_tail = tail if tail is not None and tail.size else None
+        self._failure = (message, kept_tail, expected)
+        gen = self._gen
+        if self._chunks_received < expected:
+            QTimer.singleShot(LATE_CHUNK_TIMEOUT_MS, self, lambda: self._finish_failure(gen))
+            return
+        self._finish_failure(gen)
+
+    def _finish_failure(self, gen: int) -> None:
+        if gen != self._gen or self._failure is None:
+            return
+        message, tail, _expected = self._failure
+        self._failure = None
+        if tail is not None:
+            self._session_audio.append(tail)
+        self._fail(message, keep_audio=NO_SPEECH_MESSAGE not in message)
 
     def _maybe_finish_transcription(self) -> None:
-        if self._chunks_pending != 0 or not self._recording_stopped:
+        if not self._recording_stopped or self._state is not DictationState.TRANSCRIBING:
             return
+        if self._chunk_running or self._chunk_queue or self._pending_tail is not None:
+            return
+        if self._chunks_expected is not None and self._chunks_received < self._chunks_expected:
+            return
+        self._recording_stopped = False  # tek sefer bitir
         self._on_transcribed(
             TranscriptResult(
                 text=self._joined_text(),
@@ -328,7 +511,15 @@ class DictationController(QObject):
 
     def _on_transcribed(self, result: TranscriptResult) -> None:
         if not result.text.strip():
-            self.error.emit("Konuşma algılanamadı, ses boş görünüyor.")
+            # Sessiz/yanlışlıkla başlatılmış kayıt: saklanacak değerli ses yok; daha önce
+            # saklanmış gerçek bir başarısız kaydın üzerine de yazılmamalı.
+            self._fail("Konuşma algılanamadı, ses boş görünüyor.", keep_audio=False)
+            return
+        self._session_audio = []
+        if self._source == "retry":
+            self._discard_failed_audio()
+        if self._settings.voice_commands and is_undo_command(result.text):
+            self.undo_requested.emit()
             self._set_state(DictationState.IDLE)
             return
         entries = self._settings.dictionary.entries
@@ -349,7 +540,9 @@ class DictationController(QObject):
             [e.term for e in entries], self._settings.dictionary.user_instructions
         )
         self._spawn(
-            lambda: tasks.correct(self._llm, raw, glossary=glossary),
+            lambda: tasks.correct(
+                self._llm, raw, glossary=glossary, sanity_check=self._settings.llm.sanity_check
+            ),
             self._on_corrected,
             self._on_llm_error,
         )
@@ -417,9 +610,56 @@ class DictationController(QObject):
         self._set_state(DictationState.RESULT)
         self.result_ready.emit(self._session.output_text)
 
+    @staticmethod
+    def _stt_error_message(msg: str) -> str:
+        return f"Transkripsiyon başarısız: {msg}"
+
     def _on_stt_error(self, msg: str) -> None:
-        self.error.emit(f"Transkripsiyon başarısız: {msg}")
+        self._fail(self._stt_error_message(msg), keep_audio=NO_SPEECH_MESSAGE not in msg)
+
+    def _fail(self, message: str, *, keep_audio: bool = True) -> None:
+        """Çözümleme başarısız/boş: gerekirse sesi saklar, ipucuyla hata yayınlar, IDLE'a döner."""
+        if keep_audio:
+            message += self._keep_failed_audio()
+        else:
+            self._session_audio = []
+            if self._source == "retry" and self.has_failed_audio:
+                message += RETRY_HINT
+        self.error.emit(message)
         self._set_state(DictationState.IDLE)
+
+    def _keep_failed_audio(self) -> str:
+        """Mikrofon kaydını WAV olarak saklar; hata mesajına eklenecek ipucunu döndürür."""
+        audio_parts, self._session_audio = self._session_audio, []
+        if self._source == "retry":
+            return RETRY_HINT if self.has_failed_audio else ""
+        path = self._failed_audio_path
+        if self._source != "mic" or path is None or not self._settings.keep_failed_audio:
+            return ""
+        audio = np.concatenate(audio_parts) if audio_parts else np.zeros(0, dtype=np.float32)
+        if audio.size == 0:
+            return ""
+        from dikte.audio.wav import save_wav
+
+        try:
+            save_wav(path, audio, self._settings.audio.sample_rate)
+        except OSError as exc:
+            log.exception("başarısız diktenin sesi saklanamadı: %s", path)
+            return f" Ses kaydı saklanamadı ({exc}); diskte yer olduğunu kontrol edin."
+        log.info("başarısız diktenin sesi saklandı: %s", path)
+        self.failed_audio_changed.emit(True)
+        return RETRY_HINT
+
+    def _discard_failed_audio(self) -> None:
+        path = self._failed_audio_path
+        if path is None:
+            return
+        try:
+            path.unlink(missing_ok=True)
+        except OSError:
+            log.exception("yeniden denenen kayıt silinemedi: %s", path)
+            return
+        self.failed_audio_changed.emit(False)
 
     def _on_limit_reached(self) -> None:
         if self._state is DictationState.RECORDING:
@@ -432,9 +672,16 @@ class DictationController(QObject):
             self._stop_and_transcribe()
 
     def _on_recorder_error(self, msg: str) -> None:
-        self.error.emit(msg)
-        if self._state is DictationState.RECORDING:
-            self._set_state(DictationState.IDLE)
+        if self._state is not DictationState.RECORDING:
+            if msg == DEVICE_LOST_MESSAGE:
+                # Akış kullanıcı durdurduktan sonra bitti bildirimi: kayıt zaten tamam.
+                log.debug("kayıt bittikten sonra gelen cihaz bildirimi yok sayıldı")
+                return
+            self.error.emit(msg)
+            return
+        # Kayıt sürerken cihaz kaybı vb.: akışı kapat (tutamaç sızmasın, sonraki start()
+        # çalışsın), bekleyen parça sonuçlarını geçersiz kıl, geç parçaları bekleyip sesi sakla.
+        self._fail_after_drain(msg)
 
     def _set_state(self, new: DictationState) -> None:
         if new is self._state:
@@ -462,8 +709,19 @@ class DictationController(QObject):
             else:
                 log.debug("iptal edilmiş işin hatası yok sayıldı: %s", message)
 
-        self._track(run_in_pool(fn, guarded_result, guarded_error, self._pool))
+        self._run(fn, guarded_result, guarded_error)
 
-    def _track(self, signals) -> None:
-        self._jobs.append(signals)
-        self._jobs = self._jobs[-16:]
+    def _run(self, fn, on_result, on_error) -> None:
+        """run_in_pool + sinyal nesnesini sonucu teslim edilene kadar canlı tutma
+        (run_in_pool sözleşmesi). Bırakma geri çağrılardan sonra ve olay döngüsüne
+        ertelenerek yapılır: nesne kendi sinyalinin teslimatı sırasında yok edilmesin."""
+        holder: list = []
+
+        def release() -> None:
+            if holder:
+                signals = holder[0]
+                QTimer.singleShot(0, self, lambda: self._jobs.discard(signals))
+
+        signals = run_in_pool(fn, on_result, on_error, self._pool, on_finished=release)
+        holder.append(signals)
+        self._jobs.add(signals)

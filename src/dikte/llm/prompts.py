@@ -103,7 +103,7 @@ def correct_user(raw: str) -> str:
 
 
 def translate_user(text: str) -> str:
-    return text
+    return _fenced("Turkish text (data to translate)", text)
 
 
 def enhance_user(text: str) -> str:

@@ -50,8 +50,13 @@ sudo apt install xdotool                                    # X11'de otomatik ya
 curl -fsSL https://ollama.com/install.sh | sh
 ollama pull gemma4:e4b-it-qat
 
-./packaging/linux/install.sh      # pipx ile kurar, .desktop + ikon yazar, modeli indirir
+./packaging/linux/install.sh      # pipx ile [cuda] extra'sıyla kurar, .desktop + ikon + başlatıcı yazar, modeli indirir
 ```
+
+Kurulum betiği pip'in CUDA kütüphanelerini (`nvidia/*/lib`) `LD_LIBRARY_PATH`'e ekleyen bir
+başlatıcı yazar. Uygulama doğrudan (`python -m dikte`, otomatik başlatma) açılsa bile bu
+kütüphaneler açılışta önceden yüklenir. Model indirilemezse kurulum durmaz; sonda ne
+yapacağınız yazılır.
 
 Elle kurulum yapmak isterseniz:
 
@@ -100,10 +105,18 @@ Ayarlar → Hakkında → **"Durum kontrolü…"** ile de açabilirsiniz. STT mo
 | Geçmişte ara | `Ctrl+F` (paneli açar ve arama kutusuna odaklanır) |
 | Geçmişi dışa aktar | Geçmiş paneli → "Dışa aktar…" (`.md` → Markdown, `.txt` → düz metin) |
 | Son diktenin metnini kopyala | Tray menüsü → "Son metni kopyala" veya "Son dikteler" alt menüsünden birini seç |
+| Son sonucu yeniden yapıştır | Tray menüsü → "Son sonucu yapıştır" · veya Ayarlar → Genel'de ayrı bir kısayol (yalnızca Windows) |
+| Başarısız kaydı yeniden dene | Tray menüsü → "Başarısız kaydı yeniden dene" (çözümleme hata verdiyse veya boş döndüyse ses `failed/last.wav` olarak saklanır) |
 | Pencereyi gizle | `X` (uygulama tray'de kalır) |
 | Çıkış | Tray menüsü → "Çıkış" |
 
-Başlat/durdur/hata sesleri Ayarlar → Genel'den kapatılabilir.
+Başlat/durdur/hata sesleri Ayarlar → Genel'den kapatılabilir. Aynı yerden kayıt sırasında
+çalan medyanın (YouTube, Spotify…) duraklatılması açılabilir: yalnızca o an çalan oynatıcılar
+duraklatılır ve kayıt bitince sürdürülür (Linux'ta `playerctl`, Windows'ta `.[media]` extra'sı).
+
+Kayıt başladıktan sonra birkaç saniye mikrofondan hiç ses gelmezse overlay'de uyarı çıkar;
+kayıtlı mikrofon takılı değilse varsayılan mikrofon kullanılır ve bu bildirilir. Overlay'i
+sürükleyip istediğiniz yere taşıyabilirsiniz; konum hatırlanır (Ayarlar → Genel → "Overlay konumu").
 
 ### Sonuç nasıl teslim edilir
 
@@ -114,7 +127,8 @@ Kayıt bitip metin hazır olduğunda üç şey birden olur:
    (Ayarlar → "Sonucu aktif pencereye yapıştır"). Windows'ta yerleşik; Linux'ta
    `xdotool` (X11) veya `wtype` (Wayland) kurulu olmalıdır, yoksa metin yalnızca panoda kalır.
    Ayarlar → "Yapıştırdıktan sonra eski pano içeriğini geri yükle" ile yapıştırma sonrası
-   pano önceki içeriğine döndürülebilir.
+   pano önceki içeriğine döndürülebilir. Bu arada yeni bir şey kopyaladıysanız geri yükleme
+   yapılmaz. Windows'ta dikte metni varsayılan olarak pano geçmişine ve bulut panosuna girmez.
 3. Oturum **geçmişe** yazılır.
 
 Düzeltilmiş metni elle düzenleyip Ctrl+Enter ile yeniden yapıştırabilirsiniz; düzeltmeniz
@@ -182,7 +196,7 @@ veya uzak bir sağlayıcı da seçebilirsiniz:
 
 Tablodaki adresler ilgili uygulamaların **varsayılan portlarıdır**: Ollama 11434, LM Studio 1234.
 İki uygulamayı aynı makinede çalıştırıyorsanız veya portu başka bir şey kullanıyorsa, sunucuyu
-taşıyıp adresi Ayarlar → Metin Düzeltme altındaki "Host" / "Base URL" kutusundan değiştirin.
+taşıyıp adresi Ayarlar → Metin Düzeltme altındaki "Sunucu adresi" / "Temel URL" kutusundan değiştirin.
 LM Studio'da sunucuyu açmak için: Developer sekmesi → **Start Server**; "Model" kutusuna
 LM Studio'nun listelediği model kimliğini yazın.
 
@@ -190,9 +204,13 @@ LM Studio'nun listelediği model kimliğini yazın.
 API anahtarları **yalnızca ortam değişkeninden** okunur; `config.json`'a yazılmaz, loglanmaz ve
 arayüzde gösterilmez — ayarlarda yalnızca "✓ tanımlı / ✗ yok" bilgisi görünür.
 
-Özel uç noktanın hangi protokolü konuştuğunu Ayarlar → Metin Düzeltme → "Format" ile seçersiniz
+Özel uç noktanın hangi protokolü konuştuğunu Ayarlar → Metin Düzeltme → "Biçim" ile seçersiniz
 (OpenAI-uyumlu ya da Anthropic-uyumlu). OpenAI-uyumlu sunucu `json_schema` desteklemiyorsa
 otomatik olarak `json_object` moduna düşülür.
+
+Yanıt çıktı sınırına takılıp yarıda kesilirse yarım metin yapıştırılmaz; hata gösterilir.
+"Düzeltme sağlamlık kontrolü" açıkken (varsayılan) düzeltilmiş metnin kelime sayısı ham
+metinden çok farklıysa (model düzeltmek yerine cevap verdi/özetledi) ham metne dönülür.
 
 ### Ayarlar
 
@@ -200,17 +218,21 @@ Ayarlar penceresi (tepsi menüsü veya araç çubuğu → "Ayarlar…") sekiz se
 
 | Sekme | İçerik |
 |---|---|
-| Genel | Kısayol (tuşa basarak yakalanır) + isteğe bağlı ayrı çeviri/agent-prompt kısayolları, bas-konuş (yalnızca Windows), geçmiş kayıt sayısı, açılışta başlat, panoya kopyala / yapıştır / pencereyi öne getir, elle düzeltmelerden sözlük önerisi çıkarma |
-| Ses | Mikrofon, kayıt süresi sınırı (0 = sınırsız), sessizlikte otomatik durdurma (0 = kapalı), canlı seviye testi |
+| Genel | Kısayol (tuşa basarak yakalanır) + isteğe bağlı ayrı çeviri/agent-prompt/son sonucu yapıştır kısayolları, bas-konuş (yalnızca Windows), geçmiş kayıt sayısı ve saklama süresi, açılışta başlat, panoya kopyala / yapıştır / pencereyi öne getir, pano geçmişinden hariç tut, kayıtta medyayı duraklat, başarısız kaydı sakla, overlay konumu, elle düzeltmelerden sözlük önerisi çıkarma |
+| Ses | Mikrofon (adıyla saklanır; Windows'ta WASAPI cihazları), kayıt süresi sınırı (0 = sınırsız), sessizlikte otomatik durdurma (0 = kapalı), sessiz mikrofon uyarısı, canlı seviye testi |
 | Konuşma Tanıma | Whisper modeli, hassasiyet (compute_type), dil, toplu çözümleme, açılışta ısıtma, canlı çözümleme parça süresi, "Sessizlik ve halüsinasyon" (VAD eşiği, en kısa sessizlik, konuşma yok eşiği, kara liste) |
-| Metin Düzeltme | LLM aç/kapa, sağlayıcı ve sağlayıcıya özel alanlar, bellekte tutma |
+| Metin Düzeltme | LLM aç/kapa, sağlayıcı ve sağlayıcıya özel alanlar, bellekte tutma, düzeltme sağlamlık kontrolü |
 | Sözlük | Özel terimler (doğru yazım + yanlış tanınan biçimler), LLM düzeltmesine ek serbest talimat |
 | Gelişmiş | beam_size, başlangıç promptu, num_ctx, top_p, top_k, zaman aşımı, düşünme modu |
 | Profiller | Ön plandaki uygulamaya göre mod/yapıştırma/LLM/sonek profilleri (bkz. [Uygulama profilleri](#uygulama-profilleri)) |
 | Hakkında | Sürümler, GPU ve desteklenen hassasiyetler, VRAM kullanımı (`nvidia-smi` üzerinden), log / ayar klasörünü aç |
 
-Model/hassasiyet değişince model arka planda yeniden yüklenir; mikrofon değişikliği sonraki kayıtta geçerlidir. İpucu alanın üstüne gelince görünür.
+Model/hassasiyet değişince model arka planda yeniden yüklenir (süren bir iş varsa iş bitince);
+mikrofon değişikliği sonraki kayıtta geçerlidir. İpucu alanın üstüne gelince görünür. Konuşma
+Tanıma, Metin Düzeltme ve Gelişmiş sekmelerinde "Varsayılanlara döndür" düğmesi vardır.
 `config.json` içindeki kısayol bozuksa uygulama çökmez, varsayılana döner ve bunu bildirir.
+Başka bir alan geçersizse yalnızca o alan varsayılana döner; diğer ayarlarınız korunur, eski
+dosya `config.json.bak` olarak yedeklenir ve hangi alanların atlandığı bildirilir.
 
 #### Özel sözlük
 
@@ -229,14 +251,18 @@ Model önbelleği: `%LOCALAPPDATA%\Dikte\models\`.
 
 #### Sesli komutlar
 
-Ham metin, sözlük kurallarından sonra üç sesli komut için taranır (Ayarlar → Genel →
+Ham metin, sözlük kurallarından sonra sesli komutlar için taranır (Ayarlar → Genel →
 "Sesli komutları tanı" ile kapatılabilir; büyük/küçük harf duyarsız, komut etrafındaki
 virgül/nokta temizlenir):
 
 - **"yeni satır"** → satır sonu ekler, sonrasındaki ilk harfi büyütür.
 - **"yeni paragraf"** → boş satırla ayrılan yeni bir paragraf başlatır.
 - **"son cümleyi sil"** → komutu ve ondan önceki cümleyi (önceki nokta/ünlem/soru işaretine
-  ya da metin başına kadar) siler.
+  ya da metin başına kadar) siler. "14.30" veya "3. madde" gibi rakamlı noktalar cümle sonu
+  sayılmaz.
+- **"son kelimeyi sil"** → komutu ve ondan önceki kelimeyi siler.
+- **"geri al"** → dikte yalnızca bu iki kelimeden oluşuyorsa metin yapıştırılmaz; ön plandaki
+  uygulamaya `Ctrl+Z` gönderilir (ör. az önce yapıştırılan metni geri almak için).
 
 Örnek: "bugün hava güzel son cümleyi sil yarın yağmur var" → "Yarın yağmur var".
 Noktalama komutları ("noktalı virgül" gibi) bilinçli olarak desteklenmez — Türkçede bu
@@ -264,13 +290,15 @@ alanlardan oluşur:
 | Alan | Anlamı |
 |---|---|
 | Ad | Yalnızca listede tanımak için (isteğe bağlı içerik zorunluluğu yok, boş bırakılamaz) |
-| Eşleşme | Süreç adının (küçük harf) içinde aranan alt dize, ör. `code`, `windowsterminal` |
-| Mod | `correct` / `translate` / `prompt` — yalnızca kısayol "düzelt" modundaysa (varsayılan kısayol) devreye girer; ayrı çeviri/prompt kısayolları profille geçersiz kılınmaz |
+| Eşleşme | Süreç adı (`.exe` olmadan) veya içinde aranan alt dize, ör. `code`, `windowsterminal` |
+| Mod | Düzelt / Çevir / Prompt — yalnızca kısayol "düzelt" modundaysa (varsayılan kısayol) devreye girer; ayrı çeviri/prompt kısayolları profille geçersiz kılınmaz |
 | Yapıştırma | `ctrl+v`, `ctrl+shift+v` (bazı terminallerde yapıştır için ayrı kısayoldur) veya `type` (panoyu kullanmadan karakter karakter yazar) |
 | LLM | Kapatılırsa bu uygulamada metin düzeltmeden geçmez, ham metin doğrudan teslim edilir |
 | Sonek | Sonuca eklenecek `(yok)` / `boşluk` / `yeni satır` |
 
-Birden fazla profil eşleşirse **listede önce gelen** kazanır. Eşleşme boş bırakılan bir profil
+Birden fazla profil eşleşirse önce süreç adıyla **tam eşleşen**, yoksa **en uzun alt dizeyle**
+eşleşen kazanır (`code` profili `vscode`'u da yakalar ama `vscode` profili varsa o seçilir);
+eşitlikte listede önce gelen kazanır. Eşleşme boş bırakılan bir profil
 hiçbir zaman eşleşmez.
 
 Örnekler:
@@ -281,7 +309,8 @@ hiçbir zaman eşleşmez.
   hızlıca yapıştırılır, düzeltme için LLM çağrısı beklenmez.
 
 Ön plan sürecinin adı Windows'ta `GetForegroundWindow`/`QueryFullProcessImageNameW` ile,
-Linux'ta `xdotool` (X11) ile okunur; araç kurulu değilse veya sorgu başarısız olursa profil
+Linux'ta `xdotool` (X11) ile okunur (15 karakterde kesilen süreç adları tam adla eşleştirilir;
+`dikte --toggle` ile başlatılan diktelerde de profil uygulanır); araç kurulu değilse veya sorgu başarısız olursa profil
 eşleştirme sessizce atlanır (genel ayarlar geçerli olur). Hiç profil tanımlı değilse ön plan
 sürecine hiç bakılmaz.
 

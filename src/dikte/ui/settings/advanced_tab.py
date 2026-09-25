@@ -12,6 +12,7 @@ from PySide6.QtWidgets import (
 )
 
 from dikte.config import Settings
+from dikte.ui.settings._reset import make_reset_button, reset_row
 
 
 class AdvancedTab(QWidget):
@@ -21,13 +22,10 @@ class AdvancedTab(QWidget):
 
     def __init__(self, settings: Settings, parent=None):
         super().__init__(parent)
-        stt, llm = settings.stt, settings.llm
-
         self.beam_spin = QSpinBox()
         self.beam_spin.setRange(1, 10)
-        self.beam_spin.setValue(stt.beam_size)
         self.beam_spin.setToolTip("turbo modelde 1–2 genellikle yeterli; büyük değer yavaşlatır")
-        self.initial_prompt_edit = QPlainTextEdit(stt.initial_prompt)
+        self.initial_prompt_edit = QPlainTextEdit()
         self.initial_prompt_edit.setMaximumHeight(70)
         self.initial_prompt_edit.setToolTip("Modele verilen bağlam cümlesi; boş bırakılabilir")
 
@@ -39,21 +37,16 @@ class AdvancedTab(QWidget):
         self.num_ctx_spin = QSpinBox()
         self.num_ctx_spin.setRange(2048, 131072)
         self.num_ctx_spin.setSingleStep(1024)
-        self.num_ctx_spin.setValue(llm.num_ctx)
         self.num_ctx_spin.setToolTip("Bağlam penceresi; büyütmek VRAM'de KV cache'i büyütür")
         self.top_p_spin = QDoubleSpinBox()
         self.top_p_spin.setRange(0.0, 1.0)
         self.top_p_spin.setSingleStep(0.05)
-        self.top_p_spin.setValue(llm.top_p)
         self.top_k_spin = QSpinBox()
         self.top_k_spin.setRange(0, 200)
-        self.top_k_spin.setValue(llm.top_k)
         self.timeout_spin = QDoubleSpinBox()
         self.timeout_spin.setRange(1.0, 600.0)
         self.timeout_spin.setSuffix(" sn")
-        self.timeout_spin.setValue(llm.timeout_s)
         self.think_check = QCheckBox("Düşünme modu (yavaşlatır)")
-        self.think_check.setChecked(llm.think)
 
         llm_group = QGroupBox("LLM örnekleme")
         llm_form = QFormLayout(llm_group)
@@ -63,10 +56,26 @@ class AdvancedTab(QWidget):
         llm_form.addRow("Zaman aşımı", self.timeout_spin)
         llm_form.addRow(self.think_check)
 
+        self.reset_btn = make_reset_button(lambda: self.load(Settings()))
+
         lay = QVBoxLayout(self)
         lay.addWidget(stt_group)
         lay.addWidget(llm_group)
         lay.addStretch(1)
+        lay.addLayout(reset_row(self.reset_btn))
+
+        self.load(settings)
+
+    def load(self, settings: Settings) -> None:
+        """Alanları `settings`ten doldurur; "Varsayılanlara döndür" de bunu kullanır."""
+        stt, llm = settings.stt, settings.llm
+        self.beam_spin.setValue(stt.beam_size)
+        self.initial_prompt_edit.setPlainText(stt.initial_prompt)
+        self.num_ctx_spin.setValue(llm.num_ctx)
+        self.top_p_spin.setValue(llm.top_p)
+        self.top_k_spin.setValue(llm.top_k)
+        self.timeout_spin.setValue(llm.timeout_s)
+        self.think_check.setChecked(llm.think)
 
     def validate(self) -> str | None:
         return None

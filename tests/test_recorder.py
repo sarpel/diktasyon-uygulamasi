@@ -10,8 +10,21 @@ class FakeStream:
 
     instances: list["FakeStream"] = []
 
-    def __init__(self, *, callback, samplerate, channels, dtype, device, blocksize):
+    def __init__(
+        self,
+        *,
+        callback,
+        samplerate,
+        channels,
+        dtype,
+        device,
+        blocksize,
+        finished_callback=None,
+        **extra,
+    ):
+        self.extra = extra
         self.callback = callback
+        self.finished_callback = finished_callback
         self.samplerate, self.channels, self.dtype, self.device = (
             samplerate,
             channels,
@@ -32,6 +45,11 @@ class FakeStream:
 
     def push(self, frame: np.ndarray):
         self.callback(frame.reshape(-1, 1), len(frame), None, None)
+
+    def finish(self):
+        """PortAudio akışın bittiğini bildirir (cihaz çıkarıldı ya da stop() çağrıldı)."""
+        if self.finished_callback is not None:
+            self.finished_callback()
 
 
 @pytest.fixture
@@ -207,3 +225,263 @@ def test_callback_copies_reused_input_buffer(rec):
     audio = rec.stop()
     assert np.isfinite(audio).all()
     assert audio == pytest.approx(np.full(1600, 0.25, dtype=np.float32))
+
+
+# ---- stop/close sağlamlığı
+
+
+def test_stop_closes_stream_even_if_stop_fails(qtbot):
+    class StopFails(FakeStream):
+        def stop(self):
+            raise RuntimeError("PortAudio hatası")
+
+    FakeStream.instances.clear()
+    rec = AudioRecorder(AudioSettings(), stream_factory=StopFails)
+    rec.start()
+    rec.stop()
+    assert FakeStream.instances[-1].closed and not rec.is_recording
+
+
+# ---- cihaz adına göre seçim
+
+_HOSTAPIS = [{"name": "MME"}, {"name": "Windows WASAPI"}]
+_DEVICES = [
+    {"name": "Hoparlör", "max_input_channels": 0, "hostapi": 0},
+    {"name": "USB Mikrofon", "max_input_channels": 1, "hostapi": 0},
+    {"name": "Dahili Mikrofon", "max_input_channels": 2, "hostapi": 0},
+    {"name": "USB Mikrofon", "max_input_channels": 1, "hostapi": 1},
+]
+
+
+def _query():
+    return _DEVICES, _HOSTAPIS
+
+
+def test_list_input_devices_returns_only_inputs():
+    from dikte.audio.recorder import InputDevice, list_input_devices
+
+    devices = list_input_devices(query=_query)
+    assert devices == [
+        InputDevice(name="USB Mikrofon", index=1, hostapi="MME"),
+        InputDevice(name="Dahili Mikrofon", index=2, hostapi="MME"),
+        InputDevice(name="USB Mikrofon", index=3, hostapi="Windows WASAPI"),
+    ]
+
+
+def test_list_input_devices_query_failure_returns_empty(caplog):
+    from dikte.audio.recorder import list_input_devices
+
+    def boom():
+        raise OSError("PortAudio yok")
+
+    assert list_input_devices(query=boom) == []
+    assert "PortAudio yok" in caplog.text
+
+
+def test_device_name_resolved_to_index(qtbot):
+    FakeStream.instances.clear()
+    rec = AudioRecorder(
+        AudioSettings(device_name="Dahili Mikrofon", device_index=1),
+        stream_factory=FakeStream,
+        device_probe=_query,
+    )
+    rec.start()
+    assert FakeStream.instances[-1].device == 2  # ad, eski index'ten önceliklidir
+
+
+def test_duplicate_names_prefer_wasapi_on_windows(qtbot, monkeypatch):
+    import dikte.audio.recorder as mod
+
+    monkeypatch.setattr(mod.sys, "platform", "win32")
+    FakeStream.instances.clear()
+    rec = AudioRecorder(
+        AudioSettings(device_name="USB Mikrofon"), stream_factory=FakeStream, device_probe=_query
+    )
+    rec.start()
+    assert FakeStream.instances[-1].device == 3
+
+
+def test_duplicate_names_use_first_elsewhere(qtbot, monkeypatch):
+    import dikte.audio.recorder as mod
+
+    monkeypatch.setattr(mod.sys, "platform", "linux")
+    FakeStream.instances.clear()
+    rec = AudioRecorder(
+        AudioSettings(device_name="USB Mikrofon"), stream_factory=FakeStream, device_probe=_query
+    )
+    rec.start()
+    assert FakeStream.instances[-1].device == 1
+
+
+def test_missing_device_name_falls_back_to_default_with_warning(qtbot):
+    FakeStream.instances.clear()
+    rec = AudioRecorder(
+        AudioSettings(device_name="Kayıp Mikrofon", device_index=1),
+        stream_factory=FakeStream,
+        device_probe=_query,
+    )
+    warnings = []
+    rec.warning.connect(warnings.append)
+    rec.start()
+    assert FakeStream.instances[-1].device is None
+    assert warnings == [
+        "Kayıtlı mikrofon bulunamadı (Kayıp Mikrofon); varsayılan mikrofon kullanılıyor."
+    ]
+    assert rec.is_recording
+
+
+def test_empty_device_name_uses_device_index_without_query(qtbot):
+    FakeStream.instances.clear()
+
+    def no_query():
+        raise AssertionError("ad boşken cihaz listesi sorgulanmamalı")
+
+    rec = AudioRecorder(
+        AudioSettings(device_index=4), stream_factory=FakeStream, device_probe=no_query
+    )
+    rec.start()
+    assert FakeStream.instances[-1].device == 4
+
+
+# ---- cihaz çıkarıldı
+
+
+def test_stream_finishing_unexpectedly_emits_error(rec, qtbot):
+    rec.start()
+    errors = []
+    rec.error.connect(errors.append)
+    FakeStream.instances[-1].finish()  # cihaz çıkarıldı: PortAudio akışı kendisi bitirdi
+    assert errors and "Mikrofon bağlantısı kesildi" in errors[0]
+
+
+def test_finish_after_own_stop_is_silent(rec):
+    rec.start()
+    s = FakeStream.instances[-1]
+    errors = []
+    rec.error.connect(errors.append)
+    rec.stop()
+    s.finish()  # kendi stop() çağrımız da finished_callback'i tetikler
+    assert errors == []
+
+
+# ---- ölü mikrofon
+
+
+def test_dead_mic_warns_once_after_threshold(qtbot):
+    FakeStream.instances.clear()
+    rec = AudioRecorder(AudioSettings(dead_mic_warn_s=1.0), stream_factory=FakeStream)
+    warnings = []
+    rec.warning.connect(warnings.append)
+    rec.start()
+    s = FakeStream.instances[-1]
+    for _ in range(9):  # 0,9 sn tam sessizlik
+        s.push(np.zeros(1600, dtype=np.float32))
+    assert warnings == []
+    for _ in range(20):
+        s.push(np.zeros(1600, dtype=np.float32))
+    assert warnings == [
+        "Mikrofondan ses gelmiyor. Doğru mikrofonun seçili olduğunu ve sessize "
+        "alınmadığını kontrol edin."
+    ]
+
+
+def test_dead_mic_not_reported_when_signal_present(qtbot):
+    FakeStream.instances.clear()
+    rec = AudioRecorder(AudioSettings(dead_mic_warn_s=1.0), stream_factory=FakeStream)
+    warnings = []
+    rec.warning.connect(warnings.append)
+    rec.start()
+    s = FakeStream.instances[-1]
+    s.push(np.full(1600, 0.001, dtype=np.float32))  # oda gürültüsü: mikrofon canlı
+    for _ in range(30):
+        s.push(np.zeros(1600, dtype=np.float32))
+    assert warnings == []
+
+
+def test_dead_mic_check_disabled_with_zero(qtbot):
+    FakeStream.instances.clear()
+    rec = AudioRecorder(AudioSettings(dead_mic_warn_s=0), stream_factory=FakeStream)
+    warnings = []
+    rec.warning.connect(warnings.append)
+    rec.start()
+    s = FakeStream.instances[-1]
+    for _ in range(100):
+        s.push(np.zeros(1600, dtype=np.float32))
+    assert warnings == []
+
+
+def test_wasapi_device_requests_auto_convert_on_windows(qtbot, monkeypatch):
+    """WASAPI paylaşımlı modu cihazın karışım hızı (çoğunlukla 48 kHz) dışındaki hızları
+    reddeder; 16 kHz kayıt için auto_convert istenmezse akış hiç açılmaz."""
+    import dikte.audio.recorder as mod
+
+    monkeypatch.setattr(mod.sys, "platform", "win32")
+    FakeStream.instances.clear()
+    rec = AudioRecorder(
+        AudioSettings(device_name="USB Mikrofon"), stream_factory=FakeStream, device_probe=_query
+    )
+    rec.start()
+    assert FakeStream.instances[-1].device == 3
+    assert FakeStream.instances[-1].extra == {"wasapi_auto_convert": True}
+
+
+def test_non_wasapi_device_gets_no_extra_settings(qtbot):
+    FakeStream.instances.clear()
+    rec = AudioRecorder(
+        AudioSettings(device_name="Dahili Mikrofon"), stream_factory=FakeStream, device_probe=_query
+    )
+    rec.start()
+    assert FakeStream.instances[-1].extra == {}
+
+
+def test_default_factory_translates_wasapi_flag(monkeypatch):
+    import sys
+    from types import SimpleNamespace
+
+    import dikte.audio.recorder as mod
+
+    monkeypatch.undo()  # conftest'in autouse sahte fabrikasını kaldırıp gerçeğini test et
+    seen = {}
+    fake_sd = SimpleNamespace(
+        WasapiSettings=lambda auto_convert: ("wasapi", auto_convert),
+        InputStream=lambda **kw: seen.update(kw) or "stream",
+    )
+    monkeypatch.setitem(sys.modules, "sounddevice", fake_sd)
+    assert mod._default_stream_factory(device=3, wasapi_auto_convert=True) == "stream"
+    assert seen == {"device": 3, "extra_settings": ("wasapi", True)}
+    seen.clear()
+    mod._default_stream_factory(device=2, wasapi_auto_convert=False)
+    assert seen == {"device": 2}
+
+
+def test_named_device_that_fails_to_open_falls_back_to_default(qtbot):
+    class PickyStream(FakeStream):
+        def __init__(self, **kw):
+            if kw["device"] is not None:
+                raise OSError("Invalid sample rate [-9997]")
+            super().__init__(**kw)
+
+    FakeStream.instances.clear()
+    rec = AudioRecorder(
+        AudioSettings(device_name="Dahili Mikrofon"),
+        stream_factory=PickyStream,
+        device_probe=_query,
+    )
+    warnings, errors = [], []
+    rec.warning.connect(warnings.append)
+    rec.error.connect(errors.append)
+    rec.start()
+    assert rec.is_recording and errors == []
+    assert FakeStream.instances[-1].device is None
+    assert warnings and "Dahili Mikrofon" in warnings[0] and "varsayılan" in warnings[0]
+
+
+def test_default_device_failure_still_reports_error(qtbot):
+    def boom(**kw):
+        raise OSError("PortAudio hatası")
+
+    rec = AudioRecorder(AudioSettings(), stream_factory=boom)
+    errors = []
+    rec.error.connect(errors.append)
+    rec.start()
+    assert not rec.is_recording and errors and "PortAudio hatası" in errors[0]

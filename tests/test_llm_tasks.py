@@ -3,7 +3,13 @@ import json
 import pytest
 
 from dikte.llm.provider import LlmError
-from dikte.llm.tasks import CorrectionResult, correct, enhance_prompt, translate
+from dikte.llm.tasks import (
+    CorrectionResult,
+    correct,
+    correction_looks_valid,
+    enhance_prompt,
+    translate,
+)
 
 
 class FakeProvider:
@@ -70,3 +76,50 @@ def test_enhance_prompt_returns_text_and_uses_english_system_prompt():
     out = enhance_prompt(p, "bana bir todo uygulaması yaz")
     assert out.startswith("# Goal")
     assert "AI agent" in p.calls[0]["system"]
+
+
+# ---- JSON çıkarımı, kesilme, gizlilik, akıl sağlığı denetimi
+
+
+def test_correct_extracts_json_from_think_block_and_code_fence():
+    reply = (
+        '<think>{"corrected_text": "yanlış"}</think>\n```json\n{"corrected_text": "Merhaba."}\n```'
+    )
+    assert correct(FakeProvider(reply), "merhaba").corrected_text == "Merhaba."
+
+
+def test_invalid_json_error_message_does_not_contain_reply_text():
+    with pytest.raises(LlmError) as info:
+        correct(FakeProvider("gizli dikte içeriği burada"), "gizli dikte içeriği burada")
+    assert "gizli" not in str(info.value)
+
+
+def test_correction_looks_valid_accepts_similar_length():
+    assert correction_looks_valid("bir iki üç dört beş", "Bir, iki, üç, dört, beş.")
+
+
+def test_correction_looks_valid_rejects_summary_and_expansion():
+    raw = "bir iki üç dört beş altı yedi sekiz dokuz on"
+    assert not correction_looks_valid(raw, "bir iki üç dört")  # 0.4×
+    assert not correction_looks_valid(raw, " ".join(["kelime"] * 17))  # 1.7×
+    assert correction_looks_valid(raw, "bir iki üç dört beş")  # 0.5× sınırda
+    assert correction_looks_valid(raw, " ".join(["kelime"] * 16))  # 1.6× sınırda
+
+
+def test_correction_looks_valid_skips_short_raw_text():
+    assert correction_looks_valid("bir iki üç", "Tamam, bunu yapabilirim ve çok daha fazlasını.")
+
+
+def test_correct_raises_when_sanity_check_fails(caplog):
+    raw = "bugün toplantıda bütçe planını ve yeni işe alımları konuştuk"
+    p = FakeProvider(json.dumps({"corrected_text": "Tabii."}))
+    with pytest.raises(LlmError, match="kelime") as info:
+        correct(p, raw)
+    assert "bütçe" not in str(info.value)
+    assert any(r.levelname == "WARNING" for r in caplog.records)
+
+
+def test_correct_skips_sanity_check_when_disabled():
+    raw = "bugün toplantıda bütçe planını ve yeni işe alımları konuştuk"
+    p = FakeProvider(json.dumps({"corrected_text": "Tabii."}))
+    assert correct(p, raw, sanity_check=False).corrected_text == "Tabii."

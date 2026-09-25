@@ -4,7 +4,7 @@ import pytest
 
 from dikte.config import LlmSettings
 from dikte.llm import make_provider
-from dikte.llm.ollama_provider import OllamaProvider
+from dikte.llm.ollama_provider import OllamaProvider, estimate_num_ctx
 from dikte.llm.provider import LlmError
 
 
@@ -80,3 +80,37 @@ def test_unload_requests_zero_keep_alive():
     provider = OllamaProvider(LlmSettings(model="m"), client_factory=lambda host, timeout: client)
     provider.unload()
     assert client.calls[-1]["keep_alive"] == 0 and client.calls[-1]["model"] == "m"
+
+
+def test_length_done_reason_raises_truncation_error():
+    c = FakeClient("yarım")
+    c.chat = lambda **kw: SimpleNamespace(
+        message=SimpleNamespace(content="yarım"), done_reason="length"
+    )
+    p = OllamaProvider(LlmSettings(), client_factory=lambda host, timeout: c)
+    with pytest.raises(LlmError, match="yarıda kesildi"):
+        p.complete("s", "u")
+
+
+def test_num_ctx_grows_with_long_input():
+    c = FakeClient("ok")
+    p = OllamaProvider(LlmSettings(), client_factory=lambda host, timeout: c)
+    p.complete("s", "a" * 30_000)
+    assert c.calls[0]["options"]["num_ctx"] > 8192
+
+
+def test_estimate_num_ctx_keeps_base_for_short_text():
+    assert estimate_num_ctx("sistem", "kısa metin", base=8192) == 8192
+
+
+def test_estimate_num_ctx_rounds_up_to_2048_multiple():
+    # (3000 + 12000) / 3 = 5000 giriş + 12000/3*2 = 8000 çıkış → 13000 → 14336
+    assert estimate_num_ctx("s" * 3000, "u" * 12000, base=8192) == 14336
+
+
+def test_estimate_num_ctx_caps_at_32768():
+    assert estimate_num_ctx("s", "u" * 200_000, base=8192) == 32768
+
+
+def test_estimate_num_ctx_respects_larger_base():
+    assert estimate_num_ctx("s", "u" * 200_000, base=65536) == 65536

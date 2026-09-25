@@ -7,7 +7,7 @@ from collections.abc import Callable
 
 from dikte.config import LlmSettings
 from dikte.llm.keys import read_api_key
-from dikte.llm.provider import LlmError
+from dikte.llm.provider import LlmError, LlmTruncatedError
 
 log = logging.getLogger(__name__)
 
@@ -34,6 +34,19 @@ class _GenaiAdapter:
         return self._client.models.generate_content(
             model=model, contents=contents, config=types.GenerateContentConfig(**config)
         )
+
+
+def _finish_reason_name(response) -> str | None:
+    """İlk adayın bitiş nedeni; SDK enum'u (str alt sınıfı) veya ad taşıyan nesne olabilir."""
+    candidates = getattr(response, "candidates", None) or []
+    if not candidates:
+        return None
+    reason = getattr(candidates[0], "finish_reason", None)
+    if reason is None:
+        return None
+    if isinstance(reason, str):
+        return getattr(reason, "value", reason)
+    return getattr(reason, "name", None)
 
 
 class GeminiProvider:
@@ -70,6 +83,9 @@ class GeminiProvider:
         except Exception as exc:  # SDK hata sınıfları isteğe bağlı bağımlılıkta, genel yakalanır
             log.exception("Gemini isteği başarısız")
             raise LlmError(f"Gemini API hatası ({self._settings.gemini_model}): {exc}") from exc
+        if _finish_reason_name(response) == "MAX_TOKENS":
+            log.warning("Gemini yanıtı çıktı sınırında kesildi (%s)", self._settings.gemini_model)
+            raise LlmTruncatedError(self.name)
         text = getattr(response, "text", None)
         if not isinstance(text, str) or not text.strip():
             raise LlmError("Gemini boş yanıt döndürdü")

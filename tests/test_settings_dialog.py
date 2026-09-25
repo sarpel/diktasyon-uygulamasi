@@ -25,7 +25,8 @@ def test_result_settings_returns_new_object_with_changes(qtbot):
     d.llm_model_edit.setText("gemma4:e4b-it-qat")
     out = d.result_settings()
     assert out is not s and s.hotkey == "ctrl+alt+space"
-    assert out.hotkey == "ctrl+shift+d" and out.audio.device_index == 3
+    assert out.hotkey == "ctrl+shift+d"
+    assert out.audio.device_name == "USB Mic" and out.audio.device_index is None
     assert out.autostart is False and out.llm.model == "gemma4:e4b-it-qat"
 
 

@@ -43,3 +43,8 @@ def history_path() -> Path:
 
 def log_path() -> Path:
     return app_data_dir() / "dikte.log"
+
+
+def failed_audio_path() -> Path:
+    """Son başarısız diktenin sesi (yeniden denemek için); her başarısızlıkta üzerine yazılır."""
+    return _ensure_private_dir(app_data_dir() / "failed") / "last.wav"

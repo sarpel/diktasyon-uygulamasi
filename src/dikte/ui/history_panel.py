@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import unicodedata
 
-from PySide6.QtCore import Qt, Signal
+from PySide6.QtCore import QEvent, Qt, Signal
 from PySide6.QtGui import QPalette
 from PySide6.QtWidgets import (
     QDockWidget,
@@ -24,6 +24,7 @@ PREVIEW_CHARS = 80
 
 
 _DOTLESS_I = str.maketrans({"ı": "i"})  # NFKD ayrıştırmaz; elle eşlenir
+SEARCH_PLACEHOLDER = "Geçmişte ara… (Ctrl+F)"
 
 
 def normalize(text: str) -> str:
@@ -52,8 +53,9 @@ class HistoryPanel(QDockWidget):
         self._dialog = dialog or QFileDialog.getSaveFileName
 
         self.search_edit = QLineEdit()
-        self.search_edit.setPlaceholderText("Ara…")
+        self.search_edit.setPlaceholderText(SEARCH_PLACEHOLDER)
         self.search_edit.setClearButtonEnabled(True)
+        self.search_edit.installEventFilter(self)
         self.list_widget = QListWidget()
         self.list_widget.setAlternatingRowColors(True)
         self.empty_label = QLabel("Henüz kayıt yok.")
@@ -97,6 +99,44 @@ class HistoryPanel(QDockWidget):
             self.list_widget.addItem(item)
         self.empty_label.setVisible(not self._sessions)
         self._filter(self.search_edit.text())
+
+    def focus_search(self) -> None:
+        self.search_edit.setFocus(Qt.FocusReason.ShortcutFocusReason)
+        self.search_edit.selectAll()
+
+    # ---- klavye
+    # Ctrl+F ve Esc bilerek QShortcut ile değil ShortcutOverride ile yakalanır: ana pencerede
+    # aynı tuşlara bağlı pencere kapsamlı kısayollar var; ikinci bir QShortcut Qt'de
+    # "belirsiz kısayol" sayılır ve hiçbiri tetiklenmez. ShortcutOverride odaktaki widget'tan
+    # yukarı doğru yayıldığından odak paneldeyken panel, değilse ana pencere kazanır.
+    @staticmethod
+    def _is_find(event) -> bool:
+        return (
+            event.key() == Qt.Key.Key_F and event.modifiers() == Qt.KeyboardModifier.ControlModifier
+        )
+
+    def event(self, event) -> bool:
+        if event.type() in (QEvent.Type.ShortcutOverride, QEvent.Type.KeyPress) and self._is_find(
+            event
+        ):
+            # Alt widget (ör. liste) KeyPress'i kendisi tüketebildiğinden odak burada taşınır.
+            self.focus_search()
+            event.accept()
+            return True
+        return super().event(event)
+
+    def eventFilter(self, watched, event) -> bool:
+        if (
+            watched is self.search_edit
+            and event.type() in (QEvent.Type.ShortcutOverride, QEvent.Type.KeyPress)
+            and event.key() == Qt.Key.Key_Escape
+            and self.search_edit.text()
+        ):
+            event.accept()
+            if event.type() == QEvent.Type.KeyPress:
+                self.search_edit.clear()
+            return True
+        return super().eventFilter(watched, event)
 
     # ---- iç
     def _filter(self, needle: str) -> None:

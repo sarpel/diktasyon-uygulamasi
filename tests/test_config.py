@@ -192,3 +192,86 @@ def test_live_max_chunk_s_below_five_rejected():
 
     with pytest.raises(Exception):
         SttSettings(live_max_chunk_s=4)
+
+
+# ---- bozuk ayar kurtarma: tek hatalı alan tüm ayarları sıfırlamamalı
+
+
+def test_one_invalid_field_keeps_the_rest(tmp_path: Path):
+    import json
+
+    from dikte.config import load_settings_with_issues
+
+    p = tmp_path / "config.json"
+    p.write_text(
+        json.dumps(
+            {
+                "hotkey": "ctrl+shift+d",
+                "stt": {"beam_size": 99, "model": "small"},
+                "llm": {"provider": "gelecekteki-saglayici", "model": "qwen"},
+            }
+        ),
+        encoding="utf-8",
+    )
+    s, issues = load_settings_with_issues(p)
+    assert s.hotkey == "ctrl+shift+d"
+    assert s.stt.model == "small" and s.stt.beam_size == 5
+    assert s.llm.model == "qwen" and s.llm.provider == "ollama"
+    assert set(issues) == {"stt.beam_size", "llm.provider"}
+    assert (tmp_path / "config.json.bak").exists()
+
+
+def test_invalid_profile_entry_drops_only_profiles(tmp_path: Path):
+    import json
+
+    from dikte.config import load_settings_with_issues
+
+    p = tmp_path / "config.json"
+    p.write_text(json.dumps({"hotkey": "f9", "profiles": [{"name": "x"}]}), encoding="utf-8")
+    s, issues = load_settings_with_issues(p)
+    assert s.hotkey == "f9" and s.profiles == ()
+    assert issues == ("profiles",)
+
+
+def test_non_json_file_reports_whole_file(tmp_path: Path):
+    from dikte.config import load_settings_with_issues
+
+    p = tmp_path / "config.json"
+    p.write_text("{bozuk", encoding="utf-8")
+    s, issues = load_settings_with_issues(p)
+    assert s == Settings() and issues == ("*",)
+
+
+def test_valid_file_has_no_issues(tmp_path: Path):
+    from dikte.config import load_settings_with_issues
+
+    p = tmp_path / "config.json"
+    save_settings(Settings(hotkey="f8"), p)
+    s, issues = load_settings_with_issues(p)
+    assert s.hotkey == "f8" and issues == ()
+    assert not (tmp_path / "config.json.bak").exists()
+
+
+def test_history_limit_is_clamped_not_rejected():
+    assert Settings(history_limit=999_999).history_limit == 5000
+
+
+def test_new_qol_defaults():
+    s = Settings()
+    assert s.hotkey_paste_last == ""
+    assert s.pause_media is False
+    assert s.keep_failed_audio is True
+    assert s.overlay_position == "bottom" and s.overlay_xy is None
+    assert s.history_retention_days == 0
+    assert s.clipboard_exclude_history is True
+    assert s.audio.device_name == "" and s.audio.dead_mic_warn_s == 3.0
+    assert s.llm.sanity_check is True
+
+
+def test_old_config_with_device_index_only_still_loads(tmp_path: Path):
+    import json
+
+    p = tmp_path / "config.json"
+    p.write_text(json.dumps({"audio": {"device_index": 3}}), encoding="utf-8")
+    s = load_settings(p)
+    assert s.audio.device_index == 3 and s.audio.device_name == ""
