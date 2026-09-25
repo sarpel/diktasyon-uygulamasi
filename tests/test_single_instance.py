@@ -113,6 +113,7 @@ def test_server_restricts_access_to_current_user(qtbot):
 
     inst = SingleInstance(f"dikte-test-{uuid.uuid4().hex[:8]}")
     assert inst.try_acquire() is True
+    assert inst._server is not None
     opts = inst._server.socketOptions()
     assert opts & QLocalServer.SocketOption.UserAccessOption
 

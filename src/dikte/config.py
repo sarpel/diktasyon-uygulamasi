@@ -223,10 +223,11 @@ def load_settings_with_issues(path: Path | None = None) -> tuple[Settings, tuple
         return Settings(), ()
     try:
         raw = p.read_text(encoding="utf-8")
-        return Settings.model_validate_json(raw), ()
     except OSError as exc:
         log.warning("config okunamadı (%s), varsayılanlar kullanılıyor", exc)
         return Settings(), ("*",)
+    try:
+        return Settings.model_validate_json(raw), ()
     except (ValidationError, ValueError) as exc:
         log.warning("config doğrulanamadı (%s); geçerli alanlar kurtarılıyor", exc)
     _backup(p)
