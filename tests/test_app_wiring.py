@@ -1027,3 +1027,53 @@ def test_lowering_history_limit_to_zero_deletes_file(ctx, monkeypatch, tmp_path)
     monkeypatch.setattr(app_mod, "SettingsDialog", FakeDialog)
     app_mod._open_settings(ctx)
     assert not (tmp_path / "history.jsonl").exists()
+
+
+def test_startup_prunes_expired_history_from_disk(qtbot, tmp_path, monkeypatch):
+    """Saklama süresi dolmuş dikteler yalnızca listeden gizlenmemeli, açılışta diskten de
+    silinmeli (kullanıcı hiç kayıt yapmasa bile)."""
+    from datetime import datetime, timedelta
+
+    from dikte.core.history import History
+
+    path = tmp_path / "history.jsonl"
+    History(path, 200).append(
+        Session(
+            raw_text="eski",
+            corrected_text="Eski gizli.",
+            created_at=datetime.now() - timedelta(days=30),
+        )
+    )
+    History(path, 200).append(Session(raw_text="yeni", corrected_text="Yeni."))
+    monkeypatch.setattr(app_mod.paths, "history_path", lambda: path)
+    monkeypatch.setattr(app_mod.paths, "failed_audio_path", lambda: tmp_path / "failed.wav")
+    c = app_mod.build_app(Settings(history_retention_days=7))
+    for w in (c.window, c.overlay):
+        qtbot.addWidget(w)
+    content = path.read_text(encoding="utf-8")
+    assert "Eski gizli." not in content and "Yeni." in content
+
+
+def test_quit_resumes_media_after_queued_pause(ctx, qtbot):
+    """Kayıt başlar başlamaz çıkılırsa kuyruktaki pause(), resume()'dan sonra çalışıp
+    medyayı duraklatılmış bırakmamalı."""
+    import threading
+
+    gate = threading.Event()
+    calls = []
+
+    class SlowMedia:
+        def pause(self):
+            gate.wait(2)  # pause hâlâ medya havuzunda sürüyor
+            calls.append("pause")
+
+        def resume(self):
+            calls.append("resume")
+
+    ctx.settings = ctx.settings.model_copy(update={"pause_media": True})
+    ctx.media = SlowMedia()
+    ctx.controller.state_changed.emit(DictationState.RECORDING)
+    threading.Timer(0.2, gate.set).start()
+    app_mod._quit(ctx)
+    qtbot.waitUntil(lambda: len(calls) == 2, timeout=3000)
+    assert calls == ["pause", "resume"]
