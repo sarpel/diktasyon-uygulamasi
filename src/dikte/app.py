@@ -95,6 +95,7 @@ class AppContext:
     # Medya çağrıları 1,5 sn'ye kadar sürebilir; tek iş parçacıklı havuz sırayı korur
     # (resume, kendi pause'undan önce çalışamaz).
     media_pool: QThreadPool | None = None
+    hotkey_paste_last: GlobalHotkey | None = None  # isteğe bağlı: son sonucu yeniden yapıştırır
 
 
 class _NullLlm:
@@ -128,7 +129,7 @@ def _safe_hotkey(settings: Settings) -> Settings:
             fallback,
         )
         settings = settings.model_copy(update={"hotkey": fallback})
-    for field_name in ("hotkey_translate", "hotkey_prompt"):
+    for field_name in ("hotkey_translate", "hotkey_prompt", "hotkey_paste_last"):
         spec = getattr(settings, field_name)
         if not spec:
             continue
@@ -177,6 +178,8 @@ def build_app(settings: Settings) -> AppContext:
         sounds,
         hold,
     )
+    ctx.hotkey_paste_last = GlobalHotkey(hotkey_id=HOTKEY_ID + 4)
+    overlay.set_position(settings.overlay_position, settings.overlay_xy)
     _wire(ctx)
     return ctx
 
@@ -216,6 +219,10 @@ def _wire(ctx: AppContext) -> None:
     ctx.cancel_hotkey.activated.connect(c.cancel)
     c.state_changed.connect(lambda s: _sync_cancel_hotkey(ctx, s))
     c.state_changed.connect(lambda s: _sync_media(ctx, s))
+    ctx.overlay.moved.connect(lambda x, y: _save_overlay_position(ctx, x, y))
+    ctx.tray.paste_last_requested.connect(lambda: _paste_last(ctx))
+    if ctx.hotkey_paste_last is not None:
+        ctx.hotkey_paste_last.activated.connect(lambda: _paste_last(ctx))
     c.result_ready.connect(lambda text: _on_result_ready(ctx, text))
     ctx.window.history_panel.delete_requested.connect(lambda sid: _delete_session(ctx, sid))
     ctx.window.history_panel.clear_requested.connect(lambda: _clear_history(ctx))
@@ -368,6 +375,34 @@ def _add_dictionary_entry(ctx: AppContext, wrong: str, term: str) -> None:
 def _repaste(ctx: AppContext, text: str) -> None:
     ctx.window.hide()
     QTimer.singleShot(200, lambda: _on_result_ready(ctx, text, force_paste=True))
+
+
+def _last_result_text(ctx: AppContext) -> str:
+    """Son teslim edilen metin: canlı oturum, o yoksa geçmişteki en yeni kayıt."""
+    text = ctx.controller.session.output_text
+    if text:
+        return text
+    try:
+        sessions = ctx.history.load()
+    except HistoryError:
+        log.exception("son sonuç için geçmiş okunamadı")
+        return ""
+    return sessions[-1].output_text if sessions else ""
+
+
+def _paste_last(ctx: AppContext) -> None:
+    text = _last_result_text(ctx)
+    if not text:
+        ctx.tray.notify(APP_NAME, "Yapıştırılacak bir sonuç yok; önce bir dikte yapın.")
+        return
+    _on_result_ready(ctx, text, force_paste=True)
+
+
+def _save_overlay_position(ctx: AppContext, x: int, y: int) -> None:
+    """Overlay sürüklenince yeri hatırlanır ve konum "özel"e geçer."""
+    new = ctx.settings.model_copy(update={"overlay_position": "custom", "overlay_xy": (x, y)})
+    if _guard_settings(ctx, lambda: save_settings(new)):
+        ctx.settings = new
 
 
 def _refresh_status_info(ctx: AppContext) -> None:
@@ -561,13 +596,39 @@ def _show_health_dialog(ctx: AppContext, items: tuple[HealthItem, ...] | None = 
         # seferinde yeni bir pencere açardı; eskisi kapatılmadan referans üzerine
         # yazılınca kapanmamış pencereler birikirdi.
         ctx.health_dialog.close()
-    ctx.health_dialog = HealthDialog(
+    llm = ctx.settings.llm
+    dialog = HealthDialog(
         items,
         on_download=lambda progress: _download_model_for_ctx(ctx, progress),
+        ollama_model=llm.model if llm.enabled and llm.provider == "ollama" else None,
+        ollama_host=llm.ollama_host,
+        health_probe=lambda: check_health(
+            ctx.settings,
+            cuda_probe=default_cuda_probe,
+            model_probe=default_model_probe,
+            llm_probe=default_llm_probe,
+        ),
         parent=ctx.window,
     )
-    ctx.health_dialog.setModal(False)
-    ctx.health_dialog.show()
+    # Pencere kapanınca kendini siler (WA_DeleteOnClose); silinmiş nesneye erişilmesin.
+    dialog.destroyed.connect(lambda *_a: _forget_health_dialog(ctx, dialog))
+    dialog.model_downloaded.connect(lambda: _on_model_downloaded(ctx))
+    ctx.health_dialog = dialog
+    dialog.setModal(False)
+    dialog.show()
+
+
+def _forget_health_dialog(ctx: AppContext, dialog: HealthDialog) -> None:
+    if ctx.health_dialog is dialog:
+        ctx.health_dialog = None
+
+
+def _on_model_downloaded(ctx: AppContext) -> None:
+    """İndirilen modelle yükleme yeniden denenir; tepsi "Model yükleniyor…"da takılmaz."""
+    if ctx.controller.state in BUSY_STATES:
+        _warm_up_when_idle(ctx)
+    else:
+        _reload_model(ctx)
 
 
 def _download_model_for_ctx(ctx: AppContext, progress: Callable[[int, int], None]) -> None:
@@ -642,6 +703,23 @@ def _apply_hotkey(ctx: AppContext) -> None:
         log.info("global kısayol bu platformda yok; '%s' komutuna tuş bağlayın", CLI_TOGGLE_HINT)
         ctx.tray.set_hotkey_label(CLI_TOGGLE_HINT)
     _apply_mode_hotkeys(ctx)
+    _apply_paste_last_hotkey(ctx)
+
+
+def _apply_paste_last_hotkey(ctx: AppContext) -> None:
+    hk = ctx.hotkey_paste_last
+    if hk is None:
+        return
+    hk.unregister()
+    spec = ctx.settings.hotkey_paste_last
+    if not spec or sys.platform != "win32":
+        return
+    if not hk.register(spec):
+        ctx.tray.notify(
+            APP_NAME,
+            f"Son sonucu yapıştırma kısayolu kaydedilemedi: {spec}. "
+            "Başka bir uygulama kullanıyor olabilir; Ayarlar'dan değiştirin.",
+        )
 
 
 def _apply_mode_hotkeys(ctx: AppContext) -> None:
@@ -702,6 +780,7 @@ def _open_settings(ctx: AppContext) -> None:
     ctx.window.close_after_copy = new.close_after_copy
     ctx.window.raise_on_result = new.raise_window_on_result
     ctx.sounds.set_enabled(new.sounds_enabled)
+    ctx.overlay.set_position(new.overlay_position, new.overlay_xy)
     ctx.history = History(paths.history_path(), new.history_limit)
     _refresh_history(ctx)
     _refresh_status_info(ctx)
@@ -749,6 +828,8 @@ def _quit(ctx: AppContext) -> None:
     ctx.cancel_hotkey.unregister()
     ctx.hotkey_translate.unregister()
     ctx.hotkey_prompt.unregister()
+    if ctx.hotkey_paste_last is not None:
+        ctx.hotkey_paste_last.unregister()
     ctx.tray.hide()
     app = QApplication.instance()
     if app is not None:
