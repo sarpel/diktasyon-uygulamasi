@@ -10,7 +10,7 @@ import numpy as np
 from dikte import paths
 from dikte.config import SttSettings
 from dikte.stt.hallucinations import filter_segments
-from dikte.stt.result import Segment, TranscriptResult
+from dikte.stt.result import NO_SPEECH_MESSAGE, Segment, TranscriptResult
 
 log = logging.getLogger(__name__)
 SAMPLE_RATE = 16000  # Whisper her zaman 16 kHz bekler
@@ -296,7 +296,7 @@ class FasterWhisperEngine:
                         duration_s=audio.size / SAMPLE_RATE,
                         segments=(),
                     )
-                raise SttError("Konuşma algılanmadı; mikrofon ve VAD eşiğini kontrol edin")
+                raise SttError(NO_SPEECH_MESSAGE)
         lang = language or s.language
         kwargs = {
             "language": lang,

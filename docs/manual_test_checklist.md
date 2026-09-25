@@ -162,6 +162,11 @@
       kesilmiyor.
 - [ ] Kayıt sırasında USB mikrofon çıkarılınca kayıt duruyor ve hata bildiriliyor; mikrofon
       sessize alınınca ~3 sn sonra overlay'de "Mikrofondan ses gelmiyor" uyarısı çıkıyor.
+- [ ] Windows: Ayarlar → Ses'te bir WASAPI mikrofonu seçip (cihaz 48 kHz'de) kayıt başlıyor ve
+      metin çıkıyor (16 kHz'e auto_convert); seçili cihaz açılamazsa varsayılan mikrofonla
+      sürüp uyarı veriyor.
+- [ ] Başarısız bir kayıttan sonra yanlışlıkla boş bir kayıt yapınca "yeniden dene" hâlâ
+      önceki (konuşmalı) kaydı çözümlüyor.
 - [ ] Kayıtlı USB mikrofon takılı değilken açılışta varsayılan mikrofon kullanılıyor ve uyarı
       veriliyor; Ayarlar → Ses'te "(bulunamadı)" görünüyor.
 - [ ] Sessiz/boş bir kayıttan sonra tepsi → "Başarısız kaydı yeniden dene" etkin; tıklayınca

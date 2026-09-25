@@ -995,12 +995,63 @@ def test_failed_transcription_keeps_audio_and_hints_retry(qtbot, tmp_path):
     assert "CUDA belleği doldu" in errors[-1] and "yeniden dene" in errors[-1]
 
 
-def test_empty_transcription_keeps_audio(qtbot, tmp_path):
+def test_empty_transcription_does_not_keep_audio(qtbot, tmp_path):
+    """Konuşma yoksa saklanacak değerli bir ses de yoktur (yanlışlıkla basılan kısayol)."""
     c = _failing_ctl(tmp_path, FakeStt(text=""))
+    errors = []
+    c.error.connect(errors.append)
     c.toggle()
     c.toggle()
     qtbot.waitUntil(lambda: c.state is DictationState.IDLE, timeout=3000)
-    assert c.has_failed_audio
+    assert not c.has_failed_audio and "yeniden dene" not in errors[-1]
+
+
+class SwitchableStt(FakeStt):
+    """İlk çağrıda GPU hatası, sonrakilerde boş (sessiz) sonuç."""
+
+    def __init__(self):
+        super().__init__()
+        self.fail = True
+
+    def transcribe(self, audio, language=None, **kwargs):
+        if self.fail:
+            raise RuntimeError("CUDA belleği doldu")
+        return TranscriptResult("", "tr", 1.0, ())
+
+
+def test_silent_dictation_does_not_overwrite_saved_failure(qtbot, tmp_path):
+    from dikte.audio.wav import load_wav
+
+    stt = SwitchableStt()
+    rec = FakeRecorder()
+    c = _failing_ctl(tmp_path, stt, recorder=rec)
+    c.toggle()
+    c.toggle()
+    qtbot.waitUntil(lambda: c.state is DictationState.IDLE, timeout=3000)
+    wav = tmp_path / "failed" / "last.wav"
+    saved = load_wav(wav)
+    stt.fail = False
+    rec.audio = np.zeros(8000, dtype=np.float32)
+    c.toggle()
+    c.toggle()
+    qtbot.waitUntil(lambda: c.state is DictationState.IDLE, timeout=3000)
+    assert load_wav(wav).shape == saved.shape and c.has_failed_audio
+
+
+def test_vad_no_speech_error_does_not_keep_audio(qtbot, tmp_path):
+    from dikte.stt.result import NO_SPEECH_MESSAGE
+
+    class NoSpeechStt(FakeStt):
+        def transcribe(self, audio, language=None, **kwargs):
+            raise RuntimeError(NO_SPEECH_MESSAGE)
+
+    c = _failing_ctl(tmp_path, NoSpeechStt())
+    errors = []
+    c.error.connect(errors.append)
+    c.toggle()
+    c.toggle()
+    qtbot.waitUntil(lambda: c.state is DictationState.IDLE, timeout=3000)
+    assert not c.has_failed_audio and NO_SPEECH_MESSAGE in errors[-1]
 
 
 def test_failed_audio_not_kept_when_disabled(qtbot, tmp_path):
@@ -1013,17 +1064,84 @@ def test_failed_audio_not_kept_when_disabled(qtbot, tmp_path):
     assert not c.has_failed_audio and "yeniden dene" not in errors[-1]
 
 
+class LastChunkFailsStt(FakeStt):
+    """Parçalar boş döner (sessizlik), son parça (kuyruk) GPU hatasıyla başarısız olur."""
+
+    def transcribe(self, audio, language=None, **kwargs):
+        if audio.shape[0] == 16000:
+            raise RuntimeError("CUDA belleği doldu")
+        return TranscriptResult("", "tr", 0.5, ())
+
+
 def test_failed_live_chunk_session_keeps_all_chunks(qtbot, tmp_path):
     from dikte.audio.wav import load_wav
 
     rec = FakeRecorder()
-    c = _failing_ctl(tmp_path, FakeStt(text=""), settings=_live_chunk_settings(), recorder=rec)
+    c = _failing_ctl(tmp_path, LastChunkFailsStt(), settings=_live_chunk_settings(), recorder=rec)
     c.toggle()
     rec.chunks_emitted = 1
     rec.chunk_ready.emit(np.ones(8000, dtype=np.float32) * 0.1)
     c.toggle()  # kuyruk: 16000 örnek
     qtbot.waitUntil(lambda: c.state is DictationState.IDLE, timeout=3000)
     assert load_wav(tmp_path / "failed" / "last.wav").shape == (24000,)
+
+
+def test_chunk_error_waits_for_undelivered_chunk_before_saving(qtbot, tmp_path):
+    """Parça hatası anında kayıtçının kestiği ama sinyali henüz gelmemiş parça WAV'dan
+    eksik kalmamalı; ses sırası korunmalı (parça 1, geç parça 2, kuyruk)."""
+    from dikte.audio.wav import load_wav
+
+    rec = FakeRecorder()
+    c = _failing_ctl(tmp_path, FailingStt(), settings=_live_chunk_settings(), recorder=rec)
+    c.toggle()
+    rec.chunks_emitted = 2  # parça 2 de kesildi, sinyali kuyrukta
+    rec.chunk_ready.emit(np.full(8000, 0.1, dtype=np.float32))
+    qtbot.waitUntil(lambda: c.state is DictationState.TRANSCRIBING, timeout=3000)
+    assert rec.stopped and not c.has_failed_audio  # geç parça bekleniyor
+    rec.chunk_ready.emit(np.full(4000, 0.5, dtype=np.float32))
+    qtbot.waitUntil(lambda: c.state is DictationState.IDLE, timeout=3000)
+    wav = load_wav(tmp_path / "failed" / "last.wav")
+    assert wav.shape == (8000 + 4000 + 16000,)
+    assert abs(float(wav[9000]) - 0.5) < 0.01 and abs(float(wav[-1]) - 0.1) < 0.01
+
+
+def test_chunk_error_saves_after_timeout_when_late_chunk_never_arrives(
+    qtbot, tmp_path, monkeypatch
+):
+    import dikte.core.controller as ctl_mod
+
+    monkeypatch.setattr(ctl_mod, "LATE_CHUNK_TIMEOUT_MS", 50)
+    rec = FakeRecorder()
+    c = _failing_ctl(tmp_path, FailingStt(), settings=_live_chunk_settings(), recorder=rec)
+    c.toggle()
+    rec.chunks_emitted = 2
+    rec.chunk_ready.emit(np.full(8000, 0.1, dtype=np.float32))
+    qtbot.waitUntil(lambda: c.state is DictationState.IDLE, timeout=3000)
+    assert c.has_failed_audio
+
+
+def test_device_lost_after_stop_is_ignored(qtbot):
+    from dikte.audio.recorder import DEVICE_LOST_MESSAGE
+
+    class SlowStt(FakeStt):
+        def transcribe(self, audio, language=None, **kwargs):
+            import time
+
+            time.sleep(0.3)
+            return super().transcribe(audio, language, **kwargs)
+
+    rec = FakeRecorder()
+    c = DictationController(
+        Settings(), recorder=rec, stt=SlowStt(), llm=FakeLlm(), pool=QThreadPool()
+    )
+    errors = []
+    c.error.connect(errors.append)
+    c.toggle()
+    c.toggle()
+    assert c.state is DictationState.TRANSCRIBING
+    rec.error.emit(DEVICE_LOST_MESSAGE)  # akış stop() ile bittikten sonra gelen bildirim
+    qtbot.waitUntil(lambda: c.state is DictationState.RESULT, timeout=3000)
+    assert errors == []
 
 
 def test_retry_last_failed_runs_full_flow_and_deletes_file(qtbot, tmp_path):

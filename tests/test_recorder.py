@@ -11,8 +11,18 @@ class FakeStream:
     instances: list["FakeStream"] = []
 
     def __init__(
-        self, *, callback, samplerate, channels, dtype, device, blocksize, finished_callback=None
+        self,
+        *,
+        callback,
+        samplerate,
+        channels,
+        dtype,
+        device,
+        blocksize,
+        finished_callback=None,
+        **extra,
     ):
+        self.extra = extra
         self.callback = callback
         self.finished_callback = finished_callback
         self.samplerate, self.channels, self.dtype, self.device = (
@@ -398,3 +408,80 @@ def test_dead_mic_check_disabled_with_zero(qtbot):
     for _ in range(100):
         s.push(np.zeros(1600, dtype=np.float32))
     assert warnings == []
+
+
+def test_wasapi_device_requests_auto_convert_on_windows(qtbot, monkeypatch):
+    """WASAPI paylaşımlı modu cihazın karışım hızı (çoğunlukla 48 kHz) dışındaki hızları
+    reddeder; 16 kHz kayıt için auto_convert istenmezse akış hiç açılmaz."""
+    import dikte.audio.recorder as mod
+
+    monkeypatch.setattr(mod.sys, "platform", "win32")
+    FakeStream.instances.clear()
+    rec = AudioRecorder(
+        AudioSettings(device_name="USB Mikrofon"), stream_factory=FakeStream, device_probe=_query
+    )
+    rec.start()
+    assert FakeStream.instances[-1].device == 3
+    assert FakeStream.instances[-1].extra == {"wasapi_auto_convert": True}
+
+
+def test_non_wasapi_device_gets_no_extra_settings(qtbot):
+    FakeStream.instances.clear()
+    rec = AudioRecorder(
+        AudioSettings(device_name="Dahili Mikrofon"), stream_factory=FakeStream, device_probe=_query
+    )
+    rec.start()
+    assert FakeStream.instances[-1].extra == {}
+
+
+def test_default_factory_translates_wasapi_flag(monkeypatch):
+    import sys
+    from types import SimpleNamespace
+
+    import dikte.audio.recorder as mod
+
+    monkeypatch.undo()  # conftest'in autouse sahte fabrikasını kaldırıp gerçeğini test et
+    seen = {}
+    fake_sd = SimpleNamespace(
+        WasapiSettings=lambda auto_convert: ("wasapi", auto_convert),
+        InputStream=lambda **kw: seen.update(kw) or "stream",
+    )
+    monkeypatch.setitem(sys.modules, "sounddevice", fake_sd)
+    assert mod._default_stream_factory(device=3, wasapi_auto_convert=True) == "stream"
+    assert seen == {"device": 3, "extra_settings": ("wasapi", True)}
+    seen.clear()
+    mod._default_stream_factory(device=2, wasapi_auto_convert=False)
+    assert seen == {"device": 2}
+
+
+def test_named_device_that_fails_to_open_falls_back_to_default(qtbot):
+    class PickyStream(FakeStream):
+        def __init__(self, **kw):
+            if kw["device"] is not None:
+                raise OSError("Invalid sample rate [-9997]")
+            super().__init__(**kw)
+
+    FakeStream.instances.clear()
+    rec = AudioRecorder(
+        AudioSettings(device_name="Dahili Mikrofon"),
+        stream_factory=PickyStream,
+        device_probe=_query,
+    )
+    warnings, errors = [], []
+    rec.warning.connect(warnings.append)
+    rec.error.connect(errors.append)
+    rec.start()
+    assert rec.is_recording and errors == []
+    assert FakeStream.instances[-1].device is None
+    assert warnings and "Dahili Mikrofon" in warnings[0] and "varsayılan" in warnings[0]
+
+
+def test_default_device_failure_still_reports_error(qtbot):
+    def boom(**kw):
+        raise OSError("PortAudio hatası")
+
+    rec = AudioRecorder(AudioSettings(), stream_factory=boom)
+    errors = []
+    rec.error.connect(errors.append)
+    rec.start()
+    assert not rec.is_recording and errors and "PortAudio hatası" in errors[0]

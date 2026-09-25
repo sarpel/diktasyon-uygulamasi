@@ -30,9 +30,13 @@ DEVICE_LOST_MESSAGE = (
 DeviceQuery = Callable[[], tuple[list, list]]
 
 
-def _default_stream_factory(**kwargs):
+def _default_stream_factory(*, wasapi_auto_convert: bool = False, **kwargs):
     import sounddevice as sd  # type: ignore[import-not-found]
 
+    if wasapi_auto_convert:
+        # WASAPI paylaşımlı modu yalnızca cihazın karışım hızını (çoğunlukla 48 kHz) kabul
+        # eder; auto_convert olmadan 16 kHz akış "Invalid sample rate" ile açılmaz.
+        kwargs["extra_settings"] = sd.WasapiSettings(auto_convert=True)
     return sd.InputStream(**kwargs)
 
 
@@ -137,20 +141,34 @@ class AudioRecorder(QObject):
         Denetleyici, durdurma sonrası kuyrukta gecikip gelen parçaları beklemek için okur."""
         return self._chunks_emitted
 
-    def _resolve_device(self, settings: AudioSettings) -> int | None:
-        """Kayıtlı mikrofon adı → güncel PortAudio index'i (index'ler cihaz takılıp çıkınca
-        kayar). Ad boşsa eski `device_index`, o da yoksa sistem varsayılanı (None)."""
+    def _resolve_device(self, settings: AudioSettings) -> tuple[int | None, bool]:
+        """Kayıtlı mikrofon adı → (güncel PortAudio index'i, WASAPI mi). Index'ler cihaz
+        takılıp çıkınca kayar. Ad boşsa eski `device_index`, o da yoksa varsayılan (None)."""
         name = settings.device_name
         if not name:
-            return settings.device_index
+            return settings.device_index, False
         found = _match_device(name, list_input_devices(self._device_probe))
         if found is not None:
-            return found.index
+            wasapi = sys.platform == "win32" and "wasapi" in found.hostapi.casefold()
+            return found.index, wasapi
         log.warning("kayıtlı mikrofon bulunamadı: %s; varsayılan kullanılıyor", name)
         self.warning.emit(
             f"Kayıtlı mikrofon bulunamadı ({name}); varsayılan mikrofon kullanılıyor."
         )
-        return None
+        return None, False
+
+    def _open_stream(self, device: int | None, wasapi: bool, token: int):
+        extra = {"wasapi_auto_convert": True} if wasapi else {}
+        return self._factory(
+            callback=self._on_audio,
+            samplerate=self._active_settings.sample_rate,
+            channels=1,
+            dtype="float32",
+            device=device,
+            blocksize=BLOCK_SIZE,
+            finished_callback=lambda: self._on_stream_finished(token),
+            **extra,
+        )
 
     def update_settings(self, settings: AudioSettings) -> None:
         """Süren kayıt etkilenmez; yeni cihaz/parametreler bir sonraki `start()`'ta geçerli olur."""
@@ -174,16 +192,20 @@ class AudioRecorder(QObject):
         token = self._stream_token
         stream = None
         try:
-            device = self._resolve_device(self._active_settings)
-            stream = self._factory(
-                callback=self._on_audio,
-                samplerate=self._active_settings.sample_rate,
-                channels=1,
-                dtype="float32",
-                device=device,
-                blocksize=BLOCK_SIZE,
-                finished_callback=lambda: self._on_stream_finished(token),
-            )
+            device, wasapi = self._resolve_device(self._active_settings)
+            try:
+                stream = self._open_stream(device, wasapi, token)
+            except Exception as exc:
+                if device is None:
+                    raise
+                # Seçili cihaz açılamadı (ör. desteklemediği örnekleme hızı): dikte hiç
+                # başlamamaktansa varsayılan mikrofonla sürer ve kullanıcı uyarılır.
+                log.exception("seçili mikrofon açılamadı; varsayılan deneniyor")
+                label = self._active_settings.device_name or f"#{device}"
+                self.warning.emit(
+                    f"Seçili mikrofon açılamadı ({label}: {exc}); varsayılan mikrofon kullanılıyor."
+                )
+                stream = self._open_stream(None, False, token)
             self._active_token = token
             stream.start()
             self._stream = stream
