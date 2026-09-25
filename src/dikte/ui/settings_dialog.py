@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import logging
+from collections.abc import Iterable
 from functools import reduce
+from typing import Any
 
 from PySide6.QtGui import QPalette
 from PySide6.QtWidgets import (
@@ -23,6 +25,7 @@ from dikte.ui.settings import (
     ProfilesTab,
     SttTab,
 )
+from dikte.ui.settings.audio_tab import InputDevice, as_input_device
 
 log = logging.getLogger(__name__)
 
@@ -32,6 +35,7 @@ _PROXIED = {
         "hotkey_edit",
         "hotkey_translate_edit",
         "hotkey_prompt_edit",
+        "hotkey_paste_last_edit",
         "autostart_check",
         "auto_copy_check",
         "auto_paste_check",
@@ -43,8 +47,21 @@ _PROXIED = {
         "suggest_dictionary_check",
         "voice_commands_check",
         "history_spin",
+        "history_retention_spin",
+        "pause_media_check",
+        "keep_failed_audio_check",
+        "clipboard_exclude_history_check",
+        "overlay_position_combo",
     ),
-    "audio": ("device_combo", "max_seconds_spin", "silence_stop_spin", "level_bar", "test_btn"),
+    "audio": (
+        "device_combo",
+        "device_warning_label",
+        "max_seconds_spin",
+        "silence_stop_spin",
+        "dead_mic_spin",
+        "level_bar",
+        "test_btn",
+    ),
     "stt": (
         "stt_model_edit",
         "compute_combo",
@@ -60,12 +77,12 @@ _PROXIED = {
         "no_speech_spin",
         "vad_speech_pad_spin",
         "log_prob_spin",
-        "hallucination_silence_spin",
         "hallucination_filter_check",
     ),
     "llm": (
         "llm_enabled_check",
         "prewarm_check",
+        "sanity_check_check",
         "provider_combo",
         "llm_model_edit",
         "ollama_host_edit",
@@ -109,24 +126,18 @@ _PROXIED = {
 }
 
 
-def list_input_devices() -> tuple[tuple[int, str], ...]:
-    try:
-        import sounddevice as sd
+def list_input_devices() -> tuple[InputDevice, ...]:
+    """Giriş cihazları (index, ad, host API adı); platforma göre süzme AudioTab'da yapılır."""
+    from dikte.audio.recorder import list_input_devices as query_input_devices
 
-        return tuple(
-            (i, d["name"])
-            for i, d in enumerate(sd.query_devices())
-            if d.get("max_input_channels", 0) > 0
-        )
-    except Exception:
-        log.exception("ses cihazları listelenemedi")
-        return ()
+    # Sorgu hatasını recorder günlüğe yazar ve boş liste döndürür.
+    return tuple(as_input_device(d) for d in query_input_devices())
 
 
 class SettingsDialog(QDialog):
     """Sekmeli ayarlar; her sekme kendi doğrulamasını ve `apply` dönüşümünü yapar."""
 
-    def __init__(self, settings: Settings, devices: tuple[tuple[int, str], ...], parent=None):
+    def __init__(self, settings: Settings, devices: Iterable[Any] | None = None, parent=None):
         super().__init__(parent)
         self.setWindowTitle("Dikte Ayarları")
         self.resize(560, 520)

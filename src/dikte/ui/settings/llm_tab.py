@@ -22,6 +22,7 @@ from dikte.core.workers import run_in_pool
 from dikte.llm import make_provider
 from dikte.llm.keys import key_status
 from dikte.llm.provider import LlmError
+from dikte.ui.settings._reset import make_reset_button, reset_row
 
 if TYPE_CHECKING:
     from dikte.ui.settings.advanced_tab import AdvancedTab
@@ -31,6 +32,7 @@ PROVIDERS = ("ollama", "lmstudio", "openai", "anthropic", "gemini", "custom")
 # Dikte metninin makineden çıktığı sağlayıcılar; uyarı yalnızca bunlarda gösterilir.
 REMOTE_PROVIDERS = ("openai", "anthropic", "gemini", "custom")
 KEY_PRESENT, KEY_MISSING = "✓ tanımlı", "✗ yok"
+CUSTOM_FORMATS = (("openai", "OpenAI-uyumlu"), ("anthropic", "Anthropic-uyumlu"))
 
 
 class LlmTab(QWidget):
@@ -45,22 +47,26 @@ class LlmTab(QWidget):
         # kullanabilsin diye. None ise (ör. LlmTab tek başına test ediliyorsa) yalnızca
         # kaydedilmiş/varsayılan LlmSettings kullanılır.
         self.advanced_tab: AdvancedTab | None = None
-        llm = settings.llm
+        # run_in_pool'un döndürdüğü sinyal nesnesi iş bitene kadar canlı tutulmalı; aksi hâlde
+        # çöp toplanır ve düğme "Sınanıyor…"da takılı kalır (bkz. core/workers.py).
+        self._test_job: object | None = None
         self.llm_enabled_check = QCheckBox("LLM ile metin düzeltme (kapalıyken VRAM kullanılmaz)")
-        self.llm_enabled_check.setChecked(llm.enabled)
         self.prewarm_check = QCheckBox("Açılışta LLM'i belleğe al")
-        self.prewarm_check.setChecked(llm.prewarm)
+        self.sanity_check_check = QCheckBox("Düzeltme metinden çok saparsa ham metni kullan")
+        self.sanity_check_check.setToolTip(
+            "Düzeltilmiş metnin kelime sayısı ham metinden çok farklıysa (model soruya cevap "
+            "verdiyse ya da özetlediyse) düzeltme atılır ve ham metin yapıştırılır."
+        )
         self.provider_combo = QComboBox()
         self.provider_combo.addItems(PROVIDERS)
-        self.provider_combo.setCurrentText(llm.provider)
 
-        self.llm_model_edit = QLineEdit(llm.model)
-        self.ollama_host_edit = QLineEdit(llm.ollama_host)
+        self.llm_model_edit = QLineEdit()
+        self.ollama_host_edit = QLineEdit()
         self.ollama_host_edit.setToolTip(
             "Ollama sunucusunun adresi. Varsayılan port 11434; başka bir uygulama "
             "bu portu kullanıyorsa Ollama'yı taşıyıp adresi burada değiştirin."
         )
-        self.keep_alive_edit = QLineEdit(llm.keep_alive)
+        self.keep_alive_edit = QLineEdit()
         self.keep_alive_edit.setToolTip(
             "Ollama modelinin bellekte kalma süresi. Düşük VRAM'de '0' yazarak "
             "her istekten sonra boşaltabilirsiniz (ör. 30m, 5m, 0)."
@@ -68,39 +74,40 @@ class LlmTab(QWidget):
         self.ollama_group = QGroupBox("Ollama (yerel)")
         ollama_form = QFormLayout(self.ollama_group)
         ollama_form.addRow("Model", self.llm_model_edit)
-        ollama_form.addRow("Host", self.ollama_host_edit)
+        ollama_form.addRow("Sunucu adresi", self.ollama_host_edit)
         ollama_form.addRow("Model bellekte kalsın", self.keep_alive_edit)
 
-        self.lmstudio_base_url_edit = QLineEdit(llm.lmstudio_base_url)
+        self.lmstudio_base_url_edit = QLineEdit()
         self.lmstudio_base_url_edit.setToolTip(
             "LM Studio'nun yerel sunucu adresi (Developer > Start Server). "
             "Varsayılan port 1234 ve yol /v1 olmalıdır."
         )
-        self.lmstudio_model_edit = QLineEdit(llm.lmstudio_model)
+        self.lmstudio_model_edit = QLineEdit()
         self.lmstudio_model_edit.setPlaceholderText("LM Studio'daki model kimliği")
-        self.lmstudio_key_env_edit = QLineEdit(llm.lmstudio_api_key_env)
+        self.lmstudio_key_env_edit = QLineEdit()
         self.lmstudio_key_env_edit.setPlaceholderText("boş = anahtar gönderilmez")
         self.lmstudio_key_status = QLabel()
         self.lmstudio_group = QGroupBox("LM Studio (yerel)")
         lmstudio_form = QFormLayout(self.lmstudio_group)
-        lmstudio_form.addRow("Base URL", self.lmstudio_base_url_edit)
+        lmstudio_form.addRow("Temel URL", self.lmstudio_base_url_edit)
         lmstudio_form.addRow("Model", self.lmstudio_model_edit)
         lmstudio_form.addRow("Anahtar ortam değişkeni", self.lmstudio_key_env_edit)
         lmstudio_form.addRow("Anahtar durumu", self.lmstudio_key_status)
 
-        self.openai_model_edit = QLineEdit(llm.openai_model)
-        self.openai_base_url_edit = QLineEdit(llm.openai_base_url)
-        self.openai_key_env_edit = QLineEdit(llm.openai_api_key_env)
+        self.openai_model_edit = QLineEdit()
+        self.openai_base_url_edit = QLineEdit()
+        self.openai_base_url_edit.setToolTip("API'nin temel adresi, ör. https://api.openai.com/v1")
+        self.openai_key_env_edit = QLineEdit()
         self.openai_key_status = QLabel()
         self.openai_group = QGroupBox("OpenAI")
         openai_form = QFormLayout(self.openai_group)
         openai_form.addRow("Model", self.openai_model_edit)
-        openai_form.addRow("Base URL", self.openai_base_url_edit)
+        openai_form.addRow("Temel URL", self.openai_base_url_edit)
         openai_form.addRow("Anahtar ortam değişkeni", self.openai_key_env_edit)
         openai_form.addRow("Anahtar durumu", self.openai_key_status)
 
-        self.anthropic_model_edit = QLineEdit(llm.anthropic_model)
-        self.anthropic_key_env_edit = QLineEdit(llm.anthropic_api_key_env)
+        self.anthropic_model_edit = QLineEdit()
+        self.anthropic_key_env_edit = QLineEdit()
         self.anthropic_key_status = QLabel()
         self.anthropic_group = QGroupBox("Anthropic")
         anthropic_form = QFormLayout(self.anthropic_group)
@@ -108,8 +115,8 @@ class LlmTab(QWidget):
         anthropic_form.addRow("Anahtar ortam değişkeni", self.anthropic_key_env_edit)
         anthropic_form.addRow("Anahtar durumu", self.anthropic_key_status)
 
-        self.gemini_model_edit = QLineEdit(llm.gemini_model)
-        self.gemini_key_env_edit = QLineEdit(llm.gemini_api_key_env)
+        self.gemini_model_edit = QLineEdit()
+        self.gemini_key_env_edit = QLineEdit()
         self.gemini_key_status = QLabel()
         self.gemini_group = QGroupBox("Gemini")
         gemini_form = QFormLayout(self.gemini_group)
@@ -118,22 +125,22 @@ class LlmTab(QWidget):
         gemini_form.addRow("Anahtar durumu", self.gemini_key_status)
 
         self.custom_format_combo = QComboBox()
-        self.custom_format_combo.addItems(("openai", "anthropic"))
-        self.custom_format_combo.setCurrentText(llm.custom_format)
+        for value, label in CUSTOM_FORMATS:
+            self.custom_format_combo.addItem(label, value)
         self.custom_format_combo.setToolTip(
             "Uç noktanın konuştuğu protokol: OpenAI-uyumlu (ör. LM Studio, vLLM) "
             "veya Anthropic-uyumlu proxy."
         )
-        self.custom_base_url_edit = QLineEdit(llm.custom_base_url)
+        self.custom_base_url_edit = QLineEdit()
         self.custom_base_url_edit.setPlaceholderText("http://localhost:1234/v1")
-        self.custom_model_edit = QLineEdit(llm.custom_model)
-        self.custom_key_env_edit = QLineEdit(llm.custom_api_key_env)
+        self.custom_model_edit = QLineEdit()
+        self.custom_key_env_edit = QLineEdit()
         self.custom_key_env_edit.setPlaceholderText("boş = anahtar gönderilmez")
         self.custom_key_status = QLabel()
         self.custom_group = QGroupBox("Özel uç nokta")
         custom_form = QFormLayout(self.custom_group)
-        custom_form.addRow("Format", self.custom_format_combo)
-        custom_form.addRow("Base URL", self.custom_base_url_edit)
+        custom_form.addRow("Biçim", self.custom_format_combo)
+        custom_form.addRow("Temel URL", self.custom_base_url_edit)
         custom_form.addRow("Model", self.custom_model_edit)
         custom_form.addRow("Anahtar ortam değişkeni", self.custom_key_env_edit)
         custom_form.addRow("Anahtar durumu", self.custom_key_status)
@@ -148,7 +155,6 @@ class LlmTab(QWidget):
         for edit, label in self._key_fields:
             edit.textChanged.connect(self.refresh_key_status)
             label.setToolTip("Anahtarın değeri hiçbir zaman gösterilmez veya kaydedilmez.")
-        self.refresh_key_status()
 
         self.privacy_label = QLabel(
             "⚠ Uzak sağlayıcıda dikte metni dış servise gönderilir. "
@@ -161,10 +167,13 @@ class LlmTab(QWidget):
         self.llm_test_status = QLabel("")
         self.llm_test_btn.clicked.connect(self._test_connection)
 
+        self.reset_btn = make_reset_button(lambda: self.load(Settings()))
+
         top = QFormLayout()
         top.addRow(self.llm_enabled_check)
         top.addRow("Sağlayıcı", self.provider_combo)
         top.addRow(self.prewarm_check)
+        top.addRow(self.sanity_check_check)
 
         lay = QVBoxLayout(self)
         lay.addLayout(top)
@@ -176,9 +185,41 @@ class LlmTab(QWidget):
         test_row.addWidget(self.llm_test_status, 1)
         lay.addLayout(test_row)
         lay.addStretch(1)
+        lay.addLayout(reset_row(self.reset_btn))
 
         self.provider_combo.currentTextChanged.connect(self._show_group)
         self.llm_enabled_check.toggled.connect(self._set_fields_enabled)
+        self.load(settings)
+
+    def load(self, settings: Settings) -> None:
+        """Alanları `settings`ten doldurur; "Varsayılanlara döndür" de bunu kullanır.
+
+        Gelişmiş sekmesindeki örnekleme alanlarına dokunmaz."""
+        llm = settings.llm
+        self.llm_enabled_check.setChecked(llm.enabled)
+        self.prewarm_check.setChecked(llm.prewarm)
+        self.sanity_check_check.setChecked(llm.sanity_check)
+        self.provider_combo.setCurrentText(llm.provider)
+        self.llm_model_edit.setText(llm.model)
+        self.ollama_host_edit.setText(llm.ollama_host)
+        self.keep_alive_edit.setText(llm.keep_alive)
+        self.lmstudio_base_url_edit.setText(llm.lmstudio_base_url)
+        self.lmstudio_model_edit.setText(llm.lmstudio_model)
+        self.lmstudio_key_env_edit.setText(llm.lmstudio_api_key_env)
+        self.openai_model_edit.setText(llm.openai_model)
+        self.openai_base_url_edit.setText(llm.openai_base_url)
+        self.openai_key_env_edit.setText(llm.openai_api_key_env)
+        self.anthropic_model_edit.setText(llm.anthropic_model)
+        self.anthropic_key_env_edit.setText(llm.anthropic_api_key_env)
+        self.gemini_model_edit.setText(llm.gemini_model)
+        self.gemini_key_env_edit.setText(llm.gemini_api_key_env)
+        pos = self.custom_format_combo.findData(llm.custom_format)
+        self.custom_format_combo.setCurrentIndex(max(pos, 0))
+        self.custom_base_url_edit.setText(llm.custom_base_url)
+        self.custom_model_edit.setText(llm.custom_model)
+        self.custom_key_env_edit.setText(llm.custom_api_key_env)
+        self.refresh_key_status()
+        # Sinyaller yalnızca değer değişince yayılır; görünürlük/etkinlik açıkça eşitlenir.
         self._show_group(llm.provider)
         self._set_fields_enabled(llm.enabled)
 
@@ -217,6 +258,7 @@ class LlmTab(QWidget):
     def _set_fields_enabled(self, enabled: bool) -> None:
         self.provider_combo.setEnabled(enabled)
         self.prewarm_check.setEnabled(enabled)
+        self.sanity_check_check.setEnabled(enabled)
         for group in self._groups():
             group.setEnabled(enabled)
 
@@ -229,24 +271,24 @@ class LlmTab(QWidget):
             if not self.llm_model_edit.text().strip():
                 return "LLM model adı boş olamaz"
             if not self.ollama_host_edit.text().strip():
-                return "Ollama host adresi boş olamaz (varsayılan http://127.0.0.1:11434)"
+                return "Ollama sunucu adresi boş olamaz (varsayılan http://127.0.0.1:11434)"
         if provider == "lmstudio":
             if not self.lmstudio_base_url_edit.text().strip():
-                return "LM Studio için base URL gerekli (varsayılan http://127.0.0.1:1234/v1)"
+                return "LM Studio için temel URL gerekli (varsayılan http://127.0.0.1:1234/v1)"
             if not self.lmstudio_model_edit.text().strip():
                 return "LM Studio için model adı gerekli"
         if provider == "openai":
             if not self.openai_model_edit.text().strip():
                 return "OpenAI model adı boş olamaz"
             if not self.openai_base_url_edit.text().strip():
-                return "OpenAI için base URL gerekli (varsayılan https://api.openai.com/v1)"
+                return "OpenAI için temel URL gerekli (varsayılan https://api.openai.com/v1)"
         if provider == "anthropic" and not self.anthropic_model_edit.text().strip():
             return "Anthropic model adı boş olamaz"
         if provider == "gemini" and not self.gemini_model_edit.text().strip():
             return "Gemini model adı boş olamaz"
         if provider == "custom":
             if not self.custom_base_url_edit.text().strip():
-                return "Özel sağlayıcı için base URL gerekli"
+                return "Özel sağlayıcı için temel URL gerekli"
             if not self.custom_model_edit.text().strip():
                 return "Özel sağlayıcı için model adı gerekli"
         return None
@@ -258,6 +300,7 @@ class LlmTab(QWidget):
         return {
             "enabled": self.llm_enabled_check.isChecked(),
             "prewarm": self.prewarm_check.isChecked(),
+            "sanity_check": self.sanity_check_check.isChecked(),
             "provider": self.provider_combo.currentText(),
             "model": self.llm_model_edit.text().strip(),
             "ollama_host": self.ollama_host_edit.text().strip(),
@@ -272,7 +315,7 @@ class LlmTab(QWidget):
             "anthropic_api_key_env": self.anthropic_key_env_edit.text().strip(),
             "gemini_model": self.gemini_model_edit.text().strip(),
             "gemini_api_key_env": self.gemini_key_env_edit.text().strip(),
-            "custom_format": self.custom_format_combo.currentText(),
+            "custom_format": self.custom_format_combo.currentData(),
             "custom_base_url": self.custom_base_url_edit.text().strip(),
             "custom_model": self.custom_model_edit.text().strip(),
             "custom_api_key_env": self.custom_key_env_edit.text().strip(),
@@ -304,7 +347,7 @@ class LlmTab(QWidget):
         except LlmError as exc:
             self._test_done(f"✗ {exc}")
             return
-        run_in_pool(
+        self._test_job = run_in_pool(
             lambda: provider.complete("Yanıt: OK", "OK"),
             lambda text: self._test_done("✓ Bağlantı kuruldu"),
             lambda exc: self._test_done(f"✗ {exc}"),
@@ -312,5 +355,6 @@ class LlmTab(QWidget):
         )
 
     def _test_done(self, message: str) -> None:
+        self._test_job = None
         self.llm_test_btn.setEnabled(True)
         self.llm_test_status.setText(message)

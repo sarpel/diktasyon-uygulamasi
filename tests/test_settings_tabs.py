@@ -126,7 +126,7 @@ def test_about_tab_uses_injected_gpu_and_vram_probes(qtbot):
 
     tab = AboutTab(Settings(), gpu_probe=lambda: "sahte GPU", vram_probe=lambda: "3,2 / 8,0 GB")
     qtbot.addWidget(tab)
-    assert tab.gpu_label.text() == "sahte GPU"
+    qtbot.waitUntil(lambda: tab.gpu_label.text() == "sahte GPU", timeout=3000)
     assert tab.vram_label.text() == "3,2 / 8,0 GB"
 
 
@@ -175,7 +175,7 @@ def test_provider_combo_lists_all_options(dlg):
 def test_custom_group_fields_round_trip(dlg):
     dlg.provider_combo.setCurrentText("custom")
     assert dlg.custom_group.isVisibleTo(dlg.llm)
-    dlg.custom_format_combo.setCurrentText("anthropic")
+    dlg.custom_format_combo.setCurrentIndex(dlg.custom_format_combo.findData("anthropic"))
     dlg.custom_base_url_edit.setText("http://localhost:1234")
     dlg.custom_model_edit.setText("yerel-model")
     dlg.custom_key_env_edit.setText("LOCAL_KEY")
@@ -188,7 +188,7 @@ def test_custom_group_fields_round_trip(dlg):
 def test_custom_without_url_blocks_accept(dlg):
     dlg.provider_combo.setCurrentText("custom")
     dlg.accept()
-    assert "base URL" in dlg.error_label.text()
+    assert "temel URL" in dlg.error_label.text()
 
 
 def test_key_status_shows_presence_not_value(dlg, monkeypatch):
@@ -221,11 +221,9 @@ def test_vad_group_fields_round_trip(dlg):
 def test_advanced_stt_thresholds_round_trip(dlg):
     dlg.vad_speech_pad_spin.setValue(450)
     dlg.log_prob_spin.setValue(-0.8)
-    dlg.hallucination_silence_spin.setValue(3.5)
     s = dlg.result_settings()
     assert s.stt.vad_speech_pad_ms == 450
     assert s.stt.log_prob_threshold == -0.8
-    assert s.stt.hallucination_silence_threshold_s == 3.5
 
 
 def test_vad_checkbox_lives_only_on_the_stt_tab(dlg):
@@ -241,7 +239,7 @@ def test_openai_requires_base_url(dlg):
     dlg.openai_model_edit.setText("gpt-5.5")
     dlg.openai_base_url_edit.setText("   ")
     dlg.accept()
-    assert "base URL" in dlg.error_label.text()
+    assert "temel URL" in dlg.error_label.text()
     assert dlg.tabs.currentWidget() is dlg.llm
 
 
@@ -328,7 +326,7 @@ def test_empty_lmstudio_model_blocks_accept(dlg):
 def test_empty_ollama_host_blocks_accept(dlg):
     dlg.ollama_host_edit.setText("  ")
     dlg.accept()
-    assert "host" in dlg.error_label.text().lower()
+    assert "sunucu adresi" in dlg.error_label.text().lower()
 
 
 def test_sounds_check_unchecked_disables_sounds(dlg):
@@ -444,8 +442,10 @@ def test_profiles_round_trip(dlg):
     row = dlg.profiles_table.rowCount() - 1
     dlg.profiles_table.item(row, 0).setText("Terminal")
     dlg.profiles_table.item(row, 1).setText("windowsterminal")
-    dlg.profiles_table.cellWidget(row, 2).setCurrentText("prompt")
-    dlg.profiles_table.cellWidget(row, 3).setCurrentText("ctrl+shift+v")
+    mode_combo = dlg.profiles_table.cellWidget(row, 2)
+    mode_combo.setCurrentIndex(mode_combo.findData("prompt"))
+    paste_combo = dlg.profiles_table.cellWidget(row, 3)
+    paste_combo.setCurrentIndex(paste_combo.findData("ctrl+shift+v"))
     dlg.profiles_table.cellWidget(row, 4).setChecked(False)
     dlg.profiles_table.cellWidget(row, 5).setCurrentText("yeni satır")
     s = dlg.result_settings()
@@ -473,3 +473,268 @@ def test_profiles_remove_selected(dlg):
     dlg.profiles_table.selectRow(0)
     dlg.profiles.remove_profile_btn.click()
     assert dlg.profiles_table.rowCount() == 0
+
+
+# ---- yeni ayar alanları
+
+
+def test_paste_last_hotkey_defaults_empty_and_round_trips(dlg):
+    assert dlg.result_settings().hotkey_paste_last == ""
+    dlg.hotkey_paste_last_edit.setKeySequence(QKeySequence("Ctrl+Alt+V"))
+    assert dlg.result_settings().hotkey_paste_last == "ctrl+alt+v"
+
+
+def test_paste_last_hotkey_loads_from_settings(qtbot):
+    d = SettingsDialog(Settings(hotkey_paste_last="ctrl+alt+v"), ())
+    qtbot.addWidget(d)
+    assert d.hotkey_paste_last_edit.keySequence() == QKeySequence("Ctrl+Alt+V")
+
+
+def test_paste_last_hotkey_must_differ_from_others(dlg):
+    dlg.hotkey_paste_last_edit.setKeySequence(dlg.hotkey_edit.keySequence())
+    dlg.accept()
+    assert "farklı olmalı" in dlg.error_label.text()
+
+
+def test_general_new_checks_round_trip(dlg):
+    assert dlg.pause_media_check.isChecked() is False
+    assert dlg.keep_failed_audio_check.isChecked() is True
+    assert dlg.clipboard_exclude_history_check.isChecked() is True
+    assert "Windows" in dlg.clipboard_exclude_history_check.toolTip()
+    dlg.pause_media_check.setChecked(True)
+    dlg.keep_failed_audio_check.setChecked(False)
+    dlg.clipboard_exclude_history_check.setChecked(False)
+    s = dlg.result_settings()
+    assert (s.pause_media, s.keep_failed_audio, s.clipboard_exclude_history) == (
+        True,
+        False,
+        False,
+    )
+
+
+def test_overlay_position_combo_shows_turkish_labels(dlg):
+    combo = dlg.overlay_position_combo
+    labels = [combo.itemText(i) for i in range(combo.count())]
+    assert labels == ["Altta", "Üstte", "Özel (sürüklenen yer)"]
+    assert combo.currentData() == "bottom"
+    combo.setCurrentIndex(combo.findData("top"))
+    assert dlg.result_settings().overlay_position == "top"
+
+
+def test_overlay_position_loads_and_keeps_xy(qtbot):
+    d = SettingsDialog(Settings(overlay_position="custom", overlay_xy=(10, 20)), ())
+    qtbot.addWidget(d)
+    assert d.overlay_position_combo.currentData() == "custom"
+    s = d.result_settings()
+    assert s.overlay_position == "custom" and s.overlay_xy == (10, 20)
+
+
+def test_history_retention_round_trip(dlg):
+    assert dlg.history_retention_spin.value() == 0
+    assert dlg.history_retention_spin.specialValueText() == "Sınırsız"
+    dlg.history_retention_spin.setValue(30)
+    assert dlg.result_settings().history_retention_days == 30
+
+
+def test_history_spin_max_matches_config_clamp(dlg):
+    from dikte.config import HISTORY_LIMIT_MAX
+
+    assert dlg.history_spin.maximum() == HISTORY_LIMIT_MAX
+
+
+def test_dead_mic_warning_round_trip(dlg):
+    assert dlg.dead_mic_spin.value() == 3.0
+    assert dlg.dead_mic_spin.specialValueText() == "Kapalı"
+    dlg.dead_mic_spin.setValue(5.0)
+    assert dlg.result_settings().audio.dead_mic_warn_s == 5.0
+
+
+def test_llm_sanity_check_round_trip(dlg):
+    assert dlg.sanity_check_check.isChecked() is True
+    dlg.sanity_check_check.setChecked(False)
+    assert dlg.result_settings().llm.sanity_check is False
+
+
+# ---- varsayılanlara döndürme
+
+
+def _non_default_settings() -> Settings:
+    from dikte.config import AudioSettings, LlmSettings, SttSettings
+
+    return Settings(
+        hotkey="ctrl+shift+d",
+        hotkey_translate="ctrl+alt+t",
+        pause_media=True,
+        overlay_position="top",
+        history_retention_days=7,
+        auto_copy=False,
+        stt=SttSettings(
+            vad_threshold=0.9,
+            vad_min_silence_ms=3000,
+            no_speech_threshold=0.2,
+            log_prob_threshold=-3.0,
+            batch_enabled=False,
+            beam_size=2,
+        ),
+        llm=LlmSettings(provider="gemini", sanity_check=False, top_k=50, enabled=False),
+        audio=AudioSettings(max_seconds=60, dead_mic_warn_s=0.0, device_name="USB Mic"),
+    )
+
+
+@pytest.fixture
+def changed(qtbot):
+    d = SettingsDialog(_non_default_settings(), ((0, "Mikrofon A"), (3, "USB Mic")))
+    qtbot.addWidget(d)
+    return d
+
+
+@pytest.mark.parametrize("tab", ["general", "audio", "stt", "llm", "advanced"])
+def test_each_settings_tab_has_reset_button(changed, tab):
+    assert getattr(changed, tab).reset_btn.text() == "Varsayılanlara döndür"
+
+
+def test_stt_reset_restores_thresholds_without_touching_other_tabs(changed):
+    changed.stt.reset_btn.click()
+    d = Settings().stt
+    assert changed.vad_threshold_spin.value() == d.vad_threshold
+    assert changed.vad_min_silence_spin.value() == d.vad_min_silence_ms
+    assert changed.no_speech_spin.value() == d.no_speech_threshold
+    assert changed.log_prob_spin.value() == d.log_prob_threshold
+    assert changed.batch_check.isChecked() is True and changed.batch_size_spin.isEnabled()
+    s = changed.result_settings()
+    assert s.stt.vad_threshold == 0.5 and s.stt.batch_enabled is True
+    assert s.stt.beam_size == 2  # Gelişmiş sekmesi etkilenmez
+    assert s.pause_media is True and s.llm.provider == "gemini"
+
+
+def test_general_reset_restores_defaults(changed):
+    changed.general.reset_btn.click()
+    s = changed.result_settings()
+    default = Settings()
+    assert s.hotkey == default.hotkey and s.hotkey_translate == ""
+    assert s.pause_media is False and s.overlay_position == "bottom"
+    assert s.history_retention_days == 0 and s.auto_copy is True
+    assert changed.auto_paste_check.isEnabled()
+    assert s.stt.vad_threshold == 0.9  # STT sekmesi etkilenmez
+
+
+def test_audio_reset_restores_defaults(changed):
+    changed.audio.reset_btn.click()
+    s = changed.result_settings()
+    assert s.audio.max_seconds == 0 and s.audio.dead_mic_warn_s == 3.0
+    assert s.audio.device_name == "" and changed.device_combo.currentData() is None
+
+
+def test_llm_reset_restores_defaults(changed):
+    changed.llm.reset_btn.click()
+    s = changed.result_settings()
+    assert s.llm.provider == "ollama" and s.llm.sanity_check is True and s.llm.enabled
+    assert changed.ollama_group.isVisibleTo(changed.llm)
+    assert changed.provider_combo.isEnabled()
+    assert s.llm.top_k == 50  # Gelişmiş sekmesi etkilenmez
+
+
+def test_advanced_reset_restores_defaults(changed):
+    changed.advanced.reset_btn.click()
+    s = changed.result_settings()
+    assert s.stt.beam_size == Settings().stt.beam_size and s.llm.top_k == 20
+    assert s.stt.vad_threshold == 0.9
+
+
+def test_reset_is_not_saved_until_result_settings(changed):
+    original = changed._settings
+    changed.stt.reset_btn.click()
+    assert original.stt.vad_threshold == 0.9
+
+
+# ---- arka plan işleri referansı
+
+
+def test_connection_test_keeps_job_reference_until_done(dlg, monkeypatch):
+    import dikte.ui.settings.llm_tab as llm_tab_mod
+
+    class FakeProvider:
+        def complete(self, system, user):
+            return "OK"
+
+    monkeypatch.setattr(llm_tab_mod, "make_provider", lambda settings: FakeProvider())
+    pending = []
+    job = object()
+
+    def fake_run_in_pool(fn, on_result, on_error, pool=None):
+        pending.append(on_result)
+        return job
+
+    monkeypatch.setattr(llm_tab_mod, "run_in_pool", fake_run_in_pool)
+    dlg.llm_test_btn.click()
+    assert dlg.llm._test_job is job
+    assert dlg.llm_test_status.text() == "Sınanıyor…"
+    pending[0]("OK")
+    assert dlg.llm._test_job is None and "✓" in dlg.llm_test_status.text()
+
+
+def test_about_probes_run_off_the_gui_thread(qtbot):
+    import threading
+
+    from dikte.ui.settings.about_tab import AboutTab
+
+    threads = []
+
+    def gpu():
+        threads.append(threading.current_thread())
+        return "sahte GPU"
+
+    tab = AboutTab(Settings(), gpu_probe=gpu, vram_probe=lambda: "1 GB")
+    qtbot.addWidget(tab)
+    assert tab._probe_job is not None
+    qtbot.waitUntil(lambda: tab.gpu_label.text() == "sahte GPU", timeout=3000)
+    assert tab.vram_label.text() == "1 GB"
+    assert threads and threads[0] is not threading.main_thread()
+    assert tab._probe_job is None
+
+
+def test_about_probe_failure_shows_unknown(qtbot):
+    from dikte.ui.settings.about_tab import AboutTab
+
+    def boom():
+        raise RuntimeError("nvidia-smi yok")
+
+    tab = AboutTab(Settings(), gpu_probe=boom, vram_probe=lambda: "1 GB")
+    qtbot.addWidget(tab)
+    qtbot.waitUntil(lambda: tab._probe_job is None, timeout=3000)
+    assert tab.gpu_label.text() == "bilinmiyor" and tab.vram_label.text() == "bilinmiyor"
+
+
+# ---- Türkçe etiketler
+
+
+def test_profile_combos_show_turkish_labels_with_raw_data(qtbot):
+    profile = AppProfile(name="Kod", match="code", mode="translate", paste="type")
+    d = SettingsDialog(Settings(profiles=(profile,)), ())
+    qtbot.addWidget(d)
+    mode_combo = d.profiles_table.cellWidget(0, 2)
+    paste_combo = d.profiles_table.cellWidget(0, 3)
+    modes = [mode_combo.itemText(i) for i in range(mode_combo.count())]
+    assert "correct" not in modes and "translate" not in modes
+    assert mode_combo.currentData() == "translate"
+    assert paste_combo.currentData() == "type" and paste_combo.currentText() != "type"
+    assert d.result_settings().profiles == (profile,)
+
+
+def test_llm_form_labels_are_turkish(dlg):
+    from PySide6.QtWidgets import QLabel
+
+    texts = {label.text() for label in dlg.llm.findChildren(QLabel)}
+    assert not texts & {"Host", "Base URL", "Format"}
+    assert {"Sunucu adresi", "Temel URL", "Biçim"} <= texts
+    combo = dlg.custom_format_combo
+    assert [combo.itemData(i) for i in range(combo.count())] == ["openai", "anthropic"]
+
+
+def test_ineffective_hallucination_silence_control_is_hidden_but_value_kept(qtbot):
+    from dikte.config import SttSettings
+
+    d = SettingsDialog(Settings(stt=SttSettings(hallucination_silence_threshold_s=4.5)), ())
+    qtbot.addWidget(d)
+    assert not hasattr(d.stt, "hallucination_silence_spin")
+    assert d.result_settings().stt.hallucination_silence_threshold_s == 4.5
