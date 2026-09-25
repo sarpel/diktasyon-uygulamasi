@@ -15,7 +15,7 @@ dependencies = [
 
 [project.optional-dependencies]
 cuda = ["nvidia-cublas-cu12", "nvidia-cudnn-cu12>=9"]
-anthropic = ["anthropic>=0.40"]
+anthropic = ["anthropic>=1.0"]  # 0.x ANTHROPIC_AUTH_TOKEN'ı Bearer olarak sızdırabilir
 openai = ["openai>=2"]
 gemini = ["google-genai>=1.30"]
 dev = [
@@ -26,7 +26,7 @@ dev = [
   "pyinstaller>=6.6",
   "pyright>=1.1.390",
   # Tip denetimi için opsiyonel sağlayıcı SDK'ları da kurulu olmalı.
-  "anthropic>=0.40",
+  "anthropic>=1.0",
   "openai>=2",
   "google-genai>=1.30",
 ]

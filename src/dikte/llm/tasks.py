@@ -6,11 +6,25 @@ from dataclasses import dataclass
 
 from dikte.llm import prompts
 from dikte.llm.diff import Change, word_changes
+from dikte.llm.jsontext import extract_json_object
 from dikte.llm.provider import LlmError, LlmProvider
 
 log = logging.getLogger(__name__)
 
-__all__ = ["Change", "CorrectionResult", "correct", "enhance_prompt", "translate"]
+__all__ = [
+    "Change",
+    "CorrectionResult",
+    "correct",
+    "correction_looks_valid",
+    "enhance_prompt",
+    "translate",
+]
+
+# Düzeltme ham metnin kelime sayısından bu oranların dışına çıkarsa model metni
+# özetlemiş, yanıtlamış ya da genişletmiş sayılır. Kısa metinlerde oran anlamsızdır.
+_MIN_WORD_RATIO = 0.5
+_MAX_WORD_RATIO = 1.6
+_MIN_WORDS_FOR_CHECK = 4
 
 
 @dataclass(frozen=True)
@@ -21,16 +35,28 @@ class CorrectionResult:
 
 def _parse_correction(reply: str, raw: str) -> CorrectionResult:
     try:
-        data = json.loads(reply)
+        data = json.loads(extract_json_object(reply))
     except json.JSONDecodeError as exc:
-        raise LlmError(f"LLM geçerli JSON döndürmedi: {reply[:120]!r}") from exc
+        # Yanıt metni mesaja girmez: dikte içeriği günlüğe ve arayüze sızmasın.
+        raise LlmError(f"LLM geçerli JSON döndürmedi ({len(reply)} karakterlik yanıt)") from exc
     if not isinstance(data, dict) or not isinstance(data.get("corrected_text"), str):
         raise LlmError("LLM yanıtında corrected_text yok")
     text = data["corrected_text"].strip()
     return CorrectionResult(corrected_text=text, changes=word_changes(raw, text))
 
 
-def correct(provider: LlmProvider, raw: str, *, glossary: str = "") -> CorrectionResult:
+def correction_looks_valid(raw: str, corrected: str) -> bool:
+    """Düzeltmenin kelime sayısı ham metne göre makul aralıkta mı (0,5×–1,6×)?"""
+    raw_words = len(raw.split())
+    if raw_words < _MIN_WORDS_FOR_CHECK:
+        return True
+    ratio = len(corrected.split()) / raw_words
+    return _MIN_WORD_RATIO <= ratio <= _MAX_WORD_RATIO
+
+
+def correct(
+    provider: LlmProvider, raw: str, *, glossary: str = "", sanity_check: bool = True
+) -> CorrectionResult:
     if not raw.strip():
         return CorrectionResult("", ())
     system = prompts.CORRECT_SYSTEM + (f"\n\n{glossary}" if glossary else "")
@@ -40,7 +66,20 @@ def correct(provider: LlmProvider, raw: str, *, glossary: str = "") -> Correctio
         json_schema=prompts.CORRECT_SCHEMA,
         temperature=0.1,
     )
-    return _parse_correction(reply, raw)
+    result = _parse_correction(reply, raw)
+    if sanity_check and not correction_looks_valid(raw, result.corrected_text):
+        raw_words, new_words = len(raw.split()), len(result.corrected_text.split())
+        log.warning(
+            "düzeltme ham metinden çok sapıyor (%d → %d kelime); ham metne dönülüyor",
+            raw_words,
+            new_words,
+        )
+        raise LlmError(
+            f"düzeltme ham metinden çok farklı uzunlukta ({raw_words} → {new_words} kelime); "
+            "model metni özetlemiş veya yanıtlamış olabilir. Sorun sürerse Ayarlar'dan başka "
+            "bir model seçin."
+        )
+    return result
 
 
 def translate(provider: LlmProvider, text: str) -> str:

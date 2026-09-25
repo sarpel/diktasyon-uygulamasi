@@ -79,3 +79,13 @@ def test_timeout_is_forwarded_to_client_factory(monkeypatch):
 
     GeminiProvider(LlmSettings(timeout_s=42.0), client_factory=factory)
     assert captured == {"api_key": "k", "timeout_s": 42.0}
+
+
+@pytest.mark.parametrize("reason", ["MAX_TOKENS", SimpleNamespace(name="MAX_TOKENS")])
+def test_max_tokens_finish_reason_raises_truncation_error(monkeypatch, reason):
+    fake = FakeGenai("yarım")
+    fake.generate_content = lambda **kw: SimpleNamespace(
+        text="yarım", candidates=[SimpleNamespace(finish_reason=reason)]
+    )
+    with pytest.raises(LlmError, match="yarıda kesildi"):
+        make(monkeypatch, fake).complete("s", "u")

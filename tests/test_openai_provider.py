@@ -116,3 +116,22 @@ def test_empty_reply_raises():
 
 def test_custom_name_is_reported():
     assert make(FakeOpenAI(), name="custom-openai").name == "custom-openai"
+
+
+def _truncated_response(content="yarım"):
+    message = SimpleNamespace(content=content)
+    return SimpleNamespace(choices=[SimpleNamespace(message=message, finish_reason="length")])
+
+
+def test_length_finish_reason_raises_truncation_error():
+    fake = FakeOpenAI(behaviour={})
+    fake.completions.create = lambda **kw: _truncated_response()
+    with pytest.raises(LlmError, match="yarıda kesildi"):
+        make(fake).complete("s", "u")
+
+
+def test_length_finish_reason_raises_for_json_too():
+    fake = FakeOpenAI(behaviour={})
+    fake.completions.create = lambda **kw: _truncated_response('{"corrected_text": "ya')
+    with pytest.raises(LlmError, match="yarıda kesildi"):
+        make(fake).complete("s", "u", json_schema={"type": "object"})
