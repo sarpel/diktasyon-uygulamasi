@@ -11,34 +11,58 @@ def _variants(wrong: str) -> set[str]:
     return {wrong, wrong.casefold(), wrong.replace("ı", "i").replace("İ", "I")}
 
 
-CompiledRule = tuple[re.Pattern[str], str]
+# (tüm yanlış varyantların tek alternasyonu, grup sırasına göre terimler). Her varyant
+# kendi yakalama grubundadır; eşleşen grubun numarası (`lastindex`) terimi verir.
+CompiledRule = tuple[re.Pattern[str], tuple[str, ...]]
 
 
 def compile_rules(entries: Sequence[DictionaryEntry]) -> list[CompiledRule]:
-    """Sözlük girdilerinden regex kurallarını derler. Bu derleme ölçülebilir şekilde
+    """Sözlük girdilerinden tek bir birleşik regex derler. Bu derleme ölçülebilir şekilde
     yavaştır (büyük sözlüklerde her dikte için yüzlerce ms); sözlük değişmediği sürece
     yalnızca bir kez çağrılıp sonucu `apply_compiled` ile tekrar tekrar kullanılmalıdır."""
-    rules: list[tuple[str, re.Pattern[str], str]] = []
+    variants: list[tuple[str, str]] = []
     for entry in entries:
         for wrong in entry.wrong:
-            for variant in _variants(wrong):
-                if not variant:
-                    continue
-                pattern = re.compile(
-                    r"(?<!\w)" + re.escape(variant) + r"(?!\w)", re.IGNORECASE | re.UNICODE
-                )
-                rules.append((variant, pattern, entry.term))
-    rules.sort(key=lambda r: len(r[0]), reverse=True)
-    return [(pattern, term) for _variant, pattern, term in rules]
+            variants.extend((v, entry.term) for v in _variants(wrong) if v)
+    if not variants:
+        return []
+    # Uzun varyant önce: alternasyon soldan ilk eşleşeni seçer, "gou land" "gou"dan önce denenmeli.
+    variants.sort(key=lambda r: len(r[0]), reverse=True)
+    alternation = "|".join(f"({re.escape(variant)})" for variant, _term in variants)
+    pattern = re.compile(r"(?<!\w)(?:" + alternation + r")(?!\w)", re.IGNORECASE | re.UNICODE)
+    return [(pattern, tuple(term for _variant, term in variants))]
+
+
+def _term_already_present(text: str, pos: int, term: str) -> bool:
+    candidate = text[pos : pos + len(term)]
+    after = text[pos + len(term) : pos + len(term) + 1]
+    return candidate.casefold() == term.casefold() and not (
+        after and (after.isalnum() or after == "_")
+    )
 
 
 def apply_compiled(text: str, rules: list[CompiledRule]) -> str:
-    for pattern, term in rules:
-        # `lambda _m: term` (düz metin), `pattern.sub(term, text)` yerine kullanılır: term
-        # bir regex *değiştirme şablonu* değil düz metindir — içinde "\1" veya "\g<ad>" gibi
-        # bir dizi geçerse (ör. kullanıcının eklediği "C:\1" gibi bir terim) ikincisi bunu
-        # geri referans sanıp re.error fırlatır ya da yanlış metin üretir.
-        text = pattern.sub(lambda _m, t=term: t, text)
+    """Tüm kuralları tek geçişte uygular: bir kuralın çıktısı başka bir kuralın girdisi
+    olmaz ("React" → "React Native" zinciri oluşmaz) ve doğru terim zaten yazılıysa
+    ("Visual Studio Code" içindeki "visual studio") dokunulmaz — işlem idempotenttir."""
+    for pattern, terms in rules:
+        parts: list[str] = []
+        pos = 0
+        match = pattern.search(text, pos)
+        while match:
+            term = terms[match.lastindex - 1]
+            if _term_already_present(text, match.start(), term):
+                end = match.start() + len(term)
+                parts.append(text[pos:end])
+            else:
+                # Terim düz metin olarak eklenir, regex değiştirme şablonu değildir: içinde
+                # "\1" veya "\g<ad>" gibi bir dizi geçse de (ör. "C:\1") olduğu gibi yazılır.
+                end = match.end()
+                parts.append(text[pos : match.start()] + term)
+            pos = end
+            match = pattern.search(text, pos)
+        parts.append(text[pos:])
+        text = "".join(parts)
     return text
 
 
