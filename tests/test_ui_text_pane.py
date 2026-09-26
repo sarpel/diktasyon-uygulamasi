@@ -45,3 +45,18 @@ def test_highlights_follow_change_offsets(qtbot):
     assert len(sel) == 1 and sel[0].cursor.selectedText() == "çok"
     p.set_text("başka")
     assert p.editor.extraSelections() == []
+
+
+def test_copy_honours_exclude_history_flag(qtbot, monkeypatch):
+    calls = []
+    monkeypatch.setattr(
+        "dikte.ui.text_pane.copy_text",
+        lambda text, *, exclude_history: calls.append((text, exclude_history)),
+    )
+    p = TextPane("Ham")
+    qtbot.addWidget(p)
+    assert p.exclude_history is True  # varsayılan ayarla aynı
+    p.exclude_history = False
+    p.set_text("x")
+    p.copy_btn.click()
+    assert calls == [("x", False)]

@@ -19,6 +19,10 @@ log = logging.getLogger(__name__)
 
 
 HISTORY_LIMIT_MAX = 5000
+# `load_settings_with_issues` işaretleri: tüm dosya varsayılana döndü (yedek alındı) /
+# dosya hiç okunamadı (yedek alınmadı, dosyaya dokunulmadı).
+ALL_DEFAULTS: tuple[str, ...] = ("*",)
+UNREADABLE: tuple[str, ...] = ("!",)
 
 
 class SettingsError(RuntimeError):
@@ -239,10 +243,10 @@ def load_settings_with_issues(path: Path | None = None) -> tuple[Settings, tuple
 
     Tek bir hatalı değer (ör. elle düzenlenmiş `beam_size=11`) tüm ayarları sıfırlamaz:
     yalnızca o alan varsayılana döner. Doğrulama başarısızsa orijinal dosya önce
-    `config.json.bak`'a kopyalanır. Dosya yoksa `()` ile varsayılanlar döner; `("*",)` =
-    dosya okunamadı, geçerli JSON nesnesi değil ya da kurtarılan alanlar da doğrulanamadı
-    (tümü varsayılan). Okuma hatasında (`OSError`) yedek alınmaz. Hiçbir durumda istisna
-    fırlatmaz."""
+    `config.json.bak`'a kopyalanır. Dosya yoksa `()` ile varsayılanlar döner; `ALL_DEFAULTS`
+    = geçerli JSON nesnesi değil ya da kurtarılan alanlar da doğrulanamadı (tümü varsayılan,
+    yedek alındı); `UNREADABLE` = dosya okunamadı (`OSError`, yedek alınmadı). Hiçbir
+    durumda istisna fırlatmaz."""
     p = path or paths.config_path()
     if not p.exists():
         return Settings(), ()
@@ -250,7 +254,7 @@ def load_settings_with_issues(path: Path | None = None) -> tuple[Settings, tuple
         raw = p.read_text(encoding="utf-8")
     except OSError as exc:
         log.warning("config okunamadı (%s), varsayılanlar kullanılıyor", exc)
-        return Settings(), ("*",)
+        return Settings(), UNREADABLE
     try:
         return Settings.model_validate_json(raw), ()
     except (ValidationError, ValueError) as exc:
@@ -259,15 +263,15 @@ def load_settings_with_issues(path: Path | None = None) -> tuple[Settings, tuple
     try:
         data = json.loads(raw)
     except ValueError:
-        return Settings(), ("*",)
+        return Settings(), ALL_DEFAULTS
     if not isinstance(data, dict):
-        return Settings(), ("*",)
+        return Settings(), ALL_DEFAULTS
     kept, issues = _salvage(Settings, data, "")
     try:
         return Settings.model_validate(kept), tuple(issues)
     except ValidationError:
         log.exception("kurtarılan config de doğrulanamadı; varsayılanlar kullanılıyor")
-        return Settings(), ("*",)
+        return Settings(), ALL_DEFAULTS
 
 
 def load_settings(path: Path | None = None) -> Settings:

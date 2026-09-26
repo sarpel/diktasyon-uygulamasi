@@ -46,3 +46,14 @@ def test_restore_delay_scales_and_is_capped():
     assert restore_delay_ms("") == 300
     assert 300 < restore_delay_ms("a" * 1000) < 1500
     assert restore_delay_ms("a" * 100_000) == 1500
+
+
+def test_copy_text_marks_windows_clipboard_as_excluded(qapp):
+    from PySide6.QtWidgets import QApplication
+
+    from dikte.platform.clipboard import copy_text
+
+    copy_text("gizli dikte", exclude_history=True, platform="win32")
+    mime = QApplication.clipboard().mimeData()
+    assert mime is not None and mime.text() == "gizli dikte"
+    assert mime.hasFormat(windows_mime(EXCLUDE_FORMAT))

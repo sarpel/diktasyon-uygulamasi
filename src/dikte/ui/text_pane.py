@@ -7,7 +7,6 @@ from collections.abc import Sequence
 from PySide6.QtCore import QEvent, Qt, Signal
 from PySide6.QtGui import QColor, QTextCursor
 from PySide6.QtWidgets import (
-    QApplication,
     QHBoxLayout,
     QLabel,
     QPlainTextEdit,
@@ -19,6 +18,7 @@ from PySide6.QtWidgets import (
 )
 
 from dikte.llm.diff import Change
+from dikte.platform.clipboard import copy_text
 from dikte.ui.icons import copy_icon
 
 HIGHLIGHT_COLOR = QColor(255, 235, 59, 90)
@@ -33,6 +33,7 @@ class TextPane(QWidget):
 
     def __init__(self, title: str, parent=None):
         super().__init__(parent)
+        self.exclude_history = True  # Windows pano geçmişinden dışla (ayar; pencere günceller)
         self.title_label = QLabel(title)
         self.title_label.setStyleSheet("font-weight:600;")
         self.copy_btn = QToolButton()
@@ -101,5 +102,5 @@ class TextPane(QWidget):
         text = self.text()
         if not text:
             return
-        QApplication.clipboard().setText(text)
+        copy_text(text, exclude_history=self.exclude_history)
         self.copied.emit(text)

@@ -13,6 +13,7 @@ import struct
 import sys
 
 from PySide6.QtCore import QMimeData
+from PySide6.QtGui import QGuiApplication
 
 EXCLUDE_FORMAT = "ExcludeClipboardContentFromMonitorProcessing"
 HISTORY_FORMAT = "CanIncludeInClipboardHistory"
@@ -42,6 +43,13 @@ def build_mime(text: str, *, exclude_history: bool, platform: str = sys.platform
         mime.setData(windows_mime(HISTORY_FORMAT), _DWORD_ZERO)
         mime.setData(windows_mime(CLOUD_FORMAT), _DWORD_ZERO)
     return mime
+
+
+def copy_text(text: str, *, exclude_history: bool, platform: str = sys.platform) -> None:
+    """Metni panoya yazar; tüm kopyalama yolları (sonuç, geçmiş, tray) bunu kullanır ki
+    "pano geçmişine alma" ayarı hiçbir yolda atlanmasın."""
+    clipboard = QGuiApplication.clipboard()
+    clipboard.setMimeData(build_mime(text, exclude_history=exclude_history, platform=platform))
 
 
 def should_restore(current_text: str | None, pasted_text: str) -> bool:

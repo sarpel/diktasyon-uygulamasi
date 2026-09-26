@@ -21,6 +21,7 @@ from PySide6.QtWidgets import (
 )
 
 from dikte.core.state import Session
+from dikte.platform.clipboard import copy_text
 
 PREVIEW_CHARS = 80
 
@@ -57,6 +58,7 @@ class HistoryPanel(QDockWidget):
     def __init__(self, parent=None, dialog=None):
         super().__init__("Geçmiş", parent)
         self.setObjectName("historyDock")
+        self.exclude_history = True  # Windows pano geçmişinden dışla (ayar; pencere günceller)
         self._sessions: tuple[Session, ...] = ()
         self._dialog = dialog or QFileDialog.getSaveFileName
 
@@ -164,12 +166,10 @@ class HistoryPanel(QDockWidget):
         self.session_selected.emit(item.data(Qt.ItemDataRole.UserRole))
 
     def _copy_current(self) -> None:
-        from PySide6.QtWidgets import QApplication
-
         session = self._current_session()
         if session is None:
             return
-        QApplication.clipboard().setText(session.output_text or session.raw_text)
+        copy_text(session.output_text or session.raw_text, exclude_history=self.exclude_history)
 
     def _delete_current(self) -> None:
         session = self._current_session()

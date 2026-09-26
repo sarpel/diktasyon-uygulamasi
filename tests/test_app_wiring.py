@@ -543,6 +543,21 @@ def test_tray_copy_requested_writes_to_clipboard(ctx):
     assert QApplication.clipboard().text() == "panoya gidecek metin"
 
 
+def test_clipboard_exclude_history_reaches_all_copy_paths(ctx, monkeypatch):
+    calls = []
+    monkeypatch.setattr(
+        app_mod, "copy_text", lambda text, *, exclude_history: calls.append(exclude_history)
+    )
+    ctx.settings = ctx.settings.model_copy(update={"clipboard_exclude_history": False})
+    ctx.tray.copy_requested.emit("x")
+    assert calls == [False]
+    w = ctx.window
+    w.set_clipboard_exclude_history(False)
+    panes = (w.raw_pane, w.corrected_pane, w.output_pane)
+    assert not any(p.exclude_history for p in panes)
+    assert w.history_panel.exclude_history is False
+
+
 def test_export_requested_writes_file(ctx, tmp_path):
     ctx.controller._update_session(raw_text="a", corrected_text="A.")
     ctx.controller.state_changed.emit(DictationState.RESULT)
@@ -838,7 +853,23 @@ def test_config_issues_are_reported(ctx, monkeypatch):
     app_mod._notify_config_issues(ctx, ("stt.beam_size", "llm.provider"))
     assert "stt.beam_size, llm.provider" in notes[0][1]
     app_mod._notify_config_issues(ctx, ("*",))
-    assert "okunamadı" in notes[1][1]
+    assert "okunamadı" in notes[1][1] and ".bak" in notes[1][1]
+
+
+def test_unreadable_config_notice_does_not_point_to_backup(ctx, monkeypatch):
+    from dikte.config import UNREADABLE
+
+    notes = []
+    monkeypatch.setattr(ctx.tray, "notify", lambda *a, **k: notes.append(a))
+    app_mod._notify_config_issues(ctx, UNREADABLE)
+    assert "okunamadı" in notes[0][1] and ".bak" not in notes[0][1]
+
+
+def test_sanitized_hotkeys_include_paste_last():
+    before = Settings(hotkey_paste_last="bozuk+++")
+    after = before.model_copy(update={"hotkey_paste_last": ""})
+    assert app_mod._sanitized_hotkeys(before, after) == ("hotkey_paste_last",)
+    assert app_mod._sanitized_hotkeys(before, before) == ()
 
 
 def test_restore_clipboard_skipped_when_user_copied_meanwhile(ctx, monkeypatch, qtbot):

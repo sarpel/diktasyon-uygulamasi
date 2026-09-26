@@ -275,3 +275,13 @@ def test_old_config_with_device_index_only_still_loads(tmp_path: Path):
     p.write_text(json.dumps({"audio": {"device_index": 3}}), encoding="utf-8")
     s = load_settings(p)
     assert s.audio.device_index == 3 and s.audio.device_name == ""
+
+
+def test_unreadable_file_is_reported_separately_without_backup(tmp_path: Path):
+    from dikte.config import UNREADABLE, load_settings_with_issues
+
+    p = tmp_path / "config.json"
+    p.mkdir()  # var ama okunamaz (IsADirectoryError / PermissionError → OSError)
+    s, issues = load_settings_with_issues(p)
+    assert s == Settings() and issues == UNREADABLE
+    assert not (tmp_path / "config.json.bak").exists()

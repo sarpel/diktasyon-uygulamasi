@@ -738,3 +738,46 @@ def test_ineffective_hallucination_silence_control_is_hidden_but_value_kept(qtbo
     qtbot.addWidget(d)
     assert not hasattr(d.stt, "hallucination_silence_spin")
     assert d.result_settings().stt.hallucination_silence_threshold_s == 4.5
+
+
+def test_about_tab_health_dialog_offers_ollama_fixes(qtbot, monkeypatch):
+    """Hakkında'dan açılan durum kontrolü de 'Ollama'yı başlat'/'ollama pull' sunmalı."""
+    from dikte.ui.settings import about_tab as about_mod
+
+    captured = {}
+
+    class FakeDialog:
+        def __init__(self, items, **kwargs):
+            captured.update(kwargs)
+
+        def exec(self):
+            return 0
+
+    monkeypatch.setattr(about_mod, "HealthDialog", FakeDialog)
+    settings = Settings()
+    tab = about_mod.AboutTab(settings, gpu_probe=lambda: "g", vram_probe=lambda: "v")
+    qtbot.addWidget(tab)
+    tab._on_health_checked(())
+    assert captured["ollama_model"] == settings.llm.model
+    assert captured["ollama_host"] == settings.llm.ollama_host
+    assert callable(captured["health_probe"])
+
+
+def test_about_tab_health_dialog_skips_ollama_for_other_providers(qtbot, monkeypatch):
+    from dikte.ui.settings import about_tab as about_mod
+
+    captured = {}
+
+    class FakeDialog:
+        def __init__(self, items, **kwargs):
+            captured.update(kwargs)
+
+        def exec(self):
+            return 0
+
+    monkeypatch.setattr(about_mod, "HealthDialog", FakeDialog)
+    settings = Settings(llm=Settings().llm.model_copy(update={"provider": "openai"}))
+    tab = about_mod.AboutTab(settings, gpu_probe=lambda: "g", vram_probe=lambda: "v")
+    qtbot.addWidget(tab)
+    tab._on_health_checked(())
+    assert captured["ollama_model"] is None

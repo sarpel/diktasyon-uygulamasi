@@ -152,20 +152,33 @@ class AboutTab(QWidget):
         # planda çalıştırılır.
         self.health_btn.setEnabled(False)
         self._health_job = run_in_pool(
-            lambda: check_health(
-                self._settings,
-                cuda_probe=default_cuda_probe,
-                model_probe=default_model_probe,
-                llm_probe=default_llm_probe,
-            ),
+            self._probe_health,
             self._on_health_checked,
             self._on_health_check_failed,
             QThreadPool.globalInstance(),
         )
 
+    def _probe_health(self):
+        return check_health(
+            self._settings,
+            cuda_probe=default_cuda_probe,
+            model_probe=default_model_probe,
+            llm_probe=default_llm_probe,
+        )
+
     def _on_health_checked(self, items) -> None:
         self.health_btn.setEnabled(True)
-        dlg = HealthDialog(items, on_download=self._download_model, parent=self)
+        llm = self._settings.llm
+        # Uygulamanın kendi açtığı pencereyle aynı: Ollama seçiliyse "Ollama'yı başlat" ve
+        # (onaylı) "Modeli indir" düğmeleri, düzeltmeden sonra yeniden denetleme için probe.
+        dlg = HealthDialog(
+            items,
+            on_download=self._download_model,
+            ollama_model=llm.model if llm.enabled and llm.provider == "ollama" else None,
+            ollama_host=llm.ollama_host,
+            health_probe=self._probe_health,
+            parent=self,
+        )
         dlg.exec()
 
     def _on_health_check_failed(self, message: str) -> None:

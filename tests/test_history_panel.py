@@ -189,3 +189,16 @@ def test_search_matches_turkish_capital_letters(qtbot):
     assert [i.text().split("  ", 1)[1] for i in _visible(p)] == ["IRMAK kıyısı"]
     p.search_edit.setText("izmir")
     assert [i.text().split("  ", 1)[1] for i in _visible(p)] == ["İZMİR"]
+
+
+def test_copy_honours_exclude_history_flag(qtbot, monkeypatch):
+    calls = []
+    monkeypatch.setattr(
+        "dikte.ui.history_panel.copy_text",
+        lambda text, *, exclude_history: calls.append((text, exclude_history)),
+    )
+    p = _panel(qtbot)
+    p.set_sessions((Session(corrected_text="Kopyalanacak"),))
+    p.list_widget.setCurrentRow(0)
+    p.copy_btn.click()
+    assert calls == [("Kopyalanacak", True)]

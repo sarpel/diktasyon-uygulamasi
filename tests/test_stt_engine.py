@@ -438,3 +438,38 @@ def test_warm_up_survives_model_reset_between_load_and_inference():
     eng.load = racing_load  # type: ignore[method-assign]
     eng.warm_up()
     assert eng.is_loaded and created["model"].calls  # ısınma gerçekten çalıştı
+
+
+def test_update_settings_does_not_block_while_engine_is_busy():
+    """GUI iş parçacığından çağrılır: süren bir çözümleme/yükleme kilidi tutarken
+    beklememeli; model değişikliği bir sonraki yüklemede uygulanmalı."""
+    import threading
+
+    eng, created = make_engine()
+    eng.load()
+    held, release = threading.Event(), threading.Event()
+
+    def busy():
+        with eng._lock:
+            held.set()
+            release.wait(5)
+
+    worker = threading.Thread(target=busy)
+    worker.start()
+    try:
+        held.wait(5)
+        done = threading.Event()
+        result = {}
+
+        def call():
+            result["reload"] = eng.update_settings(SttSettings(model="small"))
+            done.set()
+
+        threading.Thread(target=call).start()
+        assert done.wait(1), "update_settings meşgul motoru bekledi"
+        assert result["reload"] is True and not eng.is_loaded
+    finally:
+        release.set()
+        worker.join()
+    eng.load()
+    assert created["model"].init_args[0] == "small" and eng.is_loaded

@@ -19,6 +19,8 @@ from PySide6.QtWidgets import QApplication, QDialog, QMessageBox, QSystemTrayIco
 from dikte import APP_NAME, __version__, paths
 from dikte.audio.recorder import AudioRecorder
 from dikte.config import (
+    ALL_DEFAULTS,
+    UNREADABLE,
     AppProfile,
     DictionaryEntry,
     Settings,
@@ -41,7 +43,7 @@ from dikte.core.workers import run_in_pool
 from dikte.llm import LlmError, make_provider
 from dikte.logging_setup import setup_logging
 from dikte.platform.autostart import AutostartError, set_autostart
-from dikte.platform.clipboard import build_mime, restore_delay_ms, should_restore
+from dikte.platform.clipboard import build_mime, copy_text, restore_delay_ms, should_restore
 from dikte.platform.foreground import foreground_process_name
 from dikte.platform.gpu_info import LOW_VRAM_MB, query_vram
 from dikte.platform.hold_detect import HoldDetector
@@ -218,6 +220,7 @@ def _wire(ctx: AppContext) -> None:
         close_after_copy=ctx.settings.close_after_copy,
         raise_on_result=ctx.settings.raise_window_on_result,
     )
+    ctx.window.set_clipboard_exclude_history(ctx.settings.clipboard_exclude_history)
     c.state_changed.connect(ctx.overlay.on_state)
     c.buckets_changed.connect(ctx.overlay.on_buckets)
     c.partial_text.connect(ctx.overlay.show_partial)
@@ -259,7 +262,9 @@ def _wire(ctx: AppContext) -> None:
     ctx.window.history_panel.delete_requested.connect(lambda sid: _delete_session(ctx, sid))
     ctx.window.history_panel.clear_requested.connect(lambda: _clear_history(ctx))
     ctx.window.history_panel.export_requested.connect(lambda path: _export_history(ctx, path))
-    ctx.tray.copy_requested.connect(lambda text: QApplication.clipboard().setText(text))
+    ctx.tray.copy_requested.connect(
+        lambda text: copy_text(text, exclude_history=ctx.settings.clipboard_exclude_history)
+    )
     ctx.window.record_requested.connect(c.toggle)
     ctx.window.cancel_requested.connect(c.cancel)
     ctx.window.settings_requested.connect(lambda: _open_settings(ctx))
@@ -824,6 +829,7 @@ def _open_settings(ctx: AppContext) -> None:
         ctx.controller.prewarm_llm()
     ctx.window.set_llm_enabled(new.llm.enabled)
     ctx.window.close_after_copy = new.close_after_copy
+    ctx.window.set_clipboard_exclude_history(new.clipboard_exclude_history)
     ctx.window.raise_on_result = new.raise_window_on_result
     ctx.sounds.set_enabled(new.sounds_enabled)
     ctx.overlay.set_position(new.overlay_position, new.overlay_xy)
@@ -890,12 +896,30 @@ def _quit(ctx: AppContext) -> None:
 
 
 def _notify_config_issues(ctx: AppContext, issues: tuple[str, ...]) -> None:
-    backup = paths.config_path().with_suffix(".json.bak")
-    if issues == ("*",):
+    config = paths.config_path()
+    if issues == UNREADABLE:
+        # Okuma hatasında yedek alınmaz; var olmayan (ya da eski) bir yedeği göstermeyelim.
+        ctx.tray.notify(
+            APP_NAME,
+            f"Ayar dosyası okunamadı ({config}); varsayılanlar kullanılıyor. "
+            "Dosyanın izinlerini kontrol edin.",
+            critical=True,
+        )
+        return
+    backup = config.with_suffix(".json.bak")
+    if issues == ALL_DEFAULTS:
         detail = "Ayar dosyası okunamadı; varsayılanlar kullanılıyor."
     else:
         detail = "Geçersiz ayarlar varsayılana döndü: " + ", ".join(issues) + "."
     ctx.tray.notify(APP_NAME, f"{detail} Eski dosyanın yedeği: {backup}", critical=True)
+
+
+_HOTKEY_FIELDS = ("hotkey", "hotkey_translate", "hotkey_prompt", "hotkey_paste_last")
+
+
+def _sanitized_hotkeys(before: Settings, after: Settings) -> tuple[str, ...]:
+    """`build_app`'in geçersiz bulup değiştirdiği kısayol alanlarının adları."""
+    return tuple(f for f in _HOTKEY_FIELDS if getattr(before, f) != getattr(after, f))
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -964,12 +988,8 @@ def main(argv: list[str] | None = None) -> int:
             f"Veri klasörü hazırlanamadı: {exc}\nYazma izinlerini kontrol edin.",
         )
         return 1
-    hotkeys_sanitized = (
-        ctx.settings.hotkey != settings.hotkey
-        or ctx.settings.hotkey_translate != settings.hotkey_translate
-        or ctx.settings.hotkey_prompt != settings.hotkey_prompt
-    )
-    if hotkeys_sanitized:  # bozuk kısayol(lar) düzeltildi, kalıcı hâle getir
+    sanitized = _sanitized_hotkeys(settings, ctx.settings)
+    if sanitized:  # bozuk kısayol(lar) düzeltildi, kalıcı hâle getir
         try:
             save_settings(ctx.settings)
         except SettingsError:
@@ -979,17 +999,16 @@ def main(argv: list[str] | None = None) -> int:
     single.start_requested.connect(lambda mode: _on_ipc_start(ctx, mode))
     single.stop_requested.connect(ctx.controller.stop_recording)
     ctx.tray.show()
-    if ctx.settings.hotkey != settings.hotkey:
+    if "hotkey" in sanitized:
         ctx.tray.notify(
             APP_NAME,
             f"Ayarlardaki kısayol geçersizdi; '{ctx.settings.hotkey}' kullanılıyor.",
         )
-    if ctx.settings.hotkey_translate != settings.hotkey_translate or (
-        ctx.settings.hotkey_prompt != settings.hotkey_prompt
-    ):
+    if {"hotkey_translate", "hotkey_prompt", "hotkey_paste_last"} & set(sanitized):
         ctx.tray.notify(
             APP_NAME,
-            "Ayarlardaki çeviri/prompt kısayollarından biri geçersizdi; kapatıldı.",
+            "Ayarlardaki çeviri/prompt/son sonucu yapıştır kısayollarından biri geçersizdi; "
+            "kapatıldı.",
         )
     if config_issues:
         _notify_config_issues(ctx, config_issues)

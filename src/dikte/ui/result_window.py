@@ -200,6 +200,12 @@ class ResultWindow(QMainWindow):
     def set_status_info(self, model: str, compute: str, llm: str) -> None:
         self.status_info.setText(f"{model} · {compute} · LLM: {llm}")
 
+    def set_clipboard_exclude_history(self, exclude: bool) -> None:
+        """Kopyala düğmelerinin (paneller ve geçmiş) Windows pano geçmişi dışlama ayarı."""
+        for pane in (self.raw_pane, self.corrected_pane, self.output_pane):
+            pane.exclude_history = exclude
+        self.history_panel.exclude_history = exclude
+
     def bind(
         self, controller, close_after_copy: bool = False, raise_on_result: bool = False
     ) -> None:
