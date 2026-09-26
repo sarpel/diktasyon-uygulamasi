@@ -1,3 +1,5 @@
+"""Dikte durumları, modlar ve değişmez `Session` kaydı."""
+
 from __future__ import annotations
 
 import uuid
@@ -9,6 +11,8 @@ from dikte.llm.tasks import Change
 
 
 class DictationState(Enum):
+    """Denetleyicinin durumları: boşta → kayıt → çözümleme → düzeltme → sonuç."""
+
     IDLE = auto()
     RECORDING = auto()
     TRANSCRIBING = auto()
@@ -28,6 +32,8 @@ MODES = ("correct", "translate", "prompt")
 
 @dataclass(frozen=True)
 class Session:
+    """Tek bir dikte oturumu (değişmez); güncellemeler `with_` ile yeni kopya üretir."""
+
     id: str = field(default_factory=lambda: uuid.uuid4().hex[:12])
     created_at: datetime = field(default_factory=datetime.now)
     mode: str = "correct"

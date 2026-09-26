@@ -1,3 +1,5 @@
+"""LLM görevleri: dikte düzeltmesi (JSON + uzunluk denetimi), çeviri ve prompt iyileştirme."""
+
 from __future__ import annotations
 
 import json
@@ -29,6 +31,8 @@ _MIN_WORDS_FOR_CHECK = 4
 
 @dataclass(frozen=True)
 class CorrectionResult:
+    """Düzeltilmiş metin ve ham metne göre hesaplanan kelime düzeyi değişiklikler."""
+
     corrected_text: str
     changes: tuple[Change, ...]
 
@@ -57,6 +61,11 @@ def correction_looks_valid(raw: str, corrected: str) -> bool:
 def correct(
     provider: LlmProvider, raw: str, *, glossary: str = "", sanity_check: bool = True
 ) -> CorrectionResult:
+    """Ham transkripti LLM ile düzeltir (JSON şemalı yanıt); boş girdide LLM çağrılmaz.
+
+    `glossary` sistem promptuna eklenir. Yanıt geçerli JSON değilse veya `sanity_check`
+    açıkken kelime sayısı ham metne göre 0,5×–1,6× dışına çıkarsa `LlmError` fırlatır;
+    denetleyici bu durumda ham metni sonuç olarak kullanır. `corrected_text` boş dönebilir."""
     if not raw.strip():
         return CorrectionResult("", ())
     system = prompts.CORRECT_SYSTEM + (f"\n\n{glossary}" if glossary else "")
@@ -83,6 +92,7 @@ def correct(
 
 
 def translate(provider: LlmProvider, text: str) -> str:
+    """Türkçe metni İngilizceye çevirir; boş girdide LLM çağrılmaz. Hatada `LlmError`."""
     if not text.strip():
         return ""
     return provider.complete(
@@ -91,6 +101,7 @@ def translate(provider: LlmProvider, text: str) -> str:
 
 
 def enhance_prompt(provider: LlmProvider, text: str) -> str:
+    """Dikte edilen isteği İngilizce, bölümlü bir Markdown prompta dönüştürür. Hatada `LlmError`."""
     if not text.strip():
         return ""
     return provider.complete(

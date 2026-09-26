@@ -1,8 +1,12 @@
+"""Pencerenin altında kısa süre görünen bildirim etiketi ("Kopyalandı" gibi)."""
+
 from PySide6.QtCore import QTimer
 from PySide6.QtWidgets import QLabel, QWidget
 
 
 class Toast(QLabel):
+    """Oluşturulunca `parent`ın alt ortasında görünür, `ms` sonra kendini siler."""
+
     def __init__(self, parent: QWidget, text: str, ms: int = 1500):
         super().__init__(text, parent)
         # Bilerek koyu: kısa ömürlü bir bildirim, sistem temasından bağımsız sabit kontrast ister.

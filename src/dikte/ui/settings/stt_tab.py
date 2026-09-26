@@ -1,3 +1,5 @@
+"""Ayarlar → Konuşma Tanıma (Whisper) sekmesi."""
+
 from __future__ import annotations
 
 from PySide6.QtWidgets import (
@@ -20,7 +22,8 @@ RESTART_HINT = "Değişince model arka planda yeniden yüklenir."
 
 
 class SttTab(QWidget):
-    """Whisper modeli, hassasiyet, toplu çözümleme ve ısınma."""
+    """Whisper modeli, hassasiyet, dil, toplu çözümleme, ısınma, canlı çözümleme ve
+    VAD/halüsinasyon eşikleri."""
 
     title = "Konuşma Tanıma"
 

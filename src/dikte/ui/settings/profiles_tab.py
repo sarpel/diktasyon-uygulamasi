@@ -1,3 +1,5 @@
+"""Ayarlar → Profiller sekmesi (uygulamaya özgü davranış)."""
+
 from __future__ import annotations
 
 from typing import Literal, cast
@@ -36,8 +38,10 @@ _TRAILING_VALUES: dict[str, Trailing] = {label: value for value, label in _TRAIL
 
 
 class ProfilesTab(QWidget):
-    """Ön plandaki uygulamaya göre mod, yapıştırma tuşu ve LLM'in devre dışı bırakılmasını
-    tanımlayan profiller; eşleşme yoksa genel ayarlar geçerli olur."""
+    """Ön plandaki uygulamaya göre mod, yapıştırma biçimi (Ctrl+V, Ctrl+Shift+V ya da tuş
+    tuş yazma), LLM'in açık/kapalı olması ve metne eklenecek soneki tanımlayan profiller;
+    eşleşme yoksa genel ayarlar geçerli olur. "Eşleşme" süreç adıyla karşılaştırılır
+    (bkz. `dikte.text.profiles.match_profile`)."""
 
     title = "Profiller"
 

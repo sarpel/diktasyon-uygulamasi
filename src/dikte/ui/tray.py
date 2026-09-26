@@ -1,3 +1,5 @@
+"""Sistem tepsisi simgesi: duruma göre renk, kısayol ipucu ve bağlam menüsü."""
+
 from __future__ import annotations
 
 from PySide6.QtCore import Signal
@@ -19,6 +21,14 @@ RECENT_PREVIEW_CHARS = 40
 
 
 class TrayIcon(QSystemTrayIcon):
+    """Tepsi simgesi ve menüsü; kendisi iş yapmaz, her menü eylemi bir sinyal yayar.
+
+    Sinyaller: kayıt başlat/durdur (`toggle_requested`), iptal, pencereyi göster (simgeye
+    tıklama da), ayarlar, çıkış, `copy_requested(metin)` (son dikteler), son sonucu yeniden
+    yapıştır (`paste_last_requested`) ve saklanan başarısız kaydı yeniden dene
+    (`retry_failed_requested`).
+    """
+
     show_requested = Signal()
     toggle_requested = Signal()
     cancel_requested = Signal()
@@ -74,7 +84,9 @@ class TrayIcon(QSystemTrayIcon):
         self.set_state(DictationState.IDLE)
 
     def set_recent(self, sessions: tuple[Session, ...]) -> None:
-        """Tepsi menüsünde en yeni dikteyi kopyalama ve son N kaydın alt menüsünü günceller."""
+        """Tepsi menüsünde en yeni dikteyi kopyalama ve son N kaydın alt menüsünü günceller.
+
+        `sessions` eskiden yeniye sıralıdır; menüde en yenisi üstte görünür."""
         self._recent_sessions = tuple(reversed(sessions))[:RECENT_MENU_LIMIT]
         self._copy_recent_action.setEnabled(bool(self._recent_sessions))
         self._recent_menu.setEnabled(bool(self._recent_sessions))
@@ -116,6 +128,7 @@ class TrayIcon(QSystemTrayIcon):
         self._refresh_tooltip("Hazır" if ready else "Model yükleniyor…")
 
     def set_state(self, state: DictationState) -> None:
+        """Simge rengini, ipucunu ve eylemlerin etkinliğini duruma göre günceller."""
         self.setIcon(make_tray_icon(_ICON_STATE[state]))
         self._toggle_action.setText(
             "Kaydı Durdur" if state is DictationState.RECORDING else "Kaydı Başlat"

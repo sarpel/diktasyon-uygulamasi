@@ -1,3 +1,5 @@
+"""Anthropic API'si ve Anthropic-uyumlu özel uç noktalar için sağlayıcı."""
+
 from __future__ import annotations
 
 import json

@@ -1,3 +1,5 @@
+"""Yerel Ollama sunucusu için sağlayıcı (varsayılan); istek başına bağlam boyutu tahmini."""
+
 from __future__ import annotations
 
 import logging
@@ -34,6 +36,8 @@ def _default_client_factory(host: str, timeout: float):
 
 
 class OllamaProvider:
+    """Yerel Ollama sunucusu; `num_ctx` istek başına büyütülür, `think` ayardan gelir."""
+
     name = "ollama"
 
     def __init__(self, settings: LlmSettings, client_factory: Callable | None = None):

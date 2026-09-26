@@ -1,3 +1,9 @@
+"""Tek örnek kilidi ve yerel IPC (QLocalServer/QLocalSocket).
+
+İkinci başlatma çalışan örneği öne getirir; `dikte --toggle/--start/--stop` komutları
+çalışan örneğe buradan iletilir. Soket/pipe adı kullanıcıya özgüdür.
+"""
+
 from __future__ import annotations
 
 import getpass
@@ -130,6 +136,12 @@ def _server_socket_exists(name: str, timeout_ms: int = 500) -> bool:
 
 
 class SingleInstance(QObject):
+    """Tek örnek sunucusu; gelen IPC komutlarını sinyallere çevirir ve her birine ACK yollar.
+
+    Sinyaller: `activated` (show), `toggle_requested(mod)`, `start_requested(mod)`,
+    `stop_requested`. Mod her zaman "correct" | "translate" | "prompt"tan biridir.
+    """
+
     activated = Signal()
     toggle_requested = Signal(str)  # mod: "correct" | "translate" | "prompt"
     start_requested = Signal(str)
@@ -145,6 +157,10 @@ class SingleInstance(QObject):
         return self._name
 
     def try_acquire(self) -> bool:
+        """Bu süreç tek örnek olacaksa True (sunucu dinlemeye başlar); False = başka örnek var.
+
+        Çalışan örneğe önce "show" gönderilir (öne gelsin diye). Sunucu canlı ama yanıtsızsa
+        da False döner. Sunucu dinleyemezse hata günlüğe yazılır, yine True döner."""
         if send_command(self._name, SHOW_MESSAGE):
             return False
         if _server_socket_exists(self._name):

@@ -1,3 +1,5 @@
+"""Sekmelerdeki ortak "Varsayılanlara döndür" düğmesi."""
+
 from __future__ import annotations
 
 from collections.abc import Callable

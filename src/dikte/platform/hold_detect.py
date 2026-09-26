@@ -1,3 +1,8 @@
+"""Bas-konuş desteği: kısayolun basılı tutulup tutulmadığını tuş durumunu yoklayarak ayırt eder.
+
+Gerçek tuş durumu yalnızca Windows'ta okunur; diğer platformlarda her basış kısa basış sayılır.
+"""
+
 from __future__ import annotations
 
 import sys
@@ -46,6 +51,9 @@ class HoldDetector(QObject):
         return self._armed
 
     def arm(self, vk: int) -> None:
+        """Kısayol tetiklendiğinde çağrılır: `vk` tuşunu bırakılana kadar yoklamaya başlar.
+
+        Zaten kuruluysa (önceki basış sürüyorsa) çağrı yok sayılır."""
         if self._armed:
             return
         self._vk = vk

@@ -1,3 +1,9 @@
+"""Ayarlar diyaloğunun sekmeleri.
+
+Her sekmenin sözleşmesi: `title`, `validate() -> str | None` (hata mesajı ya da None) ve
+`apply(Settings) -> Settings` (yeni kopya; mutasyon yok).
+"""
+
 from dikte.ui.settings.about_tab import AboutTab
 from dikte.ui.settings.advanced_tab import AdvancedTab
 from dikte.ui.settings.audio_tab import AudioTab

@@ -1,3 +1,8 @@
+"""Ayar şeması (değişmez pydantic modelleri) ve `config.json` okuma/yazma.
+
+Yeni alanlar her zaman varsayılan değerle eklenir; eski config dosyaları doğrulamadan
+geçmeye devam etmelidir."""
+
 from __future__ import annotations
 
 import json
@@ -21,6 +26,8 @@ class SettingsError(RuntimeError):
 
 
 class SttSettings(BaseModel):
+    """Konuşma tanıma (faster-whisper) ayarları; model/compute_type değişimi yeniden yükletir."""
+
     model_config = ConfigDict(frozen=True)
     model: str = "large-v3-turbo"
     device: Literal["cuda"] = "cuda"  # CPU kasıtlı olarak desteklenmez; GPU yoksa hata verilir
@@ -50,6 +57,10 @@ class SttSettings(BaseModel):
 
 
 class LlmSettings(BaseModel):
+    """LLM düzeltmesi ayarları: sağlayıcı seçimi, sağlayıcı başına model/uç nokta ve örnekleme.
+
+    API anahtarlarının kendisi değil, yalnızca okunacakları ortam değişkeninin adı saklanır."""
+
     model_config = ConfigDict(frozen=True)
     # VRAM'i STT ile paylaşmak istemeyen makinelerde düzeltme tamamen kapatılabilir.
     enabled: bool = True
@@ -99,6 +110,8 @@ class LlmSettings(BaseModel):
 
 
 class AudioSettings(BaseModel):
+    """Mikrofon seçimi ve kayıt sınırları; değişiklikler bir sonraki kayıtta geçerli olur."""
+
     model_config = ConfigDict(frozen=True)
     device_index: int | None = None  # eski config'ler için; device_name önceliklidir
     # Mikrofon adı: PortAudio index'leri USB cihaz takılıp çıkınca kayar, ad kaymaz.
@@ -116,18 +129,24 @@ class AudioSettings(BaseModel):
 
 
 class DictionaryEntry(BaseModel):
+    """Kullanıcı sözlüğü girdisi: doğru terim ve STT'nin onun yerine ürettiği yanlış biçimler."""
+
     model_config = ConfigDict(frozen=True)
     term: str  # doğru yazım, ör. "Kubernetes"
     wrong: tuple[str, ...] = ()  # STT'nin ürettiği yanlış biçimler, ör. ("kuber netes",)
 
 
 class DictionarySettings(BaseModel):
+    """Kullanıcı sözlüğü ve LLM düzeltme talimatına eklenen serbest metin."""
+
     model_config = ConfigDict(frozen=True)
     entries: tuple[DictionaryEntry, ...] = ()
     user_instructions: str = ""  # LLM düzeltme talimatına ek serbest metin
 
 
 class AppProfile(BaseModel):
+    """Ön plandaki uygulamaya (exe adı) göre mod, yapıştırma biçimi ve LLM kullanımını belirler."""
+
     model_config = ConfigDict(frozen=True)
     name: str
     match: str  # exe adı alt dizesi, küçük harf (ör. "code", "windowsterminal")
@@ -138,6 +157,8 @@ class AppProfile(BaseModel):
 
 
 class Settings(BaseModel):
+    """Tüm uygulama ayarları (`config.json`'un kökü); değişmezdir, `model_copy` ile güncellenir."""
+
     model_config = ConfigDict(frozen=True)
     hotkey: str = "ctrl+alt+space"
     hotkey_translate: str = ""  # boş = kapalı
@@ -216,8 +237,12 @@ def _backup(p: Path) -> None:
 def load_settings_with_issues(path: Path | None = None) -> tuple[Settings, tuple[str, ...]]:
     """Ayarları yükler; ikinci değer atlanan (geçersiz) alanların yollarıdır.
 
-    Tek bir hatalı değer (ör. elle düzenlenmiş `beam_size=11`) artık tüm ayarları
-    sıfırlamaz: yalnızca o alan varsayılana döner. `("*",)` = dosya hiç okunamadı."""
+    Tek bir hatalı değer (ör. elle düzenlenmiş `beam_size=11`) tüm ayarları sıfırlamaz:
+    yalnızca o alan varsayılana döner. Doğrulama başarısızsa orijinal dosya önce
+    `config.json.bak`'a kopyalanır. Dosya yoksa `()` ile varsayılanlar döner; `("*",)` =
+    dosya okunamadı, geçerli JSON nesnesi değil ya da kurtarılan alanlar da doğrulanamadı
+    (tümü varsayılan). Okuma hatasında (`OSError`) yedek alınmaz. Hiçbir durumda istisna
+    fırlatmaz."""
     p = path or paths.config_path()
     if not p.exists():
         return Settings(), ()
@@ -246,10 +271,14 @@ def load_settings_with_issues(path: Path | None = None) -> tuple[Settings, tuple
 
 
 def load_settings(path: Path | None = None) -> Settings:
+    """`load_settings_with_issues` ile aynı; atlanan alan listesi gerekmeyenler için."""
     return load_settings_with_issues(path)[0]
 
 
 def save_settings(settings: Settings, path: Path | None = None) -> None:
+    """Ayarları atomik olarak yazar (geçici dosya + yeniden adlandırma; POSIX'te 0600).
+
+    Yazılamazsa `SettingsError` fırlatır; mesaj kullanıcıya gösterilmeye uygundur."""
     p = path or paths.config_path()
     tmp = p.with_suffix(".tmp")
     try:

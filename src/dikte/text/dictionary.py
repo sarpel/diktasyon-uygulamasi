@@ -1,3 +1,6 @@
+"""Kullanıcı sözlüğü: yanlış tanınan biçimleri doğru terimle değiştirme ve terimleri Whisper'a
+ipucu (hotwords / başlangıç promptu) olarak verme."""
+
 from __future__ import annotations
 
 import re
@@ -67,14 +70,17 @@ def apply_compiled(text: str, rules: list[CompiledRule]) -> str:
 
 
 def apply_rules(text: str, entries: Sequence[DictionaryEntry]) -> str:
+    """Tek seferlik kullanım: her çağrıda yeniden derler (sık çağrıda `apply_compiled`)."""
     return apply_compiled(text, compile_rules(entries))
 
 
 def hotwords(entries: Sequence[DictionaryEntry]) -> str:
+    """Whisper `hotwords` parametresi için terimlerin virgüllü listesi."""
     return ", ".join(e.term for e in entries)
 
 
 def prompt_terms(entries: Sequence[DictionaryEntry], max_chars: int = 400) -> str:
+    """Whisper başlangıç promptuna eklenen "Terimler: …" satırı; `max_chars`ta kesilir."""
     if not entries:
         return ""
     result = f"Terimler: {', '.join(e.term for e in entries)}"

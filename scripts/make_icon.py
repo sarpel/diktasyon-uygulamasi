@@ -1,4 +1,7 @@
-"""packaging/dikte.ico ve packaging/linux/dikte.png dosyalarını üretir."""
+"""packaging/dikte.ico ve packaging/linux/dikte.png dosyalarını tepsi simgesinden üretir.
+
+Çalıştırma:  .venv/bin/python scripts/make_icon.py   (argüman almaz)
+"""
 
 import sys
 from pathlib import Path

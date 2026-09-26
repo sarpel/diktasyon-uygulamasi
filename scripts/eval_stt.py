@@ -2,7 +2,11 @@
 """Türkçe STT benchmark'ı: WER, beam_size ve bağlam koşullama karşılaştırması.
 
 Ses dosyaları repoya konmaz (bkz. scripts/eval_data/stt/README.md); gerçek çözümleme GPU +
-faster-whisper gerektirir. Çalıştırma:
+faster-whisper gerektirir ve kullanıcı config'i değil varsayılan `SttSettings` kullanılır.
+Her `--beam` × `--cond` bileşimi ayrı ölçülür. Tablo her zaman yazdırılır; dosyaya
+(`--out`, varsayılan docs/stt_benchmark.md) yalnızca `--write` ile yazılır.
+
+Çalıştırma:
   .venv/bin/python scripts/eval_stt.py --manifest scripts/eval_data/stt/manifest.json \
       --beam 1,2,5 --cond true,false --write
 """
@@ -34,12 +38,16 @@ _PUNCT = re.compile(r"[^\w\s]", re.UNICODE)
 
 @dataclass(frozen=True)
 class Case:
+    """Manifest girdisi: ses dosyasının yolu ve doğru (referans) metni."""
+
     file: str
     text: str
 
 
 @dataclass(frozen=True)
 class Config:
+    """Karşılaştırılan tek bir çözümleme ayarı bileşimi."""
+
     beam_size: int
     condition_on_previous_text: bool
 

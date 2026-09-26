@@ -1,3 +1,5 @@
+"""Kayıt göstergesindeki ses seviyesi çubukları."""
+
 from __future__ import annotations
 
 import numpy as np
@@ -11,6 +13,8 @@ TICK_MS = 33
 
 
 class WaveformWidget(QWidget):
+    """`BAR_COUNT` çubuklu seviye göstergesi: yeni tepe anında yükselir, sonra yavaşça söner."""
+
     def __init__(self, parent=None, color: str = "#E53935"):
         super().__init__(parent)
         self._bars: tuple[float, ...] = (0.0,) * BAR_COUNT
@@ -25,6 +29,7 @@ class WaveformWidget(QWidget):
         return self._bars
 
     def push_buckets(self, buckets: tuple[float, ...]) -> None:
+        """0–1 arası seviye dilimlerini `BAR_COUNT` çubuğa yeniden örnekleyip ekler."""
         src = np.asarray(buckets, dtype=np.float32)
         if src.size == 0:
             return

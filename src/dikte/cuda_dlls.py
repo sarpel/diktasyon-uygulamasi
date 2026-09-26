@@ -12,7 +12,7 @@ from pathlib import Path
 
 log = logging.getLogger(__name__)
 _PACKAGES = ("nvidia.cublas", "nvidia.cudnn")
-_registered: list[str] | None = None  # ilk başarılı kayıttan sonra tekrar yapılmaz
+_registered: list[str] | None = None  # ilk tamamlanan kayıttan sonra (boş olsa da) tekrarlanmaz
 _load_library = ctypes.CDLL  # testlerde değiştirilir
 
 
@@ -69,7 +69,10 @@ def _register_windows() -> list[str]:
 
 
 def register_nvidia_dll_dirs() -> list[str]:
-    """Idempotent: motor, sağlık denetimi vb. her çağırdığında PATH büyümesin."""
+    """NVIDIA wheel kütüphanelerini kaydeder; eklenen dizinleri döndürür (yoksa boş liste).
+
+    İdempotent: ilk çağrının sonucu saklanır, böylece motor, sağlık denetimi vb. her
+    çağırdığında PATH büyümez. macOS gibi diğer platformlarda hiçbir şey yapmaz."""
     global _registered
     if _registered is not None:
         return list(_registered)

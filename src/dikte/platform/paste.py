@@ -2,8 +2,8 @@
 
 Windows'ta eski `keybd_event` yerine `SendInput` kullanılır (Unicode giriş de dahil).
 Linux'ta X11 için `xdotool`, Wayland için `wtype` gerekir; ikisi de yoksa yapıştırma/yazma
-sessizce atlanır ve metin panoda kalır. Varsayılan tuş bileşimi Ctrl+V'dir; Ctrl+Shift+V
-(bazı terminallerde/uygulamalarda "yapıştır" için ayrı kısayoldur) de desteklenir.
+atlanır (bir uyarı günlüğe yazılır) ve metin panoda kalır. Tuş bileşimleri: Ctrl+V
+(varsayılan), Ctrl+Shift+V (terminaller) ve "geri al" sesli komutu için Ctrl+Z.
 """
 
 from __future__ import annotations
@@ -224,7 +224,10 @@ def _type_linux(text: str) -> bool:
 def send_paste_keystroke(
     sender: Callable[[], object] | None = None, *, combo: KeyCombo = "ctrl+v"
 ) -> bool:
-    """`combo` tuş bileşimini gönderir. `sender` testler için enjekte edilebilir."""
+    """`combo` tuş bileşimini ön plandaki pencereye gönderir; başarılıysa True döner.
+
+    Hata yükseltmez: araç yoksa ya da gönderim başarısızsa False. `sender` testler için
+    enjekte edilebilir (verilirse çağrılır ve True döner)."""
     if sender is not None:
         sender()
         return True
@@ -236,7 +239,10 @@ def send_paste_keystroke(
 
 
 def type_unicode_text(text: str, sender: Callable[[str], bool] | None = None) -> bool:
-    """Metni panoyu kullanmadan doğrudan Unicode karakter karakter yazar (yapıştırma yedeği)."""
+    """Metni panoyu kullanmadan karakter karakter yazar (profildeki "Tuş tuş yaz" modu).
+
+    Windows'ta SendInput Unicode (satır sonu = Shift+Enter), Linux'ta `xdotool type`
+    ya da `wtype`. Başarılıysa True; hata yükseltmez."""
     if sender is not None:
         return bool(sender(text))
     try:
@@ -252,7 +258,9 @@ def paste_active_window(
     *,
     combo: KeyCombo = "ctrl+v",
 ) -> bool:
-    """Ön plandaki pencere Dikte'nin kendisi değilse yapıştırır; yapıştırdıysa True döner."""
+    """Ön plandaki pencere Dikte'nin kendisi değilse yapıştırır; yapıştırdıysa True döner.
+
+    Pencere kimliği yalnızca Windows'ta bilinir; Linux'ta denetim yapılmadan gönderilir."""
     foreground = foreground_window_id()
     if foreground is not None and foreground in own_win_ids:
         return False

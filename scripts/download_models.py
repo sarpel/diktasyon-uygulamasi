@@ -1,7 +1,10 @@
 """STT modelini ilk çalıştırmadan önce indirir (kurulum sonrası / build öncesi).
 
 Yalnızca dosyaları indirir; modeli GPU'ya yüklemez. Bu yüzden CUDA kitaplıkları henüz
-hazır olmayan (ör. yeni kurulmuş) bir makinede de çalışır. Ayarlardaki model adı kullanılır.
+hazır olmayan (ör. yeni kurulmuş) bir makinede de çalışır. Ayarlardaki (config.json) model
+adı kullanılır; argüman almaz. Başarıda 0, indirme hatasında 1 ile çıkar.
+
+Çalıştırma:  .venv/bin/python scripts/download_models.py
 """
 
 from __future__ import annotations

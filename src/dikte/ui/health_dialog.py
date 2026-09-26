@@ -1,3 +1,6 @@
+"""Durum kontrolü penceresi: CUDA/model/LLM denetim sonuçları ve tek tıkla düzeltmeler
+(Whisper modelini indir, Ollama'yı başlat, eksik Ollama modelini onayla indir)."""
+
 from __future__ import annotations
 
 import logging
@@ -95,6 +98,9 @@ def pull_ollama_model(host: str, model: str, status: PullStatus) -> None:
 def classify_ollama_problem(item: HealthItem) -> str | None:
     """LLM satırının hata metninden Ollama sorununu çıkarır.
 
+    Dönüş: None (sorun yok), "model_missing" (model çekilmemiş) ya da "unreachable"
+    (sunucuya ulaşılamadı ve diğer tüm hatalar).
+
     `check_health` yapısal bir hata kodu döndürmediğinden metne bakılır: Ollama eksik
     modelde "model … not found, try pulling it first (status code: 404)" döndürür.
     """
@@ -107,7 +113,13 @@ def classify_ollama_problem(item: HealthItem) -> str | None:
 
 
 class HealthDialog(QDialog):
-    """İlk çalıştırmada veya STT hatasında gösterilen, modal olmayan durum penceresi.
+    """Denetim sonuçlarını gösteren durum penceresi.
+
+    Uygulama onu açılışta (ilk çalıştırma ya da başarısız bir denetim varsa) ve model
+    yüklenemediğinde modal olmadan açar; Ayarlar → Hakkında → "Durum kontrolü…" da açar.
+    Ollama düğmeleri yalnızca `ollama_model` verildiyse (sağlayıcı Ollama) görünür;
+    `ollama pull` her zaman kullanıcı onayından sonra başlar. Başarılı Whisper indirmesinde
+    `model_downloaded` yayılır.
 
     Kapatılınca kendini siler (WA_DeleteOnClose). Bir indirme sürerken kapatılırsa
     pencere gizlenir, iş arka planda tamamlanır, arayüz güncellemeleri atlanır ve

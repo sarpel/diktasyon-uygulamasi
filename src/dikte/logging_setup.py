@@ -1,3 +1,5 @@
+"""Dönen dosya günlüğü (`dikte.log`) ve yakalanmamış istisnaların günlüğe yazılması."""
+
 import logging
 import logging.handlers
 import sys
@@ -24,6 +26,10 @@ def _log_uncaught_thread(args) -> None:
 
 
 def setup_logging(level: str = "INFO") -> None:
+    """Kök günlükçüye dönen dosya (2 MB × 3) ve varsa stderr işleyicisi ekler.
+
+    İşleyiciler yalnızca kökte hiç yoksa eklenir (tekrar çağrı çoğaltmaz); yakalanmamış
+    istisnalar için `sys.excepthook` ve `threading.excepthook` her çağrıda kurulur."""
     fmt = "%(asctime)s %(levelname)s %(name)s: %(message)s"
     root = logging.getLogger()
     root.setLevel(level)

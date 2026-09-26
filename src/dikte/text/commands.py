@@ -89,6 +89,8 @@ def is_undo_command(text: str) -> bool:
 
 
 def apply_commands(text: str) -> str:
+    """Metindeki sesli komutları uygular: önce silme komutları (söylendikleri sırayla),
+    sonra "yeni satır"/"yeni paragraf" kırılımları; kırılımdan sonraki harf büyütülür."""
     text = _apply_deletions(text)
     text = _apply_break(text, _NEWLINE_RE, "\n")
     text = _apply_break(text, _PARAGRAPH_RE, "\n\n")

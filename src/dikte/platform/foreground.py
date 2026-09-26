@@ -1,3 +1,8 @@
+"""Ön plandaki pencerenin süreç adını bulur (uygulama profili eşleştirmesi için).
+
+Windows'ta user32/kernel32 ile, Linux'ta (yalnızca X11) `xdotool` + `/proc` ile okunur.
+"""
+
 from __future__ import annotations
 
 import contextlib
@@ -85,7 +90,10 @@ def _default_probe() -> str:
 
 
 def foreground_process_name(probe: Callable[[], str] | None = None) -> str:
-    """Ön plandaki pencerenin sürecinin alt adını (küçük harf) döndürür; hata olursa boş dize."""
+    """Ön plandaki pencerenin süreç adını küçük harfle döndürür (Windows'ta ".exe"siz).
+
+    Ad alınamazsa (araç yok, izin yok, desteklenmeyen platform) boş dize döner; hata
+    yükseltilmez."""
     run = probe or _default_probe
     try:
         name = run()

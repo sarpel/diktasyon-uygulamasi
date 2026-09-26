@@ -1,3 +1,5 @@
+"""Ayarlar → Sözlük sekmesi."""
+
 from __future__ import annotations
 
 from PySide6.QtWidgets import (
@@ -16,7 +18,8 @@ TERM_COL, WRONG_COL = 0, 1
 
 
 class DictionaryTab(QWidget):
-    """Özel sözlük: doğru yazımlar ve STT'nin sık yanlış tanıdığı biçimler."""
+    """Özel sözlük: doğru yazımlar, STT'nin sık yanlış tanıdığı biçimler ve LLM düzeltmesine
+    eklenen serbest talimat. Boş terimli satır doğrulamada reddedilir."""
 
     title = "Sözlük"
 

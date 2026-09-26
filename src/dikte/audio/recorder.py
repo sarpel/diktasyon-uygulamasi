@@ -1,3 +1,8 @@
+"""`sounddevice` ile mikrofon kaydı (16 kHz mono float32), cihaz seçimi ve canlı parçalama.
+
+Ses geri çağrısı PortAudio iş parçacığında çalışır; sinyaller kuyruklu bağlantıyla GUI
+iş parçacığına ulaşır."""
+
 from __future__ import annotations
 
 import logging
@@ -49,6 +54,8 @@ def _default_device_query() -> tuple[list, list]:
 
 @dataclass(frozen=True)
 class InputDevice:
+    """Giriş kanalı olan bir ses cihazı: ad, güncel PortAudio index'i ve host API adı."""
+
     name: str
     index: int
     hostapi: str  # ör. "Windows WASAPI", "MME", "ALSA"
@@ -90,6 +97,12 @@ def _match_device(name: str, devices: list[InputDevice]) -> InputDevice | None:
 
 
 class AudioRecorder(QObject):
+    """Mikrofon kaydı: `start()`/`stop()` GUI iş parçacığından çağrılır.
+
+    Ses geri çağrısı PortAudio iş parçacığında çalışır; seviye, parça (`chunk_ready`),
+    süre sınırı, sessizlik ve uyarı sinyalleri oradan yayınlanır ve kuyruklu bağlantıyla
+    GUI'ye ulaşır. Hatalar istisna olarak değil `error` sinyaliyle bildirilir."""
+
     level_changed = Signal(float)
     buckets_changed = Signal(object)
     limit_reached = Signal()
@@ -180,6 +193,10 @@ class AudioRecorder(QObject):
         self._max_chunk_s = max_chunk_s
 
     def start(self) -> None:
+        """Kaydı başlatır (kayıttaysa bir şey yapmaz); o anki ayarlar bu kayıt boyunca sabittir.
+
+        Seçili cihaz açılamazsa varsayılan mikrofon denenir (`warning`); o da açılamazsa
+        `error` yayınlanır ve `is_recording` False kalır."""
         if self._stream is not None:
             return
         self._active_settings = self._settings  # bu oturum boyunca sabit
@@ -222,6 +239,10 @@ class AudioRecorder(QObject):
             self.error.emit(f"Mikrofon açılamadı: {exc}")
 
     def stop(self) -> np.ndarray:
+        """Akışı kapatır ve henüz parça olarak yayınlanmamış sesi döndürür (yoksa boş dizi).
+
+        Parçalama açıksa yalnızca son parçadan sonraki kuyruk döner; önceki parçalar
+        `chunk_ready` ile zaten gönderilmiştir. Kayıt yokken de güvenle çağrılabilir."""
         stream, self._stream = self._stream, None
         self._active_token = None  # bundan sonraki finished_callback bizim durdurmamızdır
         if stream is not None:

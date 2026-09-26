@@ -1,3 +1,5 @@
+"""Ayarlar → Ses sekmesi ve giriş cihazı listesini süzme yardımcıları."""
+
 from __future__ import annotations
 
 import logging
@@ -30,6 +32,8 @@ MISSING_SUFFIX = " (bulunamadı)"
 
 @dataclass(frozen=True)
 class InputDevice:
+    """Bir PortAudio giriş cihazı; ayarlarda index değil ad saklanır (index kayabilir)."""
+
     index: int
     name: str
     hostapi: str = ""  # host API adı, ör. "Windows WASAPI"; bilinmiyorsa boş
@@ -75,7 +79,12 @@ def _default_device_provider() -> tuple[Any, ...]:
 
 
 class AudioTab(QWidget):
-    """Mikrofon seçimi, kayıt süresi sınırı ve canlı seviye testi."""
+    """Mikrofon seçimi, kayıt süresi sınırı, sessizlikte durdurma, ses gelmeyince uyarı ve
+    canlı seviye testi.
+
+    Mikrofon adıyla saklanır; kayıtlı cihaz şu an yoksa listede "(bulunamadı)" ekiyle
+    seçili kalır ve bir uyarı gösterilir. Eski config'teki yalnızca-index kaydı ada çevrilir.
+    """
 
     title = "Ses"
 
@@ -232,7 +241,8 @@ class AudioTab(QWidget):
         )
 
     def stop_test(self) -> None:
-        """Diyalog kapanırken mikrofonun açık kalmaması için çağrılır."""
+        """Mikrofon testini durdurur ve düğmeyi sıfırlar; diyalog kapanırken mikrofon açık
+        kalmasın diye de çağrılır."""
         if self._recorder is not None:
             self._recorder.stop()
             self._recorder = None

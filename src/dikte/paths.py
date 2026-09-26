@@ -1,3 +1,8 @@
+"""Uygulama veri, model önbelleği ve günlük dosyalarının platforma göre konumları.
+
+Windows'ta `%APPDATA%`/`%LOCALAPPDATA%`, diğer platformlarda `~/.config`/`~/.cache` altı
+kullanılır; dizinler yoksa oluşturulur."""
+
 import contextlib
 import os
 import sys
@@ -46,5 +51,7 @@ def log_path() -> Path:
 
 
 def failed_audio_path() -> Path:
-    """Son başarısız diktenin sesi (yeniden denemek için); her başarısızlıkta üzerine yazılır."""
+    """Son saklanan başarısız diktenin sesi (yeniden denemek için; `failed/` dizinini oluşturur).
+
+    Tek dosyadır: her yeni saklamada üzerine yazılır. Sessiz/boş kayıtlar saklanmaz."""
     return _ensure_private_dir(app_data_dir() / "failed") / "last.wav"

@@ -1,3 +1,5 @@
+"""Kayıt başlat/durdur ve hata için bellekte üretilen kısa uyarı sesleri."""
+
 from __future__ import annotations
 
 import logging
@@ -69,6 +71,7 @@ class SoundPlayer:
         self._enabled = enabled
 
     def play(self, kind: SoundKind) -> None:
+        """Kapalıysa bir şey yapmaz; ses cihazı hatası yükseltilmez, yalnızca bir kez loglanır."""
         if not self._enabled:
             return
         try:
@@ -79,6 +82,7 @@ class SoundPlayer:
                 log.warning("ses çalınamadı: %s", exc)
 
     def on_state(self, state: DictationState) -> None:
+        """RECORDING'e girişte "start", TRANSCRIBING'e girişte "stop" tonu çalar."""
         if state is DictationState.RECORDING:
             self.play("start")
         elif state is DictationState.TRANSCRIBING:

@@ -1,3 +1,5 @@
+"""Kodla çizilen simgeler (dosya gerekmez): tepsi simgesi ve kopyala düğmesi."""
+
 from PySide6.QtCore import QRectF, Qt
 from PySide6.QtGui import QColor, QIcon, QPainter, QPen, QPixmap
 from PySide6.QtWidgets import QApplication
@@ -6,6 +8,8 @@ _COLORS = {"idle": QColor("#4A90E2"), "recording": QColor("#E53935"), "busy": QC
 
 
 def make_tray_icon(state: str = "idle", size: int = 64) -> QIcon:
+    """Duruma göre renkli daire + ses çubukları: "idle" mavi, "recording" kırmızı,
+    "busy" turuncu; bilinmeyen durum "idle" sayılır."""
     pm = QPixmap(size, size)
     pm.fill(Qt.GlobalColor.transparent)
     p = QPainter(pm)

@@ -1,3 +1,8 @@
+"""Sistem genelinde çalışan global kısayol (Windows `RegisterHotKey` + Qt yerel olay süzgeci).
+
+Linux'ta global kısayol kaydedilmez; orada `dikte --toggle` masaüstü kısayoluna bağlanır.
+"""
+
 from __future__ import annotations
 
 import ctypes
@@ -33,6 +38,8 @@ class _Filter(QAbstractNativeEventFilter):
 
 
 class NativeHotkeyApi(Protocol):
+    """user32 kısayol çağrılarının enjekte edilebilir arayüzü (testlerde sahte uygulanır)."""
+
     def register(self, hotkey_id: int, modifiers: int, vk: int) -> bool: ...
     def unregister(self, hotkey_id: int) -> None: ...
     def last_error(self) -> int: ...
@@ -52,6 +59,12 @@ class _Win32HotkeyApi:
 
 
 class GlobalHotkey(QObject):
+    """Tek bir global kısayolu kaydeder; kısayola basılınca `activated` sinyalini yayar.
+
+    Her örnek kendi `hotkey_id`'siyle kaydolur, böylece birden çok kısayol (ana, çeviri,
+    prompt, son sonucu yapıştır, Esc) aynı anda etkin olabilir. Yalnızca Windows'ta çalışır.
+    """
+
     activated = Signal()
 
     def __init__(
@@ -68,7 +81,12 @@ class GlobalHotkey(QObject):
         self._spec: HotkeySpec | None = None
 
     def register(self, spec: str, *, allow_bare: bool = False) -> bool:
-        """allow_bare yalnızca uygulamanın ürettiği tek tuşluk kısayollar (Esc) içindir."""
+        """`spec` kısayolunu kaydeder (varsa öncekinin yerine); başarılıysa True döner.
+
+        Ayrıştırma hatasında, Windows dışında ya da QCoreApplication yokken False döner.
+        `RegisterHotKey` başarısız olursa (ör. kısayol başka uygulamada) önceki kısayol
+        geri kaydedilir, kullanıcı kısayolsuz kalmaz. `allow_bare` yalnızca uygulamanın
+        ürettiği tek tuşluk kısayollar (Esc) içindir."""
         try:
             parsed = parse_hotkey(spec, allow_bare=allow_bare)
         except HotkeyParseError as exc:

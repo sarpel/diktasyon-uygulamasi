@@ -1,3 +1,5 @@
+"""Dikte geçmişinin JSONL dosyasında saklanması (sınır, saklama süresi, bozuk satır yedeği)."""
+
 from __future__ import annotations
 
 import json
@@ -59,6 +61,13 @@ class _Parsed:
 
 
 class History:
+    """`history.jsonl` üzerinde dikte geçmişi: en fazla `limit` oturum, eskiden yeniye.
+
+    `retention_days > 0` ise daha eski oturumlar okunurken gizlenir, bir sonraki yazımda
+    (veya `prune`) diskten de düşer. `limit <= 0` geçmişi kapatır. Okuma/yazma/silme
+    hataları kullanıcıya gösterilecek mesajla `HistoryError` olarak fırlatılır. Dosya
+    değişmedikçe ayrıştırma sonucu önbellekten okunur (mtime + boyut)."""
+
     def __init__(
         self,
         path: Path,
@@ -77,6 +86,7 @@ class History:
         return self._path.with_name(self._path.name + ".bak")
 
     def load(self) -> tuple[Session, ...]:
+        """Sınır ve saklama süresi uygulanmış oturumlar; bozuk satırlar atlanır."""
         if self._limit <= 0:
             return ()
         return self._visible(self._read().sessions)
@@ -107,7 +117,8 @@ class History:
     def prune(self) -> int:
         """Sınırı ve saklama süresini diske uygular; kaldırılan oturum sayısını döndürür.
         `limit=0` ise geçmiş dosyası (ve yedeği) tamamen silinir — dikte edilmiş metin,
-        kullanıcı geçmişi kapattıktan sonra diskte kalmamalı. Ayar değişince çağrılır."""
+        kullanıcı geçmişi kapattıktan sonra diskte kalmamalı. Bozuk satır varsa dosya
+        yeniden yazılır (satırlar `.bak`'a taşınır). Açılışta ve ayar değişince çağrılır."""
         if self._limit <= 0:
             removed = len(self._read().sessions) if self._path.exists() else 0
             self._remove(self._path)

@@ -1,3 +1,5 @@
+"""Ön plandaki uygulamanın süreç adına göre uygulama profili seçimi."""
+
 from __future__ import annotations
 
 from collections.abc import Sequence

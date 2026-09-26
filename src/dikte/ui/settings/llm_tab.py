@@ -1,3 +1,5 @@
+"""Ayarlar → Metin Düzeltme (LLM) sekmesi."""
+
 from __future__ import annotations
 
 import logging
@@ -36,7 +38,11 @@ CUSTOM_FORMATS = (("openai", "OpenAI-uyumlu"), ("anthropic", "Anthropic-uyumlu")
 
 
 class LlmTab(QWidget):
-    """LLM sağlayıcısı ve düzeltme ayarları."""
+    """LLM sağlayıcısı ve düzeltme ayarları.
+
+    Yalnızca seçili sağlayıcının grubu görünür; uzak sağlayıcıda gizlilik uyarısı çıkar.
+    API anahtarının yalnızca ortam değişkeni adı girilir, durumu "✓ tanımlı / ✗ yok"
+    olarak gösterilir. "Bağlantıyı test et" kaydedilmemiş alanlarla arka planda dener."""
 
     title = "Metin Düzeltme"
 
@@ -245,7 +251,7 @@ class LlmTab(QWidget):
         }[provider]
 
     def refresh_key_status(self) -> None:
-        """Yalnızca anahtarın tanımlı olup olmadığını gösterir; değeri okunmaz."""
+        """Yalnızca anahtarın tanımlı olup olmadığını gösterir; değer döndürülmez/gösterilmez."""
         for edit, label in self._key_fields:
             label.setText(KEY_PRESENT if key_status(edit.text().strip()) else KEY_MISSING)
 

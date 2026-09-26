@@ -44,6 +44,11 @@ def _schema_unsupported_errors() -> tuple[type[BaseException], ...]:
 
 
 class OpenAiCompatProvider:
+    """OpenAI Chat Completions uyumlu uç nokta (OpenAI, LM Studio, özel sunucu).
+
+    JSON istenirse önce `json_schema` yanıt biçimi denenir; sunucu reddederse şema sistem
+    promptuna eklenip `json_object` ile yeniden istenir."""
+
     def __init__(
         self,
         settings: LlmSettings,

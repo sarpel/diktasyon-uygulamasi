@@ -1,3 +1,5 @@
+"""Ana pencere: ham / düzeltilmiş / çeviri-prompt metin panelleri, araç çubuğu ve geçmiş."""
+
 from __future__ import annotations
 
 from PySide6.QtCore import Qt, QTimer, Signal
@@ -36,12 +38,21 @@ def _dropped_audio_path(mime_data) -> str | None:
 
 
 class ResultWindow(QMainWindow):
+    """Dikte sonucunu gösteren ve düzenlemeye izin veren ana pencere.
+
+    `bind` ile denetleyiciye bağlanır. Kapatma düğmesi pencereyi gizler, uygulamayı kapatmaz.
+    Düzeltilmiş metindeki elle düzenleme 800 ms susunca `text_edited(oturum_id, metin)`
+    yayılır. Diğer sinyaller kullanıcı isteğini uygulamaya iletir: kayıt, iptal, ayarlar,
+    yeniden yapıştırma, sözlüğe ekleme (`dictionary_add_requested(yanlış, terim)`) ve
+    açılan ya da sürüklenen ses dosyası (`file_requested(yol)`).
+    """
+
     record_requested = Signal()
     cancel_requested = Signal()
     settings_requested = Signal()
     text_edited = Signal(str, str)  # session_id, text
     repaste_requested = Signal(str)
-    dictionary_add_requested = Signal(str, str)
+    dictionary_add_requested = Signal(str, str)  # wrong, term
     file_requested = Signal(str)
 
     def __init__(self, parent=None, file_dialog=None):
@@ -192,6 +203,10 @@ class ResultWindow(QMainWindow):
     def bind(
         self, controller, close_after_copy: bool = False, raise_on_result: bool = False
     ) -> None:
+        """Denetleyicinin `session_updated`, `state_changed` ve `error` sinyallerine bağlanır.
+
+        `close_after_copy`: kopyalayınca pencere gizlenir; `raise_on_result`: sonuç gelince
+        pencere öne getirilip düzeltilmiş metne odaklanılır."""
         self._controller = controller
         self.close_after_copy = close_after_copy
         self.raise_on_result = raise_on_result
@@ -336,6 +351,7 @@ class ResultWindow(QMainWindow):
             self.repaste_requested.emit(text)
 
     def show_suggestion(self, wrong: str, term: str) -> None:
+        """Sözlük öneri çubuğunu gösterir; "Sözlüğe ekle" `dictionary_add_requested` yayar."""
         self._pending_suggestion = (wrong, term)
         self.suggest_label.setText(f"'{wrong}' yerine '{term}' mi demek istediniz?")
         self.suggest_bar.setVisible(True)

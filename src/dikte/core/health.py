@@ -1,3 +1,5 @@
+"""Durum kontrolü: GPU, Whisper model önbelleği ve LLM bağlantısı denetimleri."""
+
 from __future__ import annotations
 
 import logging
@@ -14,6 +16,8 @@ log = logging.getLogger(__name__)
 
 @dataclass(frozen=True)
 class HealthItem:
+    """Durum kontrolünün bir satırı: ad, sonuç, ayrıntı ve (sorun varsa) kullanıcıya ipucu."""
+
     name: str
     ok: bool
     detail: str
@@ -73,6 +77,10 @@ def check_health(
     model_probe: Callable[[str], bool],
     llm_probe: Callable[[LlmSettings], str | None],
 ) -> tuple[HealthItem, ...]:
+    """GPU, model ve LLM denetimlerini sırayla çalıştırır; (GPU, model, LLM) döndürür.
+
+    Engelleyicidir (LLM denetimi ağ isteği yapabilir); GUI'den arka planda çağrılmalı.
+    LLM kapalıysa `llm_probe` çağrılmaz ve satır "kapalı" olarak başarılı sayılır."""
     cuda_count = cuda_probe()
     gpu = HealthItem(
         name="GPU",
@@ -122,6 +130,7 @@ def default_model_probe(model: str) -> bool:
 
 
 def default_llm_probe(llm: LlmSettings) -> str | None:
+    """Sağlayıcıyı kurup kısa bir gerçek istek gönderir; başarıda None, aksi hâlde hata metni."""
     from dikte.llm import LlmError, make_provider
 
     try:

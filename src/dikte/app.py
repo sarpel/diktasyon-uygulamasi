@@ -1,3 +1,8 @@
+"""Uygulamanın kurulumu ve bağlantıları: CLI, tek örnek/IPC, tepsi, kısayollar ve sonuç teslimi.
+
+Denetleyici, kayıtçı, STT motoru ve arayüz bileşenleri burada kurulup Qt sinyalleriyle
+birbirine bağlanır; tüm fonksiyonlar GUI iş parçacığında çalışır."""
+
 from __future__ import annotations
 
 import argparse
@@ -65,16 +70,19 @@ from dikte.ui.tray import TrayIcon
 log = logging.getLogger(__name__)
 # Windows dışında global kısayol yoktur; masaüstü ortamı bu komuta bir tuş bağlar.
 CLI_TOGGLE_HINT = "dikte --toggle"
-# check_health'in LLM kontrolü ağ isteği yapar; SDK varsayılan yeniden deneme + zaman
-# aşımıyla en kötü durumda dakikalarca sürebilir. Senkron çağrı GUI iş parçacığını
-# (ve bu iş parçacığında dönen IPC sunucusunu — bkz. single_instance.py) bloke ederdi.
+# Arka plan işlerinin (durum kontrolü, VRAM sorgusu, medya) run_in_pool sinyal nesneleri:
+# iş bitene kadar canlı tutulmalı (bkz. _keep_job).
 _background_jobs: list = []
 # Çıkışta kuyruktaki medya pause() çağrısı için en fazla bekleme (MediaPauser zaman aşımı ~1,5 sn).
-MEDIA_QUIT_WAIT_MS = 2000  # run_in_pool sinyalleri iş bitene kadar canlı tutulmalı
+MEDIA_QUIT_WAIT_MS = 2000
 
 
 @dataclass
 class AppContext:
+    """Çalışan uygulamanın bileşenleri ve GUI iş parçacığında değişen durumu.
+
+    `settings` her kayıtlı ayar değişikliğinde yeni (değişmez) nesneyle değiştirilir."""
+
     settings: Settings
     controller: DictationController
     tray: TrayIcon
@@ -144,6 +152,10 @@ def _safe_hotkey(settings: Settings) -> Settings:
 
 
 def build_app(settings: Settings) -> AppContext:
+    """Bileşenleri kurar ve sinyalleri bağlar; bozuk kısayollar `ctx.settings`te düzeltilir.
+
+    Kısayolları kaydetmez ve modeli yüklemez; bunları `main` yapar. Geçmiş dosyası açılışta
+    sınır/saklama süresine göre budanır."""
     settings = _safe_hotkey(settings)
     recorder = AudioRecorder(settings.audio)
     stt = FasterWhisperEngine(settings.stt)
@@ -589,8 +601,11 @@ def _maybe_show_health_dialog_on_error(ctx: AppContext, message: str) -> None:
 
 
 def _check_health_async(ctx: AppContext, on_done: Callable[[tuple[HealthItem, ...]], None]) -> None:
-    """`check_health`'i arka planda çalıştırır (LLM kontrolü ağ isteği yapar, GUI iş
-    parçacığını bloke etmemeli). `on_done` sonuçla GUI iş parçacığında çağrılır."""
+    """`check_health`'i arka planda çalıştırır; `on_done` sonuçla GUI iş parçacığında çağrılır.
+
+    LLM kontrolü ağ isteği yapar ve en kötü durumda uzun sürebilir; senkron çağrı GUI iş
+    parçacığını (ve orada dönen IPC sunucusunu — bkz. single_instance.py) bloke ederdi.
+    Hata olursa yalnızca günlüğe yazılır, `on_done` çağrılmaz."""
     job = run_in_pool(
         lambda: check_health(
             ctx.settings,
@@ -767,7 +782,9 @@ def _apply_mode_hotkeys(ctx: AppContext) -> None:
 
 
 def _run_command(message: bytes) -> int:
-    """Çalışan örneğe verilen komutu gönderir (Linux'ta bas-konuş simülasyonu için)."""
+    """Çalışan örneğe IPC komutu gönderir (`--toggle`/`--start`/`--stop`).
+
+    Çıkış kodu döner: 0 = iletildi, 1 = çalışan örnek yok (stderr'e mesaj yazılır)."""
     _app = QCoreApplication.instance() or QCoreApplication(sys.argv)
     if not send_command(DEFAULT_NAME, message):
         print(f"{APP_NAME} çalışmıyor; önce uygulamayı başlatın.", file=sys.stderr)
@@ -882,6 +899,11 @@ def _notify_config_issues(ctx: AppContext, issues: tuple[str, ...]) -> None:
 
 
 def main(argv: list[str] | None = None) -> int:
+    """CLI giriş noktası; çıkış kodunu döndürür.
+
+    `--toggle/--start/--stop` GUI açmadan çalışan örneğe komut gönderir. Aksi hâlde tek
+    örnek kilidi alınır (başka örnek varsa ona sinyal gönderilip 0 dönülür), uygulama
+    kurulur, model arka planda yüklenir ve Qt olay döngüsü başlatılır."""
     parser = argparse.ArgumentParser(prog="dikte")
     parser.add_argument("--minimized", action="store_true", help="pencere açmadan tray'de başla")
     parser.add_argument(

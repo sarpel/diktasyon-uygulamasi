@@ -1,3 +1,5 @@
+"""Başlıklı, kopyala düğmeli metin paneli; LLM değişikliklerini vurgular ve ipucunda gösterir."""
+
 from __future__ import annotations
 
 from collections.abc import Sequence
@@ -23,6 +25,10 @@ HIGHLIGHT_COLOR = QColor(255, 235, 59, 90)
 
 
 class TextPane(QWidget):
+    """Düzenlenebilir metin kutusu + kopyala düğmesi; kopyalanınca `copied(metin)` yayar.
+
+    Vurgulanan değişikliğin üzerine gelince "‘eski’ → ‘yeni’ (neden)" ipucu gösterilir."""
+
     copied = Signal(str)
 
     def __init__(self, title: str, parent=None):
@@ -49,11 +55,13 @@ class TextPane(QWidget):
         lay.addWidget(self.editor, 1)
 
     def set_text(self, text: str) -> None:
+        """Metni değiştirir (aynıysa imleç korunur) ve vurguları temizler."""
         if self.editor.toPlainText() != text:
             self.editor.setPlainText(text)
         self.set_highlights(())
 
     def set_highlights(self, changes: Sequence[Change]) -> None:
+        """Konumu geçerli değişiklikleri sarıyla vurgular; öncekilerin yerini alır."""
         self._changes = tuple(c for c in changes if c.start >= 0 and c.end > c.start)
         selections = []
         for c in self._changes:
@@ -89,6 +97,7 @@ class TextPane(QWidget):
         self.editor.setPlaceholderText("Bekleniyor…" if busy else "…")
 
     def copy(self) -> None:
+        """Metni panoya yazar ve `copied` yayar; boşsa hiçbir şey yapmaz."""
         text = self.text()
         if not text:
             return

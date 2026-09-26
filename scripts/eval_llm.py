@@ -2,7 +2,13 @@
 """Türkçe STT düzeltme benchmark'ı: bilerek yerleştirilmiş hatalar ve bağlam testleri.
 
 Puanlama saf fonksiyonlardan oluşur (Ollama gerekmez); testler bunları doğrudan çağırır.
-Çalıştırma:  .venv/bin/python scripts/eval_llm.py --models qwen3.5:4b gemma4:e4b-it-qat
+Ölçüm için Ollama çalışıyor ve modeller önceden çekilmiş olmalı (betik `ollama pull`
+yapmaz). Örnekler scripts/eval_data/tr_corrections.json'dan okunur; sonuç tablosu her
+çalıştırmada `--out` dosyasının (varsayılan docs/llm_benchmark.md) işaretli bölümüne yazılır.
+
+Çalıştırma:
+  .venv/bin/python scripts/eval_llm.py --models qwen3.5:4b gemma4:e4b-it-qat \
+      [--runs N] [--host URL] [--keep-alive 5m] [--out YOL]
 """
 
 from __future__ import annotations
@@ -43,6 +49,8 @@ W_CONTAINS, W_VIOLATIONS, W_OVER_EDIT = 0.6, 0.25, 0.15
 
 @dataclass(frozen=True)
 class Case:
+    """Tek bir benchmark örneği: ham STT metni ve düzeltmeden beklentiler."""
+
     id: str
     category: Category
     raw: str
@@ -54,6 +62,8 @@ class Case:
 
 @dataclass(frozen=True)
 class CaseScore:
+    """Bir örneğin bir turdaki puanı (0–1) ve ayrıntıları."""
+
     case_id: str
     category: str
     passed_contains: int

@@ -1,3 +1,5 @@
+"""`DictationController`: kayıt → STT → LLM düzeltmesi → sonuç akışını yöneten durum makinesi."""
+
 from __future__ import annotations
 
 import logging
@@ -37,6 +39,16 @@ def _default_audio_loader(path: str) -> np.ndarray:
 
 
 class DictationController(QObject):
+    """Dikte durum makinesi: IDLE → RECORDING → TRANSCRIBING → (CORRECTING) → RESULT.
+
+    Tüm kamu yöntemleri GUI iş parçacığından çağrılır; STT/LLM işleri thread havuzunda
+    çalışır ve sonuçları sinyalle geri döner. Her yeni oturum/iptal `_gen` kuşak sayacını
+    artırır: eski kuşağa ait geç sonuçlar yok sayılır. Durum dışı kayıt çağrıları (ör. kayıt
+    yokken `stop_recording`) yok sayılır; dosya/yeniden deneme ise `error` yayınlar. Hatalar
+    `error` ile Türkçe mesaj olarak yayınlanır; başarısız mikrofon kaydının sesi (ayar
+    açıksa) yeniden denemek için saklanır.
+    """
+
     state_changed = Signal(object)
     session_updated = Signal(object)
     error = Signal(str)
@@ -119,6 +131,8 @@ class DictationController(QObject):
         return self._failed_audio_path is not None and self._failed_audio_path.exists()
 
     def update_settings(self, settings: Settings) -> None:
+        """Yeni ayarları uygular; sözlük hemen STT motoruna iletilir. Motor ve LLM
+        sağlayıcısı burada değişmez (bkz. `set_llm`)."""
         self._settings = settings
         self._push_dictionary()
         # Süren kayıtta parçalama değişmez (parçalar yarıda farklı yola girip kaybolmasın);
@@ -145,6 +159,8 @@ class DictationController(QObject):
     # ---- kamu slotları
     @Slot()
     def warm_up(self) -> None:
+        """STT modelini arka planda yükler; bitince `ready_changed(True)`, hata olursa
+        `error("STT modeli yüklenemedi: …")`. Ardından LLM ön ısıtmasını da tetikler."""
         # Isınma iptal kuşağının dışındadır: kullanıcı iptali modeli yüklemeyi bozmamalı.
         self._run(
             self._stt.warm_up,
@@ -167,7 +183,9 @@ class DictationController(QObject):
 
     @Slot()
     def cancel(self) -> None:
-        """Kaydı ya da süren çözümleme/düzeltmeyi iptal eder; boşta ise hiçbir şey yapmaz."""
+        """Kaydı ya da süren çözümleme/düzeltmeyi iptal eder; IDLE/RESULT'ta hiçbir şey yapmaz.
+
+        Kayıttaki ses atılır (saklanmaz), oturum boşaltılır, `cancelled` yayınlanır."""
         if self._state in (DictationState.IDLE, DictationState.RESULT):
             return
         self._gen += 1  # bu kuşaktan önceki işlerin sonuçları yok sayılacak
@@ -182,6 +200,7 @@ class DictationController(QObject):
     @Slot()
     @Slot(str)
     def toggle(self, mode: str = "correct", *, profile: AppProfile | None = None) -> None:
+        """IDLE/RESULT'ta kaydı başlatır, kayıttayken durdurur; çözümleme sürerken yok sayılır."""
         if self._state in (DictationState.IDLE, DictationState.RESULT):
             self.start_recording(mode, profile=profile)
         elif self._state is DictationState.RECORDING:
@@ -192,7 +211,10 @@ class DictationController(QObject):
     @Slot()
     @Slot(str)
     def start_recording(self, mode: str = "correct", *, profile: AppProfile | None = None) -> None:
-        """Bas-konuş: tuş basılı tutulmaya başlayınca çağrılır."""
+        """Kaydı başlatır (bas-konuş basışı, IPC `--start`); yalnızca IDLE/RESULT'ta.
+
+        `profile` verilirse ve `mode` "correct" ise profilin modu kullanılır. Mikrofon
+        açılamazsa `error` yayınlanır ve durum değişmez."""
         if self._state in (DictationState.IDLE, DictationState.RESULT):
             self._start_recording(mode, profile=profile)
         else:
@@ -200,7 +222,7 @@ class DictationController(QObject):
 
     @Slot()
     def stop_recording(self) -> None:
-        """Bas-konuş: tuş bırakılınca çağrılır."""
+        """Kaydı durdurup çözümlemeyi başlatır (bas-konuş bırakma, IPC `--stop`)."""
         if self._state is DictationState.RECORDING:
             self._stop_and_transcribe()
         else:
@@ -208,7 +230,10 @@ class DictationController(QObject):
 
     @Slot(str)
     def transcribe_file(self, path: str) -> None:
-        """Bir ses dosyasını mikrofon kaydı yerine kaynak olarak çözümler."""
+        """Bir ses dosyasını mikrofon kaydı yerine kaynak olarak çözümler.
+
+        Hata olursa ses saklanmaz; sonuç otomatik yapıştırılmaz, yalnızca panoya kopyalanır
+        (bkz. `app._on_result_ready`)."""
         if self._state not in (DictationState.IDLE, DictationState.RESULT):
             self.error.emit("Önce süren işi bitirin.")
             return
@@ -228,7 +253,9 @@ class DictationController(QObject):
     @Slot()
     def retry_last_failed(self) -> bool:
         """Saklanmış başarısız kaydı yeniden çözümler (ardından normal LLM/teslim akışı).
-        Başarılı olursa dosya silinir. Başlatılamazsa `error` yayınlanır ve False döner."""
+        STT boş olmayan metin üretince dosya silinir (`failed_audio_changed(False)`);
+        yeniden deneme de başarısız olursa dosya korunur. Başlatılamazsa `error`
+        yayınlanır ve False döner."""
         if self._state not in (DictationState.IDLE, DictationState.RESULT):
             self.error.emit("Önce süren işi bitirin.")
             return False
@@ -259,6 +286,7 @@ class DictationController(QObject):
 
     @Slot(str)
     def request_translation(self, text: str) -> None:
+        """Sonuç ekranından elle istenen çeviri; sonuç `session_updated` ile gelir."""
         if not self._require_llm():
             return
         self._spawn(
@@ -269,6 +297,7 @@ class DictationController(QObject):
 
     @Slot(str)
     def request_enhanced_prompt(self, text: str) -> None:
+        """Sonuç ekranından elle istenen prompt iyileştirme; sonuç `session_updated` ile gelir."""
         if not self._require_llm():
             return
         self._spawn(

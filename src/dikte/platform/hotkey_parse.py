@@ -1,3 +1,6 @@
+"""Kısayol metni ("ctrl+alt+space") ile Windows sanal tuş kodları ve QKeySequence arasında
+dönüşüm. Qt'ye yalnızca dönüşüm işlevleri içinde dokunulur."""
+
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -50,11 +53,14 @@ _QT_KEY_ALIASES = {"pageup": "PgUp", "pagedown": "PgDown", "printscreen": "Print
 
 
 class HotkeyParseError(ValueError):
-    pass
+    """Kısayol metni geçersiz; mesaj Türkçedir ve kullanıcıya gösterilebilir."""
 
 
 @dataclass(frozen=True)
 class HotkeySpec:
+    """Ayrıştırılmış kısayol: `RegisterHotKey` bayrakları (MOD_NOREPEAT dahil), sanal tuş
+    kodu ve arayüzde gösterilecek etiket (ör. "Ctrl+Alt+Space")."""
+
     modifiers: int
     vk: int
     label: str

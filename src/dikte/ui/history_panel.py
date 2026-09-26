@@ -1,3 +1,5 @@
+"""Sonuç penceresine yerleşen geçmiş paneli (dock) ve aksandan bağımsız arama."""
+
 from __future__ import annotations
 
 import unicodedata
@@ -39,7 +41,13 @@ def normalize(text: str) -> str:
 
 
 class HistoryPanel(QDockWidget):
-    """Geçmiş oturumlarını listeler; arama, yükleme, kopyalama ve silme sağlar."""
+    """Geçmiş oturumlarını en yenisi üstte listeler; arama, yükleme, kopyalama, silme,
+    tümünü temizleme ve dışa aktarma sağlar.
+
+    Kopyalama panoya doğrudan yazar; diğer işlemler sinyal yayar ve kalıcı işi uygulamaya
+    bırakır: `session_selected(Session)`, `delete_requested(id)`, `clear_requested`
+    (onaydan sonra), `export_requested(yol)`.
+    """
 
     session_selected = Signal(object)
     delete_requested = Signal(str)
@@ -89,6 +97,7 @@ class HistoryPanel(QDockWidget):
 
     # ---- kamu
     def set_sessions(self, sessions: tuple[Session, ...]) -> None:
+        """Listeyi yeniden kurar (`sessions` eskiden yeniye sıralı); mevcut arama korunur."""
         self._sessions = tuple(reversed(sessions))  # en yeni üstte
         self.list_widget.clear()
         for s in self._sessions:

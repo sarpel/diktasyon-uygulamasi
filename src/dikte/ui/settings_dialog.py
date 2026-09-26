@@ -1,3 +1,5 @@
+"""Sekmeli ayarlar diyaloğu; sekmeler `dikte.ui.settings` paketindedir."""
+
 from __future__ import annotations
 
 import logging
@@ -135,7 +137,11 @@ def list_input_devices() -> tuple[InputDevice, ...]:
 
 
 class SettingsDialog(QDialog):
-    """Sekmeli ayarlar; her sekme kendi doğrulamasını ve `apply` dönüşümünü yapar."""
+    """Sekmeli ayarlar; her sekme kendi doğrulamasını ve `apply` dönüşümünü yapar.
+
+    Tamam'da sekmeler sırayla doğrulanır; ilk hata alttaki etikette gösterilir ve o sekmeye
+    geçilir. Sekme widget'larına `_PROXIED` tablosu üzerinden doğrudan erişilebilir
+    (ör. `dialog.hotkey_edit`). Diyalog kapanırken mikrofon testi durdurulur."""
 
     def __init__(self, settings: Settings, devices: Iterable[Any] | None = None, parent=None):
         super().__init__(parent)
@@ -210,4 +216,5 @@ class SettingsDialog(QDialog):
         super().reject()
 
     def result_settings(self) -> Settings:
+        """Başlangıç ayarlarına her sekmenin `apply`ını sırayla uygular; yeni kopya döner."""
         return reduce(lambda s, tab: tab.apply(s), self._tabs_in_order, self._settings)

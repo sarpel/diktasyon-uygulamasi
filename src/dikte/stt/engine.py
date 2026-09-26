@@ -1,3 +1,5 @@
+"""faster-whisper STT motoru (yalnızca GPU): model yükleme, VAD ön kontrolü, toplu çözümleme."""
+
 from __future__ import annotations
 
 import logging
@@ -21,10 +23,12 @@ COMPUTE_TYPE_PREFERENCE = ("float16", "int8_float16", "bfloat16", "int8_float32"
 
 
 class SttError(Exception):
-    pass
+    """Model yüklenemedi, GPU yok, ses boş/konuşmasız ya da çözümleme başarısız."""
 
 
 class SttEngine(Protocol):
+    """Denetleyicinin beklediği STT arayüzü; testlerde sahte motorla değiştirilir."""
+
     @property
     def is_loaded(self) -> bool: ...
 
@@ -104,6 +108,12 @@ def _default_cuda_probe() -> int:
 
 
 class FasterWhisperEngine:
+    """faster-whisper ile GPU üzerinde çözümleme; CPU'ya geri dönüş yoktur (ürün kararı).
+
+    Model ilk `load()`/`warm_up()`/`transcribe()` çağrısında tembel yüklenir. Yükleme ve
+    çözümleme bir kilit altında yapılır; worker iş parçacıklarından çağrılabilir. Uzun
+    kayıtlarda (VAD açıksa) `BatchedInferencePipeline` kullanılır."""
+
     def __init__(
         self,
         settings: SttSettings,
@@ -138,7 +148,7 @@ class FasterWhisperEngine:
 
     @property
     def active_model(self) -> str:
-        """Motorun kurulduğu andaki model adı (ayar sonrası restart'a kadar gerçektir)."""
+        """Ayarlardaki model adı; `update_settings` sonrası henüz yüklenmemiş olabilir."""
         return self._settings.model
 
     @property
@@ -176,10 +186,11 @@ class FasterWhisperEngine:
         )
 
     def update_settings(self, settings: SttSettings) -> bool:
-        """Ayarları uygular; model/hassasiyet/cihaz değiştiyse modeli arka planda düşürür.
+        """Ayarları uygular; model/hassasiyet/cihaz değiştiyse yüklü modeli hemen düşürür.
 
-        Dönen bool, arayana modelin yeniden yüklenmesi (bir sonraki `load()`/`warm_up()`
-        çağrısında) gerekip gerekmediğini söyler."""
+        Kilidi aldığı için süren bir yükleme/çözümleme bitene kadar bekler. Dönen bool,
+        arayana modelin yeniden yüklenmesi (bir sonraki `load()`/`warm_up()` çağrısında)
+        gerekip gerekmediğini söyler."""
         needs_reload = (
             settings.model != self._settings.model
             or settings.compute_type != self._settings.compute_type
@@ -195,6 +206,7 @@ class FasterWhisperEngine:
         return needs_reload
 
     def load(self) -> None:
+        """Model yüklü değilse yükler; GPU yoksa veya yükleme başarısızsa `SttError`."""
         with self._lock:
             self._load_locked()
 
@@ -270,7 +282,14 @@ class FasterWhisperEngine:
         previous_text: str = "",
         allow_empty: bool = False,
     ) -> TranscriptResult:
-        """`allow_empty=True`: sessiz/boş ses hata fırlatmak yerine boş metinli bir sonuç
+        """16 kHz mono float32 sesi çözümler (engelleyici; model gerekirse önce yüklenir).
+
+        VAD açıksa önce konuşma aranır; hiç yoksa Whisper çağrılmaz ve `SttError(NO_SPEECH_MESSAGE)`
+        fırlatılır, boş ses için `SttError("Ses kaydı boş")`. `previous_text`in son 200
+        karakteri bağlam olarak `initial_prompt`a eklenir. Halüsinasyon filtresinden sonra
+        metin boş kalabilir (hata değildir).
+
+        `allow_empty=True`: sessiz/boş ses hata fırlatmak yerine boş metinli bir sonuç
         döndürür. Canlı parça-parça çözümlemede kullanılır — tek bir sessiz parça, tüm
         dikte oturumunu iptal eden bir hata olmamalı (yalnızca o parça boş metin katkısı yapar)."""
         if audio.size == 0:

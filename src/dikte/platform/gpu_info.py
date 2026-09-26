@@ -1,3 +1,5 @@
+"""`nvidia-smi` ile GPU belleği (VRAM) kullanımını sorgular ve gösterim için biçimler."""
+
 from __future__ import annotations
 
 import logging
@@ -15,6 +17,8 @@ _CREATE_NO_WINDOW = getattr(subprocess, "CREATE_NO_WINDOW", 0x08000000)
 
 @dataclass(frozen=True)
 class VramInfo:
+    """İlk GPU'nun kullanılan ve toplam belleği (MB)."""
+
     used_mb: int
     total_mb: int
 
@@ -53,6 +57,7 @@ def query_vram(runner: Callable[..., object] | None = None) -> VramInfo | None:
 
 
 def format_vram(info: VramInfo | None) -> str:
+    """Türkçe ondalıkla "1,2 / 8,0 GB"; bilgi yoksa "bilinmiyor"."""
     if info is None:
         return "bilinmiyor"
     used_gb = info.used_mb / 1024

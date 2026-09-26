@@ -34,6 +34,8 @@ Runner = Callable[[list[str], float], Any]
 
 
 class MediaBackend(Protocol):
+    """Platforma özgü medya denetimi; belirteçler arka uca özgüdür (oynatıcı adı/oturum)."""
+
     def pause_playing(self) -> tuple[object, ...]:
         """Çalan oturumları duraklatır; duraklattıklarının belirteçlerini döndürür."""
         ...
@@ -48,6 +50,8 @@ def _default_runner(args: list[str], timeout: float) -> subprocess.CompletedProc
 
 
 class PlayerctlBackend:
+    """Linux: MPRIS oynatıcılarını `playerctl` ile tek tek yoklar; belirteç oynatıcı adıdır."""
+
     def __init__(
         self,
         *,
@@ -102,6 +106,10 @@ class PlayerctlBackend:
 
 
 class WinsdkBackend:
+    """Windows: WinRT medya oturumlarını denetler; belirteç oturum nesnesinin kendisidir.
+
+    Her çağrı kendi `asyncio.run` döngüsünde, `timeout_s` ile sınırlı çalışır."""
+
     def __init__(
         self,
         *,
@@ -197,6 +205,7 @@ class MediaPauser:
         return self._backend
 
     def pause(self) -> None:
+        """Çalanları duraklatıp hatırlar; önceki duraklatma henüz sürdürülmediyse bir şey yapmaz."""
         if self._backend is None or self._paused:
             return
         try:
@@ -206,6 +215,7 @@ class MediaPauser:
             self._paused = ()
 
     def resume(self) -> None:
+        """Yalnızca `pause()`un duraklattıklarını sürdürür ve listeyi sıfırlar."""
         tokens, self._paused = self._paused, ()
         if self._backend is None or not tokens:
             return

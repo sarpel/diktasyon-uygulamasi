@@ -1,3 +1,5 @@
+"""Düzeltme, çeviri ve prompt iyileştirme için sistem promptları ve kullanıcı mesajı biçimleri."""
+
 from collections.abc import Sequence
 
 # Sınırlayıcı: dikte edilen metin model için "veri", sistem promptu ise "talimat".
@@ -111,6 +113,7 @@ def enhance_user(text: str) -> str:
 
 
 def glossary_block(terms: Sequence[str], instructions: str) -> str:
+    """Sözlük terimleri ve kullanıcı talimatından sistem promptuna eklenecek blok (boş olabilir)."""
     parts = []
     if terms:
         parts.append(f"Sözlük (doğru yazımlar): {', '.join(terms)}")

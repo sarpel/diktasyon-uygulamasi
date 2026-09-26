@@ -50,6 +50,8 @@ def _finish_reason_name(response) -> str | None:
 
 
 class GeminiProvider:
+    """Google Gemini; anahtar zorunludur, JSON istenirse yerel şema desteği kullanılır."""
+
     name = "gemini"
 
     def __init__(self, settings: LlmSettings, client_factory: Callable | None = None):

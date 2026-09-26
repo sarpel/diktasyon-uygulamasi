@@ -1,3 +1,5 @@
+"""STT sonuç veri tipleri ve "konuşma algılanmadı" hata mesajı sabiti."""
+
 from dataclasses import dataclass
 
 # VAD ön-kontrolü konuşma bulamadığında motorun yükselttiği hata; denetleyici bunu gerçek bir
@@ -7,6 +9,8 @@ NO_SPEECH_MESSAGE = "Konuşma algılanmadı; mikrofon ve VAD eşiğini kontrol e
 
 @dataclass(frozen=True)
 class Segment:
+    """Whisper'ın ürettiği tek bir metin segmenti (saniye cinsinden başlangıç/bitiş)."""
+
     start: float
     end: float
     text: str
@@ -17,6 +21,8 @@ class Segment:
 
 @dataclass(frozen=True)
 class TranscriptResult:
+    """Bir çözümlemenin sonucu; `text` filtrelenmiş segmentlerin birleşimidir (boş olabilir)."""
+
     text: str
     language: str
     duration_s: float

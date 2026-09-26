@@ -17,6 +17,8 @@ _PUNCT = re.compile(r"[^\w\s]+", re.UNICODE)
 
 @dataclass(frozen=True)
 class Change:
+    """Tek bir kelime düzeyi değişiklik; `start`/`end` düzeltilmiş metindeki aralıktır."""
+
     original: str
     replacement: str
     reason: str
@@ -39,6 +41,8 @@ def _reason(a: list[str], b: list[str]) -> str:
 
 
 def word_changes(original: str, corrected: str) -> tuple[Change, ...]:
+    """İki metin arasındaki kelime farkları; `reason` eklendi/silindi/değiştirildi ya da
+    "noktalama/büyük harf" olur. Silmede aralık boştur (önceki kelimenin sonu)."""
     a_spans = [m.span() for m in _WORD.finditer(original)]
     b_spans = [m.span() for m in _WORD.finditer(corrected)]
     a = [original[s:e] for s, e in a_spans]

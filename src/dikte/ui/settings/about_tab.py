@@ -1,3 +1,5 @@
+"""Ayarlar → Hakkında sekmesi."""
+
 from __future__ import annotations
 
 import logging
@@ -62,7 +64,9 @@ def _default_vram_probe() -> str:
 
 
 class AboutTab(QWidget):
-    """Sürüm bilgileri, GPU durumu ve dosya konumları."""
+    """Sürüm bilgileri, GPU/VRAM durumu, log ve ayar klasörünü açma, durum kontrolü.
+
+    GPU/VRAM ve durum kontrolü arka planda sorgulanır; hiçbir ayarı değiştirmez."""
 
     title = "Hakkında"
 

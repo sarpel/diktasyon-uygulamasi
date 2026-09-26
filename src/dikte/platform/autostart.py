@@ -1,3 +1,9 @@
+"""Oturum açılışında otomatik başlatma kaydı.
+
+Windows'ta HKCU `...\\CurrentVersion\\Run` değeri, Linux'ta
+`~/.config/autostart/dikte.desktop` dosyası yazılır/silinir.
+"""
+
 from __future__ import annotations
 
 import logging
@@ -161,7 +167,8 @@ def launch_command(exe_path: str | None = None, posix: bool | None = None) -> st
 def set_autostart(enabled: bool, exe_path: str | None = None, reg=None) -> None:
     """Otomatik başlatmayı açar/kapatır; başarısızlıkta `AutostartError` yükseltir.
 
-    Çağıran, hatayı kullanıcıya göstermeli ama diğer ayarların kaydını engellememelidir."""
+    Desteklenmeyen platformda hiçbir şey yapmaz. Çağıran, hatayı kullanıcıya göstermeli
+    ama diğer ayarların kaydını engellememelidir."""
     r = _reg(reg)
     if r is None:
         return
@@ -189,5 +196,6 @@ def set_autostart(enabled: bool, exe_path: str | None = None, reg=None) -> None:
 
 
 def is_autostart_enabled(reg=None) -> bool:
+    """Kayıt var ve etkin mi; Linux'ta `Hidden=true` vb. ile kapatılmış girdi False sayılır."""
     r = _reg(reg)
     return bool(r and r.get_value(RUN_KEY, VALUE_NAME))

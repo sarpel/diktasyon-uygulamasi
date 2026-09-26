@@ -1,3 +1,5 @@
+"""İşleri Qt thread havuzunda çalıştırıp sonucu sinyalle çağıran iş parçacığına döndürür."""
+
 from __future__ import annotations
 
 import logging
@@ -36,6 +38,7 @@ def run_in_pool(
     on_finished: Callable[[], None] | None = None,
 ) -> _Signals:
     """fn'i thread havuzunda çalıştırır; sonuç/hata Qt sinyaliyle çağıran thread'e döner.
+    fn'in fırlattığı her `Exception` günlüğe yazılır ve `on_error(str(exc))` olarak gelir.
     Dönen _Signals nesnesi, job bitene kadar referansı canlı tutmak için saklanmalıdır.
     `on_finished`, sonuç ya da hata geri çağrısından SONRA (aynı thread'de) çağrılır; iş
     başlamadan bağlandığı için hızlı biten işlerde de kaçırılmaz."""

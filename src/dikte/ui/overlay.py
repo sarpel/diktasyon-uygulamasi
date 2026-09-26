@@ -1,3 +1,5 @@
+"""Kayıt sırasında ekranda duran çerçevesiz gösterge (HUD): dalga, süre, durum, canlı metin."""
+
 from __future__ import annotations
 
 from PySide6.QtCore import QElapsedTimer, QPoint, QRect, Qt, QTimer, Signal
@@ -16,6 +18,12 @@ EDGE_MARGIN = 80  # alt/üst konumda ekran kenarından uzaklık (piksel)
 
 
 class RecordingOverlay(QWidget):
+    """Odak çalmadan her zaman üstte duran kayıt göstergesi; `on_state` ile duruma uyar.
+
+    Fareyle sürüklenerek taşınabilir; bırakıldığında konum "custom" olur ve `moved(x, y)`
+    yayılır (kaydetmek uygulamanın işidir). "Vazgeç" düğmesi `cancel_requested` yayar.
+    """
+
     cancel_requested = Signal()
     moved = Signal(int, int)  # sürükleme bırakıldığında yeni sol-üst köşe (global)
 
@@ -95,7 +103,9 @@ class RecordingOverlay(QWidget):
 
     # ---- kamu
     def set_position(self, position: str, xy: tuple[int, int] | None) -> None:
-        """ "bottom"/"top": imlecin ekranında alt/üst orta; "custom": kaydedilmiş sol-üst köşe."""
+        """ "bottom"/"top": imlecin ekranında alt/üst orta; "custom": kaydedilmiş sol-üst köşe.
+
+        "custom" konumu hiçbir ekranda değilse (ör. monitör çıkarıldı) alt ortaya düşülür."""
         self._position = position
         self._custom_xy = (int(xy[0]), int(xy[1])) if xy is not None else None
         if self.isVisible():
@@ -136,6 +146,8 @@ class RecordingOverlay(QWidget):
         self.show()
 
     def show_error(self, text: str, ms: int = 2500) -> None:
+        """Hatayı `ms` boyunca gösterip gizler; araya giren durum değişikliği gizlemeyi
+        iptal eder."""
         self._clear_warning()
         self._blink.stop()
         self._clock.stop()
@@ -192,6 +204,8 @@ class RecordingOverlay(QWidget):
         self._wave.push_buckets(tuple(buckets))
 
     def on_state(self, state: DictationState) -> None:
+        """RECORDING'de kayıt görünümü, TRANSCRIBING/CORRECTING'de durum metni; diğerlerinde
+        gizlenir (gösterilen bir hata varsa kendi süresi dolana kadar kalır)."""
         if state is DictationState.RECORDING:
             self._error_token += 1  # bekleyen hata gizleme zamanlayıcısını geçersiz kılar
             self.show_recording()

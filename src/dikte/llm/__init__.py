@@ -1,3 +1,5 @@
+"""LLM sağlayıcıları: ayarlara göre doğru sağlayıcıyı kuran `make_provider` fabrikası."""
+
 from dikte.config import LlmSettings
 from dikte.llm.provider import LlmError, LlmProvider
 
@@ -45,6 +47,10 @@ def _lmstudio_provider(settings: LlmSettings) -> LlmProvider:
 
 
 def make_provider(settings: LlmSettings) -> LlmProvider:
+    """`settings.provider`a göre sağlayıcıyı kurar; SDK'lar yalnızca gerektiğinde içe aktarılır.
+
+    Zorunlu anahtar tanımlı değilse, SDK kurulu değilse ya da zorunlu alan (model, URL)
+    boşsa `LlmError` fırlatır. Ağ isteği yapmaz."""
     provider = settings.provider
     if provider == "ollama":
         from dikte.llm.ollama_provider import OllamaProvider
