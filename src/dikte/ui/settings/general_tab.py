@@ -1,3 +1,5 @@
+"""Ayarlar → Genel sekmesi."""
+
 from __future__ import annotations
 
 from PySide6.QtGui import QKeySequence
@@ -51,7 +53,11 @@ def _set_optional_hotkey(edit: QKeySequenceEdit, spec: str) -> None:
 
 
 class GeneralTab(QWidget):
-    """Kısayol, açılış davranışı ve sonucun nasıl teslim edileceği."""
+    """Kısayollar, açılış davranışı, sonucun nasıl teslim edileceği (pano, yapıştırma,
+    pano geçmişi), gösterge konumu, geçmiş ve medya duraklatma.
+
+    Doğrulama: ana kısayol zorunlu ve geçerli olmalı; isteğe bağlı kısayollar boş
+    (kapalı) olabilir; dolu kısayollar birbirinden farklı olmalı."""
 
     title = "Genel"
 
@@ -106,7 +112,11 @@ class GeneralTab(QWidget):
             "Elle düzeltmelerden tek kelimelik sözlük önerisi çıkar"
         )
         self.voice_commands_check = QCheckBox(
-            'Sesli komutları tanı ("yeni satır", "yeni paragraf", "son cümleyi sil")'
+            'Sesli komutları tanı ("yeni satır", "son cümleyi sil", "geri al"…)'
+        )
+        self.voice_commands_check.setToolTip(
+            '"yeni satır", "yeni paragraf", "son cümleyi sil", "son kelimeyi sil", '
+            '"geri al" (tek başına söylenince önceki yapıştırmayı geri alır).'
         )
 
         self.overlay_position_combo = QComboBox()
