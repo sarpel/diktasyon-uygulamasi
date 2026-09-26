@@ -1,9 +1,10 @@
 # AGENTS.md — Dikte
 
-<!-- LAST-SYNCED: 2026-09-16 -->
+<!-- LAST-SYNCED: 2026-09-26 -->
 
-Kodlama ajanları için çalışma kılavuzu. Kullanıcıya dönük anlatım `README.md`'dedir;
-burada yalnızca komutlar, sınırlar ve sözleşmeler var.
+Kodlama ajanları için çalışma kılavuzu. Kullanıcıya dönük anlatım `README.md`,
+`docs/INSTALL.md` ve `docs/USAGE.md`'dedir; insan katkıcılar için rehber `CONTRIBUTING.md`'dir.
+Burada yalnızca komutlar, sınırlar ve sözleşmeler var.
 
 ## Proje
 
@@ -14,8 +15,8 @@ metin panoya yazılır ve aktif pencereye yapıştırılır.
 ## Teknoloji (pyproject.toml'dan)
 
 Python 3.11–3.12 · PySide6 ≥ 6.7 · faster-whisper ≥ 1.1 · ctranslate2 ≥ 4.5 ·
-sounddevice · numpy · ollama ≥ 0.4 · pydantic ≥ 2.7
-İsteğe bağlı extra'lar: `cuda`, `anthropic`, `openai`, `gemini`, `dev`.
+sounddevice · numpy · ollama ≥ 0.5 · pydantic ≥ 2.7
+İsteğe bağlı extra'lar: `cuda`, `anthropic`, `openai`, `gemini`, `media`, `dev`.
 
 ## Komutlar
 
@@ -26,6 +27,7 @@ uv pip install -e ".[dev]"                          # Windows'ta ".[dev,cuda]"
 .venv/bin/python -m pytest -m gpu                   # CUDA gerektirir
 .venv/bin/ruff check src tests scripts              # CI ile aynı kapsam
 .venv/bin/ruff format --check src tests scripts
+.venv/bin/pyright                                   # tip denetimi (CI'da zorunlu)
 .venv/bin/python -m dikte                           # uygulamayı çalıştır
 .venv/bin/python scripts/download_models.py         # Whisper modelini indirir
 .venv/bin/python scripts/eval_llm.py --models <model…>   # Türkçe LLM benchmark'ı
@@ -74,6 +76,10 @@ settings.provider = "lmstudio"          # frozen model; mutasyon yasak
 - Yeni ayar alanı eklerken **varsayılan değer** ver: eski `config.json` dosyaları
   doğrulamadan geçmeye devam etmeli.
 - Kullanıcıya görünen tüm metinler Türkçe ve tam diakritikli; kod tanımlayıcıları İngilizce.
+  Docstring ve yorumlar Türkçe; her modülün ve public sınıfın docstring'i vardır.
+- Kullanıcıya görünen davranış değişince `docs/USAGE.md` / `docs/INSTALL.md` ve
+  `CHANGELOG.md`'nin "Yayımlanmamış" bölümü aynı değişiklikte güncellenir. Gerçek donanım
+  gerektiren davranışlar `docs/manual_test_checklist.md`'ye eklenir.
 - Hatalar sessizce yutulmaz; kullanıcıya ne yapacağını söyleyen mesaj + `log.exception`.
 
 ## Dikkatli değiştirilecek dosyalar

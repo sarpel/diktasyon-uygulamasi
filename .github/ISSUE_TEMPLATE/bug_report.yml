@@ -1,0 +1,65 @@
+name: Hata bildirimi / Bug report
+description: Beklendiği gibi çalışmayan bir şeyi bildirin.
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Teşekkürler! Göndermeden önce Ayarlar → Hakkında → "Durum kontrolü…" penceresine ve
+        [sorun giderme](https://github.com/sarpel/diktasyon-uygulamasi/blob/main/docs/INSTALL.md#sorun-giderme)
+        bölümüne göz atın. Güvenlik açıklarını burada değil, SECURITY.md'deki yolla bildirin.
+  - type: textarea
+    id: what
+    attributes:
+      label: Ne oldu?
+      description: Ne yaptınız, ne bekliyordunuz, ne oldu?
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Yeniden üretme adımları
+      placeholder: |
+        1. ...
+        2. ...
+  - type: input
+    id: version
+    attributes:
+      label: Dikte sürümü
+      description: "`dikte --version` çıktısı veya Ayarlar → Hakkında."
+    validations:
+      required: true
+  - type: dropdown
+    id: install
+    attributes:
+      label: Kurulum yöntemi
+      options:
+        - Windows kurulum paketi (Dikte-Setup)
+        - Windows, kaynaktan
+        - Linux, install.sh
+        - Linux, kaynaktan
+    validations:
+      required: true
+  - type: input
+    id: os
+    attributes:
+      label: İşletim sistemi
+      placeholder: "ör. Windows 11 24H2, Ubuntu 24.04 (Wayland)"
+  - type: input
+    id: gpu
+    attributes:
+      label: GPU ve sürücü sürümü
+      placeholder: "ör. RTX 3060 Ti, 560.94"
+  - type: input
+    id: llm
+    attributes:
+      label: LLM sağlayıcısı ve modeli
+      placeholder: "ör. Ollama gemma4:e4b-it-qat, kapalı, OpenAI ..."
+  - type: textarea
+    id: log
+    attributes:
+      label: Log
+      description: |
+        `%APPDATA%\Dikte\dikte.log` (Linux: `~/.config/Dikte/dikte.log`) dosyasının ilgili kısmı.
+        Paylaşmadan önce kişisel bilgi içerip içermediğine bakın.
+      render: text

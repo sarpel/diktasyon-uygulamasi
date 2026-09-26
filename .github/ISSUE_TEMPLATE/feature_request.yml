@@ -1,0 +1,26 @@
+name: Özellik isteği / Feature request
+description: Yeni bir özellik veya iyileştirme önerin.
+labels: ["enhancement"]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Hangi sorunu çözüyor?
+      description: Bu özellik olmadan ne zor veya imkânsız?
+    validations:
+      required: true
+  - type: textarea
+    id: solution
+    attributes:
+      label: Önerdiğiniz çözüm
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Düşündüğünüz alternatifler
+  - type: markdown
+    attributes:
+      value: |
+        Not: Bazı kararlar bilinçlidir ve değişmez: CPU'da STT yok (GPU zorunlu), API anahtarları
+        yalnızca ortam değişkeninden okunur. Ayrıntılar: CONTRIBUTING.md → "Değişmeyecek ürün kararları".

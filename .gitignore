@@ -39,6 +39,7 @@ models/
 *.bin
 *.wav
 *.mp3
+scripts/eval_data/stt/audio/
 
 # Editör / işletim sistemi
 .vscode/

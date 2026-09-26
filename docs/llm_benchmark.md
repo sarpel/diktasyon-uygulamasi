@@ -1,12 +1,9 @@
 # Türkçe LLM düzeltme benchmark'ı
 
-<!-- LAST-SYNCED: 2026-09-15 -->
-
-**Durum:** yöntem ve veri seti hazır, **ölçüm henüz yapılmadı.** Bu makinede (WSL) `ollama`
-komutu kurulu değil; 11434 portunu LM Studio kullanıyor, dolayısıyla Ollama başka bir porta
-alınmalı ve adres `--host` ile verilmelidir. Betik şu an yalnızca Ollama üzerinden ölçer
-(`_ollama_factory`); LM Studio ile ölçüm istenirse OpenAI-uyumlu bir fabrika eklenmelidir.
-Ayrıca aday model listesi kullanıcı onayı almadan indirilmeyecektir.
+**Durum:** ölçüldü (sonuçlar en altta). En yüksek puanı alan `gemma4:e4b-it-qat` varsayılan
+model yapıldı. Betik yalnızca Ollama üzerinden ölçer (`_ollama_factory`); LM Studio veya başka
+bir sağlayıcıyla ölçüm için OpenAI-uyumlu bir fabrika eklenmelidir. Aday modeller kullanıcı
+onayı alınmadan indirilmez.
 
 ## Neyi ölçüyor
 

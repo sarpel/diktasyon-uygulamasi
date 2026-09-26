@@ -1,8 +1,8 @@
 # Türkçe STT benchmark'ı
 
-**Durum:** yöntem ve betik hazır, **ölçüm henüz yapılmadı (GPU gerekli).** Bu benchmark
-`faster_whisper` üzerinden gerçek GPU çözümlemesi gerektirir; CUDA'sız bir ortamda (ör. bu
-geliştirme makinesi/WSL) çalıştırılamaz.
+**Durum:** yöntem ve betik hazır, **ölçüm henüz yapılmadı.** Bu benchmark `faster_whisper`
+üzerinden gerçek GPU çözümlemesi gerektirir; CUDA'sız bir ortamda çalıştırılamaz. Ölçüm
+yapıldığında sonuçlar aşağıdaki "Sonuçlar" bölümüne yazılır.
 
 ## Neyi ölçüyor
 
@@ -19,7 +19,7 @@ geliştirme makinesi/WSL) çalıştırılamaz.
   çözümleme demektir.
 - **condition_on_previous_text:** önceki segmentin metnini bir sonraki segmentin bağlamı
   olarak kullanır. Uzun kayıtlarda tutarlılığı artırabilir ama halüsinasyonu da (bkz.
-  README'deki "Halüsinasyon ve sessizlik" bölümü) tetikleyebilir; bu yüzden burada ayrıca
+  [USAGE.md → Halüsinasyon ve sessizlik](USAGE.md#halüsinasyon-ve-sessizlik)) tetikleyebilir; bu yüzden burada ayrıca
   ölçülüyor. **Not:** bu parametre `SttSettings`'e eklenmedi — yalnızca bu benchmark'a
   özgüdür ve `engine._model.transcribe(...)`'a doğrudan geçilir (bkz. betikteki yorum).
 

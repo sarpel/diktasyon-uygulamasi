@@ -1,356 +1,109 @@
 # Dikte
 
-Windows 11 (birincil) ve Linux için Türkçe odaklı, tamamen yerel çalışan
-diktasyon uygulaması.
-Tray'de sürekli açık durur, tek bir global kısayolla kaydı başlatır/durdurur,
-sesi GPU'da metne çevirir, yerel bir LLM ile yanlış tanınan kelimeleri düzeltir
-ve metni isteğe bağlı olarak İngilizce'ye ya da bir AI agent prompt'una dönüştürür.
+[![CI](https://github.com/sarpel/diktasyon-uygulamasi/actions/workflows/ci.yml/badge.svg)](https://github.com/sarpel/diktasyon-uygulamasi/actions/workflows/ci.yml)
+[![Lisans: MIT](https://img.shields.io/badge/lisans-MIT-blue.svg)](LICENSE)
+![Python 3.11–3.12](https://img.shields.io/badge/python-3.11%20%7C%203.12-blue.svg)
+![Platform](https://img.shields.io/badge/platform-Windows%2011%20%7C%20Linux-lightgrey.svg)
 
-- **STT:** faster-whisper `large-v3-turbo`, **yalnızca CUDA** (hedef: RTX 3060 Ti 8 GB).
-  CPU'ya geri dönüş yoktur; GPU bulunamazsa uygulama hata verir.
-  60 saniyeyi aşan kayıtlarda `BatchedInferencePipeline` devreye girer (ayarlardan kapatılabilir).
-  `float16` için Compute Capability ≥ 7.0 (RTX 20xx ve üzeri) gerekir; daha eski kartlarda
-  (ör. GTX 970 = CC 5.2) motor otomatik olarak `float32`'ye düşer ve tray'de uyarı gösterir.
-- **Düzeltme / çeviri / prompt:** varsayılan olarak yereldeki Ollama (`gemma4:e4b-it-qat`,
-  alternatif `qwen3.5:4b`; karşılaştırma: [docs/llm_benchmark.md](docs/llm_benchmark.md));
-  LM Studio, OpenAI, Anthropic, Gemini veya kendi uç noktanız da seçilebilir
-  (bkz. [LLM sağlayıcıları](#llm-sağlayıcıları)).
-  **Tamamen kapatılabilir** (Ayarlar → "LLM ile metin düzeltme"): kapalıyken ham metin
-  doğrudan sonuç olarak gösterilir, Ollama hiç çağrılmaz ve ek VRAM kullanılmaz.
-  Düşük VRAM'de `keep_alive` değerini `0` yaparak modeli her istekten sonra boşaltabilirsiniz.
-- **UI:** PySide6 tray uygulaması + kayıt overlay'i + üç panelli sonuç penceresi
+**Türkçe odaklı, tamamen yerel çalışan masaüstü diktasyon uygulaması.**
+Bir kısayola basın, konuşun, tekrar basın: sesiniz GPU'da metne çevrilir, isteğe bağlı olarak
+yerel bir LLM ile düzeltilir ve çalıştığınız pencereye yapıştırılır. Ses ve metin varsayılan
+olarak bilgisayarınızdan çıkmaz.
 
-## Kurulum (Windows 11)
+*English summary: [README.en.md](README.en.md)*
 
-```powershell
-winget install --id Python.Python.3.11 -e
-winget install --id Ollama.Ollama -e
+## Özellikler
+
+- **Yerel ve hızlı STT:** [faster-whisper](https://github.com/SYSTRAN/faster-whisper)
+  `large-v3-turbo`, NVIDIA GPU üzerinde. Uzun kayıtlarda kayıt sürerken **canlı, parça parça
+  çözümleme**; kayıt bitince bekleme süresi neredeyse sabit.
+- **LLM ile düzeltme (isteğe bağlı):** Yanlış tanınan kelimeler, noktalama ve büyük harfler
+  yerel Ollama (`gemma4:e4b-it-qat`) ile düzeltilir. LM Studio, OpenAI, Anthropic, Gemini veya
+  kendi uç noktanız da seçilebilir. LLM tamamen kapatılabilir.
+- **İngilizce çeviri ve agent prompt'u:** Dikteyi tek tuşla İngilizceye çevirin ya da bir AI
+  kodlama ajanı için yapılandırılmış bir prompt'a dönüştürün.
+- **Doğrudan yapıştırma:** Sonuç panoya yazılır ve aktif pencereye yapıştırılır; eski pano
+  içeriği geri yüklenebilir, Windows pano geçmişine girmez.
+- **Özel sözlük:** Terimleriniz Whisper'a ipucu, LLM'e sözlük ve kural tabanlı düzeltme olarak üç
+  katmanda uygulanır.
+- **Sesli komutlar:** "yeni satır", "yeni paragraf", "son cümleyi sil", "son kelimeyi sil", "geri al".
+- **Uygulama profilleri:** Ön plandaki uygulamaya göre mod, yapıştırma tuşu ve LLM kullanımı.
+- **Halüsinasyon koruması:** Sessiz kayıtta model hiç çağrılmaz; bilinen Whisper uydurmaları elenir.
+- **Kullanım kolaylıkları:** bas-konuş, sessizlikte otomatik durdurma, kayıtta medyayı duraklatma,
+  aranabilir geçmiş, başarısız kaydı yeniden deneme, ses dosyası sürükle-bırak, ilk açılışta
+  durum kontrolü ve tek tıkla model indirme.
+
+## Gereksinimler
+
+- Windows 11 (birincil) veya Linux (X11 / Wayland)
+- **CUDA destekli NVIDIA GPU** ve güncel sürücü (≥ 525). CPU'da çalışmaz.
+  Hedef donanım: RTX 3060 Ti 8 GB (Whisper ≈ 1,6 GB VRAM + yerel LLM ≈ 4 GB)
+- İsteğe bağlı: metin düzeltme için [Ollama](https://ollama.com) veya başka bir LLM sağlayıcısı
+
+## Hızlı kurulum
+
+**Windows:** [Releases](https://github.com/sarpel/diktasyon-uygulamasi/releases) sayfasından
+`Dikte-Setup-<sürüm>.exe`'yi indirip çalıştırın. İlk açılışta "Durum kontrolü" penceresinden
+Whisper modelini indirin (~1,6 GB).
+
+**Linux:**
+
+```bash
+sudo apt install python3.11 python3.11-venv libportaudio2 pipx xdotool
+git clone https://github.com/sarpel/diktasyon-uygulamasi.git && cd diktasyon-uygulamasi
+./packaging/linux/install.sh
+```
+
+Ardından masaüstü ortamınızın kısayol ayarına `dikte --toggle` komutunu bağlayın.
+
+**LLM düzeltmesi için (isteğe bağlı):**
+
+```bash
 ollama pull gemma4:e4b-it-qat
-
-py -3.11 -m venv .venv; .\.venv\Scripts\Activate.ps1
-pip install -U pip uv
-uv pip install -e ".[dev,cuda]"
-python scripts\download_models.py   # Whisper modelini önceden indirir (~1,6 GB)
-python -m dikte
 ```
 
-NVIDIA sürücüsü CUDA 12 uyumlu olmalıdır (≥ 525). Ayrı CUDA Toolkit kurulumu
-gerekmez; cuBLAS/cuDNN pip wheel'leri `dikte.cuda_dlls` tarafından DLL arama
-yoluna eklenir.
+Kaynaktan kurulum, extra'lar, kaldırma ve sorun giderme: **[docs/INSTALL.md](docs/INSTALL.md)**.
 
-## Kurulum (Linux)
+## Hızlı başlangıç
 
-Windows'a özgü olan tek şey global kısayoldur; onun yerine masaüstü ortamınızın
-kısayol ayarına `dikte --toggle` komutunu bağlarsınız (Wayland'da da çalışır).
-
-```bash
-sudo apt install python3.11 python3.11-venv libportaudio2   # Debian/Ubuntu
-sudo apt install xdotool                                    # X11'de otomatik yapıştırma
-# Wayland kullanıyorsanız xdotool yerine: sudo apt install wtype
-curl -fsSL https://ollama.com/install.sh | sh
-ollama pull gemma4:e4b-it-qat
-
-./packaging/linux/install.sh      # pipx ile [cuda] extra'sıyla kurar, .desktop + ikon + başlatıcı yazar, modeli indirir
-```
-
-Kurulum betiği pip'in CUDA kütüphanelerini (`nvidia/*/lib`) `LD_LIBRARY_PATH`'e ekleyen bir
-başlatıcı yazar. Uygulama doğrudan (`python -m dikte`, otomatik başlatma) açılsa bile bu
-kütüphaneler açılışta önceden yüklenir. Model indirilemezse kurulum durmaz; sonda ne
-yapacağınız yazılır.
-
-Elle kurulum yapmak isterseniz:
-
-```bash
-uv venv --python 3.11 .venv && source .venv/bin/activate
-uv pip install -e ".[dev,cuda]"
-python scripts/download_models.py
-python -m dikte
-```
-
-Global kısayol tanımı:
-
-| Ortam | Yol |
+| Eylem | Nasıl |
 |---|---|
-| GNOME | Ayarlar → Klavye → Özel Kısayollar → Komut: `dikte --toggle` |
-| KDE | Sistem Ayarları → Kısayollar → Özel → Komut: `dikte --toggle` |
-| i3/sway | `bindsym $mod+space exec dikte --toggle` |
+| Kaydı başlat / durdur | `Ctrl+Alt+Space` (Windows) · `dikte --toggle` (Linux) |
+| İptal | `Esc` veya overlay'deki "Vazgeç" |
+| Ayarlar | Tray menüsü → "Ayarlar…" veya `Ctrl+,` |
+| Geçmiş | `Ctrl+H`, aramak için `Ctrl+F` |
 
-`dikte --toggle` çalışan örneğe yerel soket üzerinden komut yollar; uygulama
-açık değilse hata verip 1 döner. Otomatik başlatma ayarı Linux'ta
-`~/.config/autostart/dikte.desktop` dosyasını yazar.
+Tüm kısayollar, ayarlar, sağlayıcılar, profiller ve komut satırı: **[docs/USAGE.md](docs/USAGE.md)**.
 
-Kullanıcı verileri: `~/.config/Dikte/`, model önbelleği: `~/.cache/Dikte/models/`.
+## Gizlilik
 
-### İlk açılışta durum kontrolü
+- STT her zaman yerel GPU'da çalışır. Varsayılan LLM (Ollama) da yereldir.
+- Uzak bir LLM sağlayıcısı seçerseniz yalnızca dikte metni o servise gönderilir; ses gönderilmez.
+- API anahtarları yalnızca ortam değişkenlerinden okunur; diske yazılmaz, loglanmaz.
+- Telemetri yoktur. Ağ erişimi yalnızca model indirme ve seçtiğiniz LLM sağlayıcısı içindir.
 
-Config dosyası henüz yoksa (ilk çalıştırma) veya GPU/Whisper modeli/LLM bağlantısından
-biri sorunluysa, uygulama açılışta **modal olmayan** bir "Durum kontrolü" penceresi
-gösterir: her öğe için ✓/✗ ve bir ipucu satırı, Whisper modeli önbellekte değilse
-ilerleme çubuklu bir "Modeli indir" düğmesi. Aynı pencereyi istediğiniz zaman
-Ayarlar → Hakkında → **"Durum kontrolü…"** ile de açabilirsiniz. STT modeli sonradan
-(ör. dosya bozulması) yüklenemezse pencere otomatik olarak yeniden açılır.
+Veri konumları ve saklama ayarları: [docs/USAGE.md → Veri ve gizlilik](docs/USAGE.md#veri-ve-gizlilik).
 
-## Kullanım
+## Belgeler
 
-| Eylem | Kısayol / yer |
+| Belge | İçerik |
 |---|---|
-| Kaydı başlat / durdur | Windows: `Ctrl+Alt+Space` (ayarlardan değiştirilebilir) · Linux: `dikte --toggle`'a bağladığınız tuş |
-| Bas-konuş (Windows) | Kısayolu basılı tutun, bırakınca çözümlenir; kısa basış aç/kapat olarak çalışır (Ayarlar → Genel → "Bas-konuş"). Linux'ta: `dikte --start` / `dikte --stop` komutlarını tuşa basınca/bırakınca bağlayın |
-| Düzeltilmiş metni kopyala | Pane'in sağ üstündeki kopyala ikonu veya `Ctrl+Shift+C` |
-| İngilizce çeviri | Alt araç çubuğu → "İngilizce'ye Çevir" · veya Ayarlar → Genel'de ayrı bir kısayol tanımlayıp doğrudan çeviri sonucunu yapıştırın (Linux: `dikte --toggle --mode translate`) |
-| Agent prompt'u | Alt araç çubuğu → "Agent Prompt'a Dönüştür" · veya Ayarlar → Genel'de ayrı bir kısayol tanımlayıp doğrudan prompt sonucunu yapıştırın (Linux: `dikte --toggle --mode prompt`) |
-| Kaydı/çözümlemeyi iptal et | `Esc` (Windows'ta global) · overlay ya da araç çubuğunda "Vazgeç" · tray menüsü |
-| Ayarları aç | Araç çubuğu → "Ayarlar…" veya `Ctrl+,` |
-| Geçmiş panelini aç/kapat | Araç çubuğu → "Geçmiş" veya `Ctrl+H` |
-| Geçmişte ara | `Ctrl+F` (paneli açar ve arama kutusuna odaklanır) |
-| Geçmişi dışa aktar | Geçmiş paneli → "Dışa aktar…" (`.md` → Markdown, `.txt` → düz metin) |
-| Son diktenin metnini kopyala | Tray menüsü → "Son metni kopyala" veya "Son dikteler" alt menüsünden birini seç |
-| Son sonucu yeniden yapıştır | Tray menüsü → "Son sonucu yapıştır" · veya Ayarlar → Genel'de ayrı bir kısayol (yalnızca Windows) |
-| Başarısız kaydı yeniden dene | Tray menüsü → "Başarısız kaydı yeniden dene" (çözümleme hata verdiyse veya boş döndüyse ses `failed/last.wav` olarak saklanır) |
-| Pencereyi gizle | `X` (uygulama tray'de kalır) |
-| Çıkış | Tray menüsü → "Çıkış" |
+| [docs/INSTALL.md](docs/INSTALL.md) | Kurulum, güncelleme, kaldırma, sorun giderme |
+| [docs/USAGE.md](docs/USAGE.md) | Kullanım kılavuzu ve tüm ayarlar |
+| [CONTRIBUTING.md](CONTRIBUTING.md) | Geliştirme ortamı, mimari, test ve katkı kuralları |
+| [CHANGELOG.md](CHANGELOG.md) | Sürüm notları |
+| [docs/llm_benchmark.md](docs/llm_benchmark.md) | Türkçe LLM düzeltme benchmark'ı (varsayılan modelin seçimi) |
+| [docs/stt_benchmark.md](docs/stt_benchmark.md) | Türkçe STT (WER) benchmark yöntemi |
+| [docs/manual_test_checklist.md](docs/manual_test_checklist.md) | Gerçek cihazda manuel test listesi |
+| [SECURITY.md](SECURITY.md) | Güvenlik açığı bildirme |
+| [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) | Üçüncü taraf bileşenlerin lisansları |
 
-Başlat/durdur/hata sesleri Ayarlar → Genel'den kapatılabilir. Aynı yerden kayıt sırasında
-çalan medyanın (YouTube, Spotify…) duraklatılması açılabilir: yalnızca o an çalan oynatıcılar
-duraklatılır ve kayıt bitince sürdürülür (Linux'ta `playerctl`, Windows'ta `.[media]` extra'sı).
+## Katkı
 
-Kayıt başladıktan sonra birkaç saniye mikrofondan hiç ses gelmezse overlay'de uyarı çıkar;
-kayıtlı mikrofon takılı değilse varsayılan mikrofon kullanılır ve bu bildirilir. Overlay'i
-sürükleyip istediğiniz yere taşıyabilirsiniz; konum hatırlanır (Ayarlar → Genel → "Overlay konumu").
+Hata bildirimi, öneri ve pull request'ler memnuniyetle karşılanır. Başlamadan önce
+[CONTRIBUTING.md](CONTRIBUTING.md) ve [davranış kurallarına](CODE_OF_CONDUCT.md) göz atın.
 
-### Sonuç nasıl teslim edilir
+## Lisans
 
-Kayıt bitip metin hazır olduğunda üç şey birden olur:
-
-1. Düzeltilmiş metin **panoya** yazılır (Ayarlar → "Sonucu panoya kopyala").
-2. Ön plandaki uygulama Dikte değilse metin oraya **Ctrl+V** ile yapıştırılır
-   (Ayarlar → "Sonucu aktif pencereye yapıştır"). Windows'ta yerleşik; Linux'ta
-   `xdotool` (X11) veya `wtype` (Wayland) kurulu olmalıdır, yoksa metin yalnızca panoda kalır.
-   Ayarlar → "Yapıştırdıktan sonra eski pano içeriğini geri yükle" ile yapıştırma sonrası
-   pano önceki içeriğine döndürülebilir. Bu arada yeni bir şey kopyaladıysanız geri yükleme
-   yapılmaz. Windows'ta dikte metni varsayılan olarak pano geçmişine ve bulut panosuna girmez.
-3. Oturum **geçmişe** yazılır.
-
-Düzeltilmiş metni elle düzenleyip Ctrl+Enter ile yeniden yapıştırabilirsiniz; düzeltmeniz
-geçmişe yazılır ve sözlüğe eklemeniz önerilir.
-
-Sonuç penceresi varsayılan olarak öne gelmez; odağınız çalıştığınız uygulamada kalır.
-İsterseniz Ayarlar → "Sonuçta pencereyi öne getir" ile açabilirsiniz.
-
-Kayıt süresi varsayılan olarak **sınırsızdır** (Ayarlar → "Kayıt süresi sınırı" = 0). Bellek
-kullanımı 16 kHz float32 ham ses için yaklaşık **230 MB/saat**'tir. Bir sınır girilirse süre
-dolunca kayıt sessizce kesilmez; otomatik durur ve o ana kadarki ses çözümlenir.
-
-### Canlı çözümleme
-
-Uzun diktelerde tüm kaydı sonda tek seferde çözümlemek yerine, kayıt sürerken konuşma +
-sessizlik biriktikçe **parça parça** çözümlenir (Ayarlar → Konuşma Tanıma → "Canlı çözümleme
-parça süresi", varsayılan 20 sn, `0` = kapalı). Her parça, önceki parçaların metniyle birlikte
-(bağlam olarak) çözümlenir ve overlay'de dalganın altında **canlı transkript** olarak görünür.
-Bu sayede:
-
-- Uzun bir dikte bittiğinde beklenen süre neredeyse **sabit kalır** (yalnızca son küçük parça
-  çözümlenmeyi bekler), tüm kaydın çözümlenmesini beklemek yerine.
-- Bir parça çok uzun sessizsiz konuşursa **45 saniyede** (sabit üst sınır, `live_max_chunk_s`)
-  sessizlikten bağımsız olarak yine de bölünür.
-
-Kısa diktelerde (parça süresinden kısa kayıtlarda) davranış değişmez: tüm kayıt kayıt bitince
-tek seferde çözümlenir.
-
-### Halüsinasyon ve sessizlik
-
-Whisper, sessiz veya çok gürültülü parçalarda eğitim verisindeki altyazı kalıplarını tekrar
-edebilir ("Altyazı M.K.", "İzlediğiniz için teşekkürler"). Dikte bunu üç katmanda engeller:
-
-1. **Ön kontrol:** Kayıtta hiç konuşma yoksa (Silero VAD) model **hiç çağrılmaz**;
-   "Konuşma algılanmadı" uyarısı verilir.
-2. **Eşikler:** Çözümlemeye `no_speech_threshold`, `log_prob_threshold` ve
-   `hallucination_silence_threshold` geçilir; düşük güvenli segmentler elenir.
-3. **Kara liste:** Bilinen uydurma kalıpları yalnızca tek başına bir segmenti kapladığında atılır;
-   gerçek bir cümlenin içinde geçtiğinde korunur.
-
-Eşik önerileri (Ayarlar → Konuşma Tanıma → "Sessizlik ve halüsinasyon"):
-
-| Ortam | VAD eşiği |
-|---|---|
-| Gürültülü (açık ofis, fan) | 0,60 |
-| Normal | 0,50 (varsayılan) |
-| Kısık / yumuşak ses | 0,35 |
-
-VAD kapatılırsa toplu çözümleme de devre dışı kalır (boru hattı konuşma aralıklarını VAD'den alır).
-
-### LLM sağlayıcıları
-
-Metin düzeltme varsayılan olarak yereldeki Ollama ile yapılır. Yerel bir alternatif (LM Studio)
-veya uzak bir sağlayıcı da seçebilirsiniz:
-
-| Sağlayıcı | Ortam değişkeni (varsayılan ad) | Kurulum | Base URL |
-|---|---|---|---|
-| Ollama (yerel) | — | çekirdek | `http://127.0.0.1:11434` |
-| LM Studio (yerel) | gerekmez (boş bırakın) | `uv pip install -e ".[openai]"` | `http://127.0.0.1:1234/v1` |
-| OpenAI | `OPENAI_API_KEY` | `uv pip install -e ".[openai]"` | `https://api.openai.com/v1` |
-| Anthropic | `ANTHROPIC_API_KEY` | `uv pip install -e ".[anthropic]"` | — |
-| Gemini | `GEMINI_API_KEY` | `uv pip install -e ".[gemini]"` | — |
-| Custom (OpenAI-uyumlu) | kendi belirlediğiniz ad (boş bırakılabilir) | `.[openai]` | ör. `http://localhost:1234/v1` |
-| Custom (Anthropic-uyumlu) | kendi belirlediğiniz ad (boş bırakılabilir) | `.[anthropic]` | proxy adresiniz |
-
-Tablodaki adresler ilgili uygulamaların **varsayılan portlarıdır**: Ollama 11434, LM Studio 1234.
-İki uygulamayı aynı makinede çalıştırıyorsanız veya portu başka bir şey kullanıyorsa, sunucuyu
-taşıyıp adresi Ayarlar → Metin Düzeltme altındaki "Sunucu adresi" / "Temel URL" kutusundan değiştirin.
-LM Studio'da sunucuyu açmak için: Developer sekmesi → **Start Server**; "Model" kutusuna
-LM Studio'nun listelediği model kimliğini yazın.
-
-**Gizlilik:** Uzak sağlayıcı seçtiğinizde dikte edilen metin ilgili servise gönderilir.
-API anahtarları **yalnızca ortam değişkeninden** okunur; `config.json`'a yazılmaz, loglanmaz ve
-arayüzde gösterilmez — ayarlarda yalnızca "✓ tanımlı / ✗ yok" bilgisi görünür.
-
-Özel uç noktanın hangi protokolü konuştuğunu Ayarlar → Metin Düzeltme → "Biçim" ile seçersiniz
-(OpenAI-uyumlu ya da Anthropic-uyumlu). OpenAI-uyumlu sunucu `json_schema` desteklemiyorsa
-otomatik olarak `json_object` moduna düşülür.
-
-Yanıt çıktı sınırına takılıp yarıda kesilirse yarım metin yapıştırılmaz; hata gösterilir.
-"Düzeltme sağlamlık kontrolü" açıkken (varsayılan) düzeltilmiş metnin kelime sayısı ham
-metinden çok farklıysa (model düzeltmek yerine cevap verdi/özetledi) ham metne dönülür.
-
-### Ayarlar
-
-Ayarlar penceresi (tepsi menüsü veya araç çubuğu → "Ayarlar…") sekiz sekmeden oluşur:
-
-| Sekme | İçerik |
-|---|---|
-| Genel | Kısayol (tuşa basarak yakalanır) + isteğe bağlı ayrı çeviri/agent-prompt/son sonucu yapıştır kısayolları, bas-konuş (yalnızca Windows), geçmiş kayıt sayısı ve saklama süresi, açılışta başlat, panoya kopyala / yapıştır / pencereyi öne getir, pano geçmişinden hariç tut, kayıtta medyayı duraklat, başarısız kaydı sakla, overlay konumu, elle düzeltmelerden sözlük önerisi çıkarma |
-| Ses | Mikrofon (adıyla saklanır; Windows'ta WASAPI cihazları), kayıt süresi sınırı (0 = sınırsız), sessizlikte otomatik durdurma (0 = kapalı), sessiz mikrofon uyarısı, canlı seviye testi |
-| Konuşma Tanıma | Whisper modeli, hassasiyet (compute_type), dil, toplu çözümleme, açılışta ısıtma, canlı çözümleme parça süresi, "Sessizlik ve halüsinasyon" (VAD eşiği, en kısa sessizlik, konuşma yok eşiği, kara liste) |
-| Metin Düzeltme | LLM aç/kapa, sağlayıcı ve sağlayıcıya özel alanlar, bellekte tutma, düzeltme sağlamlık kontrolü |
-| Sözlük | Özel terimler (doğru yazım + yanlış tanınan biçimler), LLM düzeltmesine ek serbest talimat |
-| Gelişmiş | beam_size, başlangıç promptu, num_ctx, top_p, top_k, zaman aşımı, düşünme modu |
-| Profiller | Ön plandaki uygulamaya göre mod/yapıştırma/LLM/sonek profilleri (bkz. [Uygulama profilleri](#uygulama-profilleri)) |
-| Hakkında | Sürümler, GPU ve desteklenen hassasiyetler, VRAM kullanımı (`nvidia-smi` üzerinden), log / ayar klasörünü aç |
-
-Model/hassasiyet değişince model arka planda yeniden yüklenir (süren bir iş varsa iş bitince);
-mikrofon değişikliği sonraki kayıtta geçerlidir. İpucu alanın üstüne gelince görünür. Konuşma
-Tanıma, Metin Düzeltme ve Gelişmiş sekmelerinde "Varsayılanlara döndür" düğmesi vardır.
-`config.json` içindeki kısayol bozuksa uygulama çökmez, varsayılana döner ve bunu bildirir.
-Başka bir alan geçersizse yalnızca o alan varsayılana döner; diğer ayarlarınız korunur, eski
-dosya `config.json.bak` olarak yedeklenir ve hangi alanların atlandığı bildirilir.
-
-#### Özel sözlük
-
-Ayarlar → Sözlük'te eklenen her terim üç katmanda devreye girer:
-
-1. **Whisper hotwords + başlangıç promptu:** Terimler `hotwords` parametresi ve
-   `initial_prompt` sonuna eklenerek modelin doğru yazımı tanıma olasılığını artırır.
-2. **LLM sözlüğü:** Terimler ve "Ek talimat" alanı, metin düzeltme sistemine eklenen bir
-   "Sözlük (doğru yazımlar): …" bloğu olarak LLM'e gönderilir.
-3. **Kural tabanlı düzeltme:** Her terimin "yanlış tanınan biçimler" listesindeki her
-   varyant, ham metinde tam kelime eşleşmesiyle (büyük/küçük harf duyarsız) doğru yazımla
-   değiştirilir — LLM kapalıyken bile çalışır.
-
-Kullanıcı verileri: `%APPDATA%\Dikte\` (config.json, history.jsonl, dikte.log).
-Model önbelleği: `%LOCALAPPDATA%\Dikte\models\`.
-
-#### Sesli komutlar
-
-Ham metin, sözlük kurallarından sonra sesli komutlar için taranır (Ayarlar → Genel →
-"Sesli komutları tanı" ile kapatılabilir; büyük/küçük harf duyarsız, komut etrafındaki
-virgül/nokta temizlenir):
-
-- **"yeni satır"** → satır sonu ekler, sonrasındaki ilk harfi büyütür.
-- **"yeni paragraf"** → boş satırla ayrılan yeni bir paragraf başlatır.
-- **"son cümleyi sil"** → komutu ve ondan önceki cümleyi (önceki nokta/ünlem/soru işaretine
-  ya da metin başına kadar) siler. "14.30" veya "3. madde" gibi rakamlı noktalar cümle sonu
-  sayılmaz.
-- **"son kelimeyi sil"** → komutu ve ondan önceki kelimeyi siler.
-- **"geri al"** → dikte yalnızca bu iki kelimeden oluşuyorsa metin yapıştırılmaz; ön plandaki
-  uygulamaya `Ctrl+Z` gönderilir (ör. az önce yapıştırılan metni geri almak için).
-
-Örnek: "bugün hava güzel son cümleyi sil yarın yağmur var" → "Yarın yağmur var".
-Noktalama komutları ("noktalı virgül" gibi) bilinçli olarak desteklenmez — Türkçede bu
-ifadeler gerçek kelime olarak da geçer, yanlışlıkla komut sanılabilir.
-
-#### Ses dosyası çözümleme
-
-Mikrofonla kayıt dışında, hazır bir ses dosyasını da çözümletebilirsiniz:
-
-- Araç çubuğu → **"Dosya aç…"** ile dosya seçin, veya
-- Bir ses dosyasını doğrudan sonuç penceresinin üzerine **sürükleyip bırakın**
-  (`.wav`, `.mp3`, `.m4a`, `.ogg`, `.flac`, `.webm`, `.mp4`, `.opus`).
-
-Süren bir kayıt/çözümleme varsa yeni bir dosya kabul edilmez. Sonuç, ham metin
-çözümleme adımlarının (sözlük kuralları, sesli komutlar, LLM düzeltmesi) hepsinden
-mikrofon kaydındaki gibi geçer; tek fark **panoya kopyalanır ama otomatik yapıştırılmaz**
-(dosyadan gelen sonucun yapıştırılacağı doğal bir hedef pencere yoktur).
-
-#### Uygulama profilleri
-
-Ayarlar → Profiller'de, kısayola bastığınız anda **ön plandaki uygulamanın sürecine göre**
-mod, yapıştırma tuşu, LLM düzeltmesi ve sonuca eklenecek sonek değiştirilebilir. Her profil şu
-alanlardan oluşur:
-
-| Alan | Anlamı |
-|---|---|
-| Ad | Yalnızca listede tanımak için (isteğe bağlı içerik zorunluluğu yok, boş bırakılamaz) |
-| Eşleşme | Süreç adı (`.exe` olmadan) veya içinde aranan alt dize, ör. `code`, `windowsterminal` |
-| Mod | Düzelt / Çevir / Prompt — yalnızca kısayol "düzelt" modundaysa (varsayılan kısayol) devreye girer; ayrı çeviri/prompt kısayolları profille geçersiz kılınmaz |
-| Yapıştırma | `ctrl+v`, `ctrl+shift+v` (bazı terminallerde yapıştır için ayrı kısayoldur) veya `type` (panoyu kullanmadan karakter karakter yazar) |
-| LLM | Kapatılırsa bu uygulamada metin düzeltmeden geçmez, ham metin doğrudan teslim edilir |
-| Sonek | Sonuca eklenecek `(yok)` / `boşluk` / `yeni satır` |
-
-Birden fazla profil eşleşirse önce süreç adıyla **tam eşleşen**, yoksa **en uzun alt dizeyle**
-eşleşen kazanır (`code` profili `vscode`'u da yakalar ama `vscode` profili varsa o seçilir);
-eşitlikte listede önce gelen kazanır. Eşleşme boş bırakılan bir profil
-hiçbir zaman eşleşmez.
-
-Örnekler:
-
-- **Windows Terminal:** Eşleşme=`windowsterminal`, Yapıştırma=`ctrl+shift+v` — çoğu terminal
-  emülatöründe `Ctrl+V` başka bir işleve (ya da hiçbir şeye) bağlıdır.
-- **Bir not uygulamasında LLM'siz hızlı not:** Eşleşme=`notepad`, LLM=kapalı — ham metin
-  hızlıca yapıştırılır, düzeltme için LLM çağrısı beklenmez.
-
-Ön plan sürecinin adı Windows'ta `GetForegroundWindow`/`QueryFullProcessImageNameW` ile,
-Linux'ta `xdotool` (X11) ile okunur (15 karakterde kesilen süreç adları tam adla eşleştirilir;
-`dikte --toggle` ile başlatılan diktelerde de profil uygulanır); araç kurulu değilse veya sorgu başarısız olursa profil
-eşleştirme sessizce atlanır (genel ayarlar geçerli olur). Hiç profil tanımlı değilse ön plan
-sürecine hiç bakılmaz.
-
-## Geliştirme
-
-```bash
-uv venv --python 3.11 .venv
-uv pip install -e ".[dev]"      # Windows'ta: ".[dev,cuda]"
-.venv/bin/python -m pytest -q --cov=src --cov-report=term-missing   # GPU/Windows testleri atlanır
-.venv/bin/python -m pytest -m gpu               # CUDA gerektirir
-.venv/bin/ruff check src tests scripts          # CI ile aynı kapsam
-.venv/bin/ruff format --check src tests scripts
-```
-
-Başsız (headless) ortamda Qt testleri için `QT_QPA_PLATFORM=offscreen` gerekir; CI bunu
-ortam değişkeni olarak ayarlar.
-
-- Ayrıntılı plan: [`docs/implementation_plan.md`](docs/implementation_plan.md)
-- İyileştirme planı ve durumu: [`docs/improvement_plan.md`](docs/improvement_plan.md)
-- Windows manuel test listesi: [`docs/manual_test_checklist.md`](docs/manual_test_checklist.md)
-- LLM model karşılaştırması: `.venv/bin/python scripts/eval_llm.py --models <model…>` (Ollama çalışır durumda olmalı) · yöntem ve puanlama: [`docs/llm_benchmark.md`](docs/llm_benchmark.md)
-
-## Paketleme (Windows)
-
-```powershell
-python scripts\make_icon.py                 # packaging\dikte.ico üretir
-powershell -ExecutionPolicy Bypass -File packaging\build.ps1
-```
-
-Çıktı: `dist\Dikte\Dikte.exe` (onedir) ve `dist\Dikte-Setup-0.2.0.exe`
-(Inno Setup 6 kurulu olmalı).
-
-## Paketleme (Linux)
-
-```bash
-python scripts/make_icon.py       # packaging/dikte.ico + packaging/linux/dikte.png
-./packaging/linux/install.sh      # pipx tabanlı kullanıcı kurulumu
-```
-
-Kaldırmak için: `pipx uninstall dikte` ve
-`rm ~/.local/share/applications/dikte.desktop ~/.config/autostart/dikte.desktop`.
-
-<!-- LAST-SYNCED: 2026-09-16 -->
+[MIT](LICENSE) © Sarpel GÜRAY. Dağıtılan kurulum paketi, kendi lisanslarıyla gelen üçüncü taraf
+bileşenler içerir; bkz. [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
