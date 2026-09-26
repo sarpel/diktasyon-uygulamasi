@@ -1,7 +1,7 @@
 $ErrorActionPreference = "Stop"
 Set-Location $PSScriptRoot\..
 .\.venv\Scripts\Activate.ps1
-pip install -e ".[dev,cuda,anthropic,openai,gemini]"
+pip install -e ".[dev,cuda,anthropic,openai,gemini,media]"
 pytest -q
 pyinstaller --noconfirm --clean packaging\dikte.spec
 # Tek sürüm kaynağı pyproject.toml; Inno Setup'a /DAppVersion ile aktarılır.

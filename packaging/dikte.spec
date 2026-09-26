@@ -1,4 +1,5 @@
 # -*- mode: python -*-
+import importlib.util
 import os
 
 from PyInstaller.utils.hooks import collect_all, collect_dynamic_libs
@@ -22,6 +23,15 @@ for pkg in (
     datas += d
     binaries += b
     hiddenimports += h
+# Medya duraklatma (`media` extra'sı, yalnızca Windows): winsdk alt modüllerini dinamik
+# yükler, bu yüzden tümü toplanır. Kurulu değilse paket onsuz üretilir (özellik devre dışı).
+if importlib.util.find_spec("winsdk") is not None:
+    d, b, h = collect_all("winsdk")
+    datas += d
+    binaries += b
+    hiddenimports += h
+else:
+    print("UYARI: winsdk kurulu değil; kayıtta medyayı duraklatma pakette çalışmayacak.")
 # collect_all paketlerin kendi test paketlerini de toplar (ör. google.genai.tests);
 # bunlar pytest'i pakete sürükler ve boyutu gereksiz büyütür.
 hiddenimports = [m for m in hiddenimports if ".tests" not in m and not m.endswith(".tests")]

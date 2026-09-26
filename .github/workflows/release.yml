@@ -23,7 +23,7 @@ jobs:
           cache: pip
 
       - name: Bağımlılıklar
-        run: pip install -e ".[dev,cuda]"
+        run: pip install -e ".[dev,cuda,media]"
 
       - name: Testler
         env:
