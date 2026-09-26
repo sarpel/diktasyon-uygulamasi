@@ -38,6 +38,17 @@ Bu projedeki önemli değişiklikler bu dosyada tutulur. Biçim
 
 ### Düzeltildi
 
+- Windows kurulum paketinde `winsdk` olmadığı için "kayıtta medyayı duraklat" özelliğinin çalışmaması.
+- Geçmiş panelindeki, sonuç panellerindeki ve tray'deki kopyalama düğmelerinin "pano geçmişine
+  alma" ayarını atlaması.
+- Ayarlar → Hakkında'dan açılan durum kontrolünde "Ollama'yı başlat" / "Modeli indir"
+  düğmelerinin görünmemesi.
+- STT modeli/hassasiyeti değiştirilirken süren bir çözümleme varsa arayüzün o iş bitene kadar donması.
+- Geçmiş dışa aktarımında çeviri ve prompt oturumlarının teslim edilen metin yerine düzeltilmiş
+  metinle yazılması.
+- Geçersiz "son sonucu yapıştır" kısayolunun sessizce silinmesi (artık kaydedilir ve bildirilir).
+- Ayar dosyası hiç okunamadığında bildirimin var olmayan bir `.bak` yedeğini göstermesi.
+- Anthropic sağlayıcısının boş yanıtı hata saymaması.
 - Kayıt durdurulurken henüz çözümlenmemiş canlı parçaların kaybolması ve parçaların sıra dışı birleşmesi.
 - Takılı kalan overlay; hata anında eksik parça; sessiz bir kaydın saklanan başarısız kaydı ezmesi.
 - Yarıda kesilen LLM yanıtlarının yarım metin olarak yapıştırılması.

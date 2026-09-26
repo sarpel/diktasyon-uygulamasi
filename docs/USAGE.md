@@ -44,7 +44,7 @@ penceresi açılır: her öğe için ✓/✗, bir ipucu ve gerekiyorsa tek tıkl
 | Ayarları aç | Araç çubuğu → "Ayarlar…" veya `Ctrl+,` |
 | Geçmiş panelini aç/kapat | Araç çubuğu → "Geçmiş" veya `Ctrl+H` |
 | Geçmişte ara | `Ctrl+F` (paneli açar ve arama kutusuna odaklanır) |
-| Geçmişi dışa aktar | Geçmiş paneli → "Dışa aktar…" (`.md` → Markdown, `.txt` → düz metin) |
+| Geçmişi dışa aktar | Geçmiş paneli → "Dışa aktar…" (`.md` → Markdown, `.txt` → düz metin; her oturumun teslim edilen metni: çeviri/prompt modunda o çıktı) |
 | Son diktenin metnini kopyala | Tray menüsü → "Son metni kopyala" veya "Son dikteler" alt menüsü |
 | Son sonucu yeniden yapıştır | Tray menüsü → "Son sonucu yapıştır" · veya Ayarlar → Genel'de ayrı bir kısayol (yalnızca Windows) |
 | Başarısız kaydı yeniden dene | Tray menüsü → "Başarısız kaydı yeniden dene" (çözümleme hata verdiyse veya boş döndüyse ses saklanır) |
@@ -54,8 +54,8 @@ penceresi açılır: her öğe için ✓/✗, bir ipucu ve gerekiyorsa tek tıkl
 
 Başlat/durdur/hata sesleri Ayarlar → Genel'den kapatılabilir. Aynı yerden, kayıt sırasında
 çalan medyanın (YouTube, Spotify…) duraklatılması açılabilir: yalnızca o an çalan oynatıcılar
-duraklatılır ve kayıt bitince sürdürülür (Linux'ta `playerctl`, Windows'ta `.[media]` extra'sı
-gerekir).
+duraklatılır ve kayıt bitince sürdürülür (Linux'ta `playerctl` gerekir; Windows kurulum paketinde
+hazırdır, kaynaktan kurulumda `.[media]` extra'sı gerekir).
 
 Kayıt başladıktan sonra birkaç saniye mikrofondan hiç ses gelmezse overlay'de uyarı çıkar.
 Kayıtlı mikrofon takılı değilse varsayılan mikrofon kullanılır ve bu bildirilir. Overlay'i

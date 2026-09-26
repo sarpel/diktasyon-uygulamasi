@@ -42,10 +42,8 @@ kartlarda (ör. GTX 970) Dikte otomatik olarak `float32`'ye düşer ve uyarı g�
      adımını uygulayın ya da Ayarlar → Metin Düzeltme'den LLM'i kapatın.
 4. `Ctrl+Alt+Space` ile ilk diktenizi yapın.
 
-Kurulum paketi Python, CUDA kütüphaneleri (cuBLAS/cuDNN) ve tüm LLM sağlayıcı SDK'larını
-içerir. Bilgisayarda yalnızca NVIDIA sürücüsü kurulu olmalıdır. "Kayıt sırasında çalan medyayı
-duraklat" özelliği için gereken `winsdk` paketi kurulum paketinde **yoktur**; bu özellik yalnızca
-kaynaktan `.[media]` extra'sıyla kurulumda çalışır.
+Kurulum paketi Python, CUDA kütüphaneleri (cuBLAS/cuDNN), tüm LLM sağlayıcı SDK'larını ve
+medya duraklatma için `winsdk`'yı içerir. Bilgisayarda yalnızca NVIDIA sürücüsü kurulu olmalıdır.
 
 > Windows SmartScreen imzasız kurulum dosyaları için "Windows bilgisayarınızı korudu" uyarısı
 > gösterebilir. Dosyayı bu repodaki Releases sayfasından indirdiyseniz "Ek bilgi" →

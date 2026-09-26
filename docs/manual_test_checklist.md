@@ -177,3 +177,10 @@
 - [ ] Linux: otomatik başlatmayla (başlatıcı olmadan) açılan uygulama GPU'da modeli yüklüyor.
 - [ ] Paketlenmiş `Dikte.exe --version` sürümü yazıp 0 ile çıkıyor; açılışta ve Ayarlar
       açılırken konsol penceresi yanıp sönmüyor.
+- [ ] Kurulum paketiyle (Dikte-Setup) kurulan uygulamada "Kayıt sırasında çalan medyayı
+      duraklat" açıkken Spotify/YouTube kayıtta duruyor, bitince devam ediyor (winsdk pakette).
+- [ ] Geçmiş panelinden ve sonuç panellerinden kopyalanan metin `Win+V` pano geçmişinde görünmüyor
+      ("pano geçmişine alma" ayarı açıkken).
+- [ ] Ayarlar → Hakkında → "Durum kontrolü…": Ollama kapalıyken "Ollama'yı başlat" düğmesi çıkıyor.
+- [ ] Uzun bir dosya çözümlenirken Ayarlar'da Whisper modeli değiştirilip Kaydet'e basınca
+      arayüz donmuyor; çözümleme bitince yeni model yükleniyor.

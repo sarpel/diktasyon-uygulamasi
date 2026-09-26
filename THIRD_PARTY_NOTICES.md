@@ -44,7 +44,7 @@ Bu kütüphaneler NVIDIA'nın lisansının izin verdiği yeniden dağıtım koş
 | openai-python | Apache-2.0 | <https://github.com/openai/openai-python> |
 | anthropic-sdk-python | MIT | <https://github.com/anthropics/anthropic-sdk-python> |
 | google-genai | Apache-2.0 | <https://github.com/googleapis/python-genai> |
-| winsdk (`media` extra'sı, yalnızca kaynaktan kurulum) | MIT | <https://github.com/pywinrt/python-winsdk> |
+| winsdk (`media` extra'sı, yalnızca Windows) | MIT | <https://github.com/pywinrt/python-winsdk> |
 
 ## İndirilen modeller (pakete dâhil değil)
 
