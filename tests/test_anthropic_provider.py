@@ -90,3 +90,9 @@ def test_max_tokens_stop_reason_raises_truncation_error(monkeypatch):
 def test_json_output_strips_code_fence(monkeypatch):
     p, _ = make(monkeypatch, [SimpleNamespace(text='```json\n{"a": 1}\n```')])
     assert p.complete("s", "u", json_schema={"type": "object"}) == '{"a": 1}'
+
+
+def test_empty_reply_raises_llm_error(monkeypatch):
+    p, _ = make(monkeypatch, [SimpleNamespace(text="  ")])
+    with pytest.raises(LlmError, match="boş yanıt"):
+        p.complete("SYS", "USER")

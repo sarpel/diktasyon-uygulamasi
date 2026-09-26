@@ -36,3 +36,22 @@ def test_to_text_produces_one_line_per_session():
 
 def test_to_text_empty_sessions_is_empty_string():
     assert to_text(()) == ""
+
+
+def test_export_uses_delivered_translation_and_prompt():
+    tr = Session(
+        mode="translate",
+        corrected_text="Merhaba.",
+        translation="Hello.",
+        created_at=datetime(2026, 1, 1, 9, 0, tzinfo=UTC),
+    )
+    pr = Session(
+        mode="prompt",
+        corrected_text="Bir şey yap.",
+        enhanced_prompt="# Goal",
+        created_at=datetime(2026, 1, 1, 9, 5, tzinfo=UTC),
+    )
+    md = to_markdown((tr, pr))
+    assert "Hello." in md and "# Goal" in md
+    assert "Merhaba." not in md
+    assert to_text((tr,)) == "[01.01.2026 09:00] Hello.\n"

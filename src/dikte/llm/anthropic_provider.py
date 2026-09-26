@@ -91,6 +91,8 @@ class AnthropicProvider:
             log.warning("Anthropic yanıtı max_tokens sınırında kesildi (%s)", self._model)
             raise LlmTruncatedError(self.name)
         text = "".join(getattr(b, "text", "") for b in msg.content)
+        if not text.strip():
+            raise LlmError("Anthropic-uyumlu sağlayıcı boş yanıt döndürdü")
         if json_schema is not None:
             text = extract_json_object(text)
         return text
