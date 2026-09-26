@@ -12,7 +12,7 @@ from __future__ import annotations
 import struct
 import sys
 
-from PySide6.QtCore import QMimeData
+from PySide6.QtCore import QMimeData, QStringListModel
 from PySide6.QtGui import QGuiApplication
 
 EXCLUDE_FORMAT = "ExcludeClipboardContentFromMonitorProcessing"
@@ -32,10 +32,25 @@ def windows_mime(format_name: str) -> str:
     return f'application/x-qt-windows-mime;value="{format_name}"'
 
 
+def new_mime_data() -> QMimeData:
+    """Panoya verilecek boş, C++ tarafında oluşturulmuş bir QMimeData.
+
+    Python'da `QMimeData()` ile kurulan nesne, sanal metotları (formats, retrieveData…)
+    Python'a yönlenen bir shiboken alt sınıfıdır. Pano onu sahiplenir ve Qt kapanışta
+    (Python yorumlayıcısı kapandıktan sonra) bu metotları çağırır: uygulama panoda dikte
+    metni varken çıkarsa süreç segfault ile çöker. `QAbstractItemModel.mimeData` nesneyi
+    C++'ta oluşturur; modelin eklediği iç biçim silinip boş nesne döndürülür."""
+    model = QStringListModel([""])
+    mime = model.mimeData([model.index(0, 0)])
+    for fmt in mime.formats():
+        mime.removeFormat(fmt)
+    return mime
+
+
 def build_mime(text: str, *, exclude_history: bool, platform: str = sys.platform) -> QMimeData:
     """Panoya konacak veri. Windows'ta `exclude_history` ise dikte metni pano geçmişine,
     bulut panosuna ve pano izleyicilerine düşmesin diye işaret biçimleri eklenir."""
-    mime = QMimeData()
+    mime = new_mime_data()
     mime.setText(text)
     if exclude_history and platform == "win32":
         # Bu biçimin içeriği yok sayılır; varlığı yeterlidir.

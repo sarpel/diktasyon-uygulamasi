@@ -57,3 +57,32 @@ def test_copy_text_marks_windows_clipboard_as_excluded(qapp):
     mime = QApplication.clipboard().mimeData()
     assert mime is not None and mime.text() == "gizli dikte"
     assert mime.hasFormat(windows_mime(EXCLUDE_FORMAT))
+
+
+def test_mime_data_is_cpp_allocated(qapp):
+    """Python'da kurulan QMimeData, sanal metotları Python'a yönlenen bir shiboken alt
+    sınıfıdır; panoda kalırsa Qt kapanışta onu çağırır ve süreç segfault ile çöker."""
+    from shiboken6 import Shiboken
+
+    from dikte.platform.clipboard import new_mime_data
+
+    mime = new_mime_data()
+    assert not Shiboken.createdByPython(mime)
+    assert mime.formats() == []
+    assert not Shiboken.createdByPython(build_mime("x", exclude_history=True, platform="win32"))
+
+
+def test_process_exits_cleanly_with_our_mime_on_clipboard():
+    import os
+    import subprocess
+    import sys
+
+    code = (
+        "from PySide6.QtWidgets import QApplication\n"
+        "from dikte.platform.clipboard import copy_text\n"
+        "app = QApplication([])\n"
+        "copy_text('kapanışta panoda', exclude_history=True, platform='win32')\n"
+    )
+    env = {**os.environ, "QT_QPA_PLATFORM": "offscreen"}
+    proc = subprocess.run([sys.executable, "-c", code], env=env, timeout=60, check=False)
+    assert proc.returncode == 0

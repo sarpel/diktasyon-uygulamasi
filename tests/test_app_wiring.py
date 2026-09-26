@@ -889,9 +889,9 @@ def test_result_uses_history_excluding_mime(ctx, monkeypatch):
 
     def fake_build(text, *, exclude_history):
         built.append(exclude_history)
-        from PySide6.QtCore import QMimeData
+        from dikte.platform.clipboard import new_mime_data
 
-        m = QMimeData()
+        m = new_mime_data()  # panoda kalır: C++ nesnesi olmalı (kapanışta çökme)
         m.setText(text)
         return m
 

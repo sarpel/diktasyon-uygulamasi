@@ -43,7 +43,13 @@ from dikte.core.workers import run_in_pool
 from dikte.llm import LlmError, make_provider
 from dikte.logging_setup import setup_logging
 from dikte.platform.autostart import AutostartError, set_autostart
-from dikte.platform.clipboard import build_mime, copy_text, restore_delay_ms, should_restore
+from dikte.platform.clipboard import (
+    build_mime,
+    copy_text,
+    new_mime_data,
+    restore_delay_ms,
+    should_restore,
+)
 from dikte.platform.foreground import foreground_process_name
 from dikte.platform.gpu_info import LOW_VRAM_MB, query_vram
 from dikte.platform.hold_detect import HoldDetector
@@ -496,8 +502,9 @@ def _clone_mime(src: QMimeData) -> QMimeData:
     değiştirmeden önce içeriğini korumak için bağımsız bir kopya çıkarır. Resim gibi
     bazı türler ("application/x-qt-image") ham bayt verisi değil bir QVariant olarak
     taşınır — yalnızca genel `data()/setData()` kullanmak bunları sessizce kaybederdi;
-    tipe özel erişimciler (`imageData` vb.) de kullanılır."""
-    clone = QMimeData()
+    tipe özel erişimciler (`imageData` vb.) de kullanılır. Kopya C++ tarafında oluşturulur
+    (bkz. `new_mime_data`): geri yüklenen pano kapanışta çökme yaratmasın."""
+    clone = new_mime_data()
     if src.hasText():
         clone.setText(src.text())
     if src.hasHtml():
