@@ -133,9 +133,12 @@ class FasterWhisperEngine:
         self._pipeline = None
         self._compute_type = settings.compute_type
         self._downgraded = False
-        # RLock: yükleme ve çözümleme aynı kilit bölümünde yapılır (arada update_settings
-        # modeli düşüremez); _load_locked kilidi zaten tutan kod yolundan da çağrılır.
+        # RLock: yükleme ve çözümleme aynı kilit bölümünde yapılır; _load_locked kilidi zaten
+        # tutan kod yolundan da çağrılır. update_settings bu kilidi ALMAZ (GUI iş parçacığı
+        # süren bir çözümlemeyi beklemesin); model değişikliğini `_stale` ile işaretler ve
+        # modeli bir sonraki kilitli yükleme düşürür.
         self._lock = threading.RLock()
+        self._stale = False
         self._hotwords = ""
         self._prompt_terms = ""
 
@@ -144,7 +147,7 @@ class FasterWhisperEngine:
 
     @property
     def is_loaded(self) -> bool:
-        return self._model is not None
+        return self._model is not None and not self._stale
 
     @property
     def active_model(self) -> str:
@@ -186,23 +189,21 @@ class FasterWhisperEngine:
         )
 
     def update_settings(self, settings: SttSettings) -> bool:
-        """Ayarları uygular; model/hassasiyet/cihaz değiştiyse yüklü modeli hemen düşürür.
+        """Ayarları uygular; model/hassasiyet/cihaz değiştiyse yüklü modeli eskimiş işaretler.
 
-        Kilidi aldığı için süren bir yükleme/çözümleme bitene kadar bekler. Dönen bool,
-        arayana modelin yeniden yüklenmesi (bir sonraki `load()`/`warm_up()` çağrısında)
-        gerekip gerekmediğini söyler."""
+        Engellemez: süren bir yükleme/çözümleme eski modelle biter, model bir sonraki
+        `load()`/`warm_up()`/`transcribe()` çağrısında düşürülüp yeniden yüklenir. Dönen bool,
+        arayana modelin yeniden yüklenmesi gerekip gerekmediğini söyler."""
         needs_reload = (
             settings.model != self._settings.model
             or settings.compute_type != self._settings.compute_type
             or settings.device != self._settings.device
         )
-        with self._lock:
-            self._settings = settings
-            if needs_reload:
-                self._model = None
-                self._pipeline = None
-                self._downgraded = False
-                self._compute_type = settings.compute_type
+        self._settings = settings
+        if needs_reload:
+            self._downgraded = False
+            self._compute_type = settings.compute_type
+            self._stale = True  # ayarlardan sonra: yükleme bayrağı görünce yeni ayarları okur
         return needs_reload
 
     def load(self) -> None:
@@ -211,7 +212,13 @@ class FasterWhisperEngine:
             self._load_locked()
 
     def _load_locked(self) -> Any:
-        """Kilit altında çağrılır; model yüklüyse yalnızca onu döndürür."""
+        """Kilit altında çağrılır; model yüklüyse (ve eskimemişse) yalnızca onu döndürür."""
+        if self._stale:
+            # Bayrak ayarlar okunmadan önce temizlenir: yükleme sürerken yeni bir
+            # update_settings gelirse bayrak yeniden kalkar ve sonraki çağrı tekrar yükler.
+            self._stale = False
+            self._model = None
+            self._pipeline = None
         if self._model is not None:
             return self._model
         if self._cuda_probe() < 1:
@@ -247,7 +254,7 @@ class FasterWhisperEngine:
         rng = np.random.default_rng(0)
         audio = (rng.standard_normal(int(SAMPLE_RATE * WARM_UP_SECONDS)) * 0.01).astype(np.float32)
         with self._lock:
-            # load() ile bu kilit arasında update_settings modeli düşürmüş olabilir.
+            # load() ile bu kilit arasında update_settings modeli eskimiş işaretlemiş olabilir.
             model = self._load_locked()
             try:
                 seg_iter, _info = model.transcribe(
@@ -334,8 +341,8 @@ class FasterWhisperEngine:
             "hotwords": self._hotwords or None,
         }
         with self._lock:
-            # Yükleme ve çözümleme tek kilit bölümünde: arada update_settings modeli
-            # düşüremez (aksi hâlde model=None ile boru hattı kurulurdu).
+            # Yükleme ve çözümleme tek kilit bölümünde: model yalnızca _load_locked içinde
+            # düşürülür, çözümleme sürerken None olamaz.
             self._load_locked()
             segments, info = self._run_locked(audio, speech, kwargs)
         if s.hallucination_filter:
