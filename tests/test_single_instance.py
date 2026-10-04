@@ -1,7 +1,10 @@
 import os
 import socket
 import stat
+import sys
 import uuid
+
+import pytest
 
 from dikte.platform.single_instance import (
     START_MESSAGE,
@@ -9,6 +12,14 @@ from dikte.platform.single_instance import (
     TOGGLE_MESSAGE,
     SingleInstance,
     send_command,
+)
+
+# Unix'e özgü yollar: dosya izinleri (0700), os.getuid ve soket dosyaları. Windows'ta
+# IPC adı kullanıcı adı özetiyle üretilir (ayrı testler); bu kod orada hiç çalışmaz.
+posix_only = pytest.mark.skipif(sys.platform == "win32", reason="POSIX izinleri ve uid")
+# SO_PEERCRED yalnızca Linux'ta var; diğer Unix'lerde soket dosyasının sahibine bakılır.
+peercred_only = pytest.mark.skipif(
+    not hasattr(socket, "SO_PEERCRED"), reason="SO_PEERCRED yalnızca Linux'ta"
 )
 
 
@@ -81,6 +92,7 @@ def test_default_name_differs_per_user():
     assert a.startswith("dikte-single-instance-")
 
 
+@posix_only
 def test_default_name_on_linux_uses_private_runtime_dir(tmp_path):
     from dikte.platform.single_instance import default_server_name
 
@@ -95,6 +107,7 @@ def _uid():
     return os.getuid()
 
 
+@posix_only
 def test_default_name_on_linux_without_runtime_dir_uses_private_tmp_dir(tmp_path):
     """Eskiden ad /tmp altında kullanıcı adının özetiydi: tahmin edilebilir, başka bir
     kullanıcı önceden kapabilirdi. Artık kullanıcıya özel 0700 bir dizin kullanılır."""
@@ -115,6 +128,7 @@ def test_default_name_on_linux_without_runtime_dir_uses_private_tmp_dir(tmp_path
     assert stat.S_IMODE(private.stat().st_mode) == 0o700
 
 
+@posix_only
 def test_default_name_ignores_world_readable_runtime_dir(tmp_path):
     from dikte.platform.single_instance import default_server_name
 
@@ -133,6 +147,7 @@ def test_default_name_ignores_world_readable_runtime_dir(tmp_path):
     assert not name.startswith(str(runtime))
 
 
+@posix_only
 def test_default_name_refuses_squatted_tmp_dir_and_uses_home(tmp_path, caplog):
     """Başka bir kullanıcı /tmp/dikte-<uid> dizinini önceden oluşturduysa (sahibi biz
     değiliz) kullanılmaz; ev dizinindeki özel dizine geçilir."""
@@ -157,6 +172,7 @@ def test_default_name_refuses_squatted_tmp_dir_and_uses_home(tmp_path, caplog):
     assert "kullanılmıyor" in caplog.text
 
 
+@peercred_only
 def test_unix_peer_uid_reads_so_peercred():
     from dikte.platform.single_instance import unix_peer_uid
 
@@ -168,6 +184,7 @@ def test_unix_peer_uid_reads_so_peercred():
         b.close()
 
 
+@peercred_only
 def test_unix_peer_verifier_rejects_other_user():
     from dikte.platform.single_instance import unix_peer_is_current_user
 
@@ -248,10 +265,15 @@ def test_squatted_name_does_not_make_dikte_exit(qtbot):
     assert shown == []
 
 
-def test_listen_failure_is_reported_with_turkish_warning(qtbot, tmp_path):
+def test_listen_failure_is_reported_with_turkish_warning(qtbot, monkeypatch):
+    """Dinleme başlatılamazsa uygulama IPC'siz sürer ve kullanıcı uyarılır. Hata her
+    platformda aynı biçimde üretilir (Windows'ta pipe adı dizine bağlı değildir)."""
+    from PySide6.QtNetwork import QLocalServer
+
     from dikte.platform.single_instance import IpcStatus
 
-    inst = SingleInstance(str(tmp_path / "olmayan-dizin" / "soket"))
+    monkeypatch.setattr(QLocalServer, "listen", lambda self, name: False)
+    inst = SingleInstance(f"dikte-test-{uuid.uuid4().hex[:8]}")
     assert inst.try_acquire() is True  # kilit kurulamasa da uygulama çalışır
     assert inst.status is IpcStatus.UNAVAILABLE
     assert inst.warning_message and "komut kanalı" in inst.warning_message
