@@ -61,7 +61,11 @@ from dikte.platform.clipboard import (
     same_text,
     should_restore,
 )
-from dikte.platform.foreground import foreground_process_name
+from dikte.platform.foreground import (
+    FOREGROUND_UNKNOWN_MESSAGE,
+    foreground_process_name,
+    probe_foreground_process,
+)
 from dikte.platform.gpu_info import LOW_VRAM_MB, query_vram
 from dikte.platform.hold_detect import HoldDetector
 from dikte.platform.hotkey import HOTKEY_ID, GlobalHotkey
@@ -69,9 +73,10 @@ from dikte.platform.hotkey_parse import HotkeyParseError, parse_hotkey
 from dikte.platform.media import MediaPauser
 from dikte.platform.paste import (
     KeyCombo,
+    TypeOutcome,
     foreground_window_id,
     paste_active_window,
-    type_unicode_text,
+    type_text,
 )
 from dikte.platform.single_instance import (
     DEFAULT_NAME,
@@ -140,6 +145,7 @@ class AppContext:
     hotkey_paste_last: GlobalHotkey | None = None  # isteğe bağlı: son sonucu yeniden yapıştırır
     shut_down: bool = False  # _shutdown bir kez çalışır (tepsi + aboutToQuit)
     reload_pending: bool = False  # süren iş bitince model yeniden yüklenecek
+    foreground_unknown_warned: bool = False  # Wayland'de "etkin uygulama bilinmiyor" bir kez
     # run_in_pool sinyal nesneleri iş bitene kadar canlı tutulur (bkz. _run_background).
     background_jobs: set = field(default_factory=set)
 
@@ -282,7 +288,7 @@ def _wire(ctx: AppContext) -> None:
     c.state_changed.connect(lambda s: _reload_if_pending(ctx, s))
     ctx.overlay.moved.connect(lambda x, y: _save_overlay_position(ctx, x, y))
     ctx.tray.paste_last_requested.connect(lambda: _paste_last(ctx))
-    c.warning.connect(ctx.overlay.show_warning)
+    c.warning.connect(lambda text: _on_controller_warning(ctx, text))
     c.failed_audio_changed.connect(ctx.tray.set_retry_available)
     ctx.tray.set_retry_available(c.has_failed_audio)
     ctx.tray.retry_failed_requested.connect(c.retry_last_failed)
@@ -615,8 +621,8 @@ def _on_result_ready(
         # Uzun metinde yazma alt süreci onlarca saniye sürebilir; GUI donmasın.
         _run_background(
             ctx,
-            lambda: type_unicode_text(text),
-            lambda ok: _on_typed(ctx, bool(ok), _delivered),
+            lambda: type_text(text),
+            lambda outcome: _on_typed(ctx, outcome, _delivered),
             lambda message: _on_typing_error(ctx, message, _delivered),
         )
         return
@@ -665,10 +671,13 @@ def _write_clipboard(clipboard, text: str, exclude_history: bool) -> bool:
     return False
 
 
-def _on_typed(ctx: AppContext, ok: bool, delivered: Callable[[bool], None]) -> None:
+def _on_typed(ctx: AppContext, outcome: object, delivered: Callable[[bool], None]) -> None:
+    """Yazma sonucunu bildirir; yalnızca TYPED başarıdır (pano ancak o zaman geri yüklenir)."""
+    ok = outcome is TypeOutcome.TYPED
     if not ok:
-        log.error("metin yazılamadı ya da yarıda kaldı; metin panoda")
-        ctx.tray.notify(APP_NAME, TYPING_FAILED)
+        log.error("metin yazılamadı (%s); metin panoda", getattr(outcome, "value", outcome))
+        message = outcome.user_message if isinstance(outcome, TypeOutcome) else TYPING_FAILED
+        ctx.tray.notify(APP_NAME, message)
     delivered(ok)
 
 
@@ -855,9 +864,35 @@ def _hotkey_spec(ctx: AppContext, mode: str) -> str:
 def _resolve_profile(ctx: AppContext) -> AppProfile | None:
     """Ön plandaki uygulamaya uyan profili bulur ve `ctx.active_profile`'a yazar."""
     # Profil tanımlı değilse ön plan sürecini hiç sorgulama (win32 API'sini gereksiz çağırmaz).
-    exe = foreground_process_name() if ctx.settings.profiles else ""
+    exe = probe_foreground_process() if ctx.settings.profiles else ""
+    if exe is None:
+        # Wayland: etkin pencere güvenilir biçimde bilinemez; yanlış profili uygulamak yerine
+        # varsayılanı kullan ve kullanıcıyı (oturum başına bir kez) bilgilendir.
+        if not ctx.foreground_unknown_warned:
+            ctx.foreground_unknown_warned = True
+            ctx.tray.notify(APP_NAME, FOREGROUND_UNKNOWN_MESSAGE)
+        exe = ""
     ctx.active_profile = match_profile(ctx.settings.profiles, exe)
     return ctx.active_profile
+
+
+def _on_controller_warning(ctx: AppContext, text: str) -> None:
+    """Kayıt sürerken uyarı overlay'de gösterilir. Kayıt dışında (ör. sonuçtan hemen önce gelen
+    "kaydın bir bölümü işlenemedi") overlay RESULT'ta hemen gizlendiği için tepsi bildirimi
+    kullanılır; aksi hâlde kullanıcı uyarıyı hiç görmezdi."""
+    if ctx.controller.state is DictationState.RECORDING:
+        ctx.overlay.show_warning(text)
+    else:
+        ctx.tray.notify(APP_NAME, text)
+
+
+def _notify_ipc_status(ctx: AppContext, single) -> None:
+    """Komut kanalı (IPC) açılamadıysa ya da doğrulanamayan bir süreç adı tuttuysa uyarır;
+    uygulama yine çalışır ama `dikte --toggle` gibi komutlar ulaşmaz."""
+    message = getattr(single, "warning_message", None)
+    if message:
+        log.warning("IPC durumu: %s", getattr(single, "status", "?"))
+        ctx.tray.notify(APP_NAME, message, critical=True)
 
 
 def _on_ipc_toggle(ctx: AppContext, mode: str) -> None:
@@ -1225,6 +1260,7 @@ def main(argv: list[str] | None = None) -> int:
     single.start_requested.connect(lambda mode: _on_ipc_start(ctx, mode))
     single.stop_requested.connect(ctx.controller.stop_recording)
     ctx.tray.show()
+    _notify_ipc_status(ctx, single)
     if "hotkey" in sanitized:
         ctx.tray.notify(
             APP_NAME,

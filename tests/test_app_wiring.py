@@ -9,6 +9,7 @@ from dikte.config import LlmSettings, Settings
 from dikte.core.state import DictationState, Session
 from dikte.llm.provider import LlmError
 from dikte.logging_setup import setup_logging
+from dikte.platform.paste import TypeOutcome
 from dikte.ui.icons import copy_icon, make_tray_icon
 from dikte.ui.toast import Toast
 
@@ -348,7 +349,7 @@ def test_hotkey_resolves_matching_profile_and_overrides_mode(ctx, monkeypatch):
 
     profile = AppProfile(name="Kod", match="code", mode="translate")
     ctx.settings = ctx.settings.model_copy(update={"push_to_talk": False, "profiles": (profile,)})
-    monkeypatch.setattr(app_mod, "foreground_process_name", lambda: "Code.exe")
+    monkeypatch.setattr(app_mod, "probe_foreground_process", lambda: "code")
     app_mod._on_hotkey(ctx)
     assert ctx.active_profile is profile
     assert ctx.controller.session.mode == "translate"
@@ -356,7 +357,7 @@ def test_hotkey_resolves_matching_profile_and_overrides_mode(ctx, monkeypatch):
 
 def test_hotkey_no_matching_profile_leaves_active_profile_none(ctx, monkeypatch):
     ctx.settings = ctx.settings.model_copy(update={"push_to_talk": False})
-    monkeypatch.setattr(app_mod, "foreground_process_name", lambda: "explorer.exe")
+    monkeypatch.setattr(app_mod, "probe_foreground_process", lambda: "explorer")
     app_mod._on_hotkey(ctx)
     assert ctx.active_profile is None
 
@@ -743,7 +744,7 @@ def test_result_ready_uses_type_when_profile_paste_is_type(ctx, monkeypatch, qtb
     ctx.controller._active_profile = AppProfile(name="Kod", match="code", paste="type")
     typed = []
     pasted = []
-    monkeypatch.setattr(app_mod, "type_unicode_text", lambda text: typed.append(text) or True)
+    monkeypatch.setattr(app_mod, "type_text", lambda text: typed.append(text) or TypeOutcome.TYPED)
     monkeypatch.setattr(app_mod, "paste_active_window", lambda *a, **k: pasted.append(1) or True)
     app_mod._on_result_ready(ctx, "Merhaba.")
     qtbot.waitUntil(lambda: typed == ["Merhaba."], timeout=2000)
@@ -759,7 +760,9 @@ def test_typing_runs_off_the_gui_thread(ctx, monkeypatch, qtbot):
     ctx.controller._active_profile = AppProfile(name="Kod", match="code", paste="type")
     threads = []
     monkeypatch.setattr(
-        app_mod, "type_unicode_text", lambda text: threads.append(threading.current_thread())
+        app_mod,
+        "type_text",
+        lambda text: threads.append(threading.current_thread()) or TypeOutcome.FAILED,
     )
     done = []
     app_mod._on_result_ready(ctx, "Merhaba.", on_done=done.append)
@@ -767,8 +770,17 @@ def test_typing_runs_off_the_gui_thread(ctx, monkeypatch, qtbot):
     assert threads and threads[0] is not threading.main_thread()
 
 
-@pytest.mark.parametrize("outcome", ["false", "raise"])
-def test_typing_failure_notifies_text_is_on_clipboard(ctx, monkeypatch, qtbot, outcome):
+@pytest.mark.parametrize(
+    ("outcome", "message"),
+    [
+        (TypeOutcome.FAILED, TypeOutcome.FAILED.user_message),
+        (TypeOutcome.PARTIAL, TypeOutcome.PARTIAL.user_message),
+        (TypeOutcome.UNVERIFIED, TypeOutcome.UNVERIFIED.user_message),
+        ("raise", "Metnin bir kısmı yazılamadı; tamamı panoda."),
+    ],
+)
+def test_typing_failure_notifies_text_is_on_clipboard(ctx, monkeypatch, qtbot, outcome, message):
+    """Yazma sonucu TYPED değilse sonuca özgü Türkçe mesaj gösterilir, metin panoda kalır."""
     from PySide6.QtWidgets import QApplication
 
     from dikte.config import AppProfile
@@ -776,16 +788,16 @@ def test_typing_failure_notifies_text_is_on_clipboard(ctx, monkeypatch, qtbot, o
     def fake_type(text):
         if outcome == "raise":
             raise TimeoutError("yazma zaman aşımı")
-        return False
+        return outcome
 
     ctx.controller._active_profile = AppProfile(name="Kod", match="code", paste="type")
-    monkeypatch.setattr(app_mod, "type_unicode_text", fake_type)
+    monkeypatch.setattr(app_mod, "type_text", fake_type)
     notes = []
     monkeypatch.setattr(ctx.tray, "notify", lambda *a, **k: notes.append(a[1]))
     done = []
     app_mod._on_result_ready(ctx, "Uzun metin.", on_done=done.append)
     qtbot.waitUntil(lambda: done == [False], timeout=2000)
-    assert notes == ["Metnin bir kısmı yazılamadı; tamamı panoda."]
+    assert notes == [message]
     assert QApplication.clipboard().text() == "Uzun metin."
 
 
@@ -799,7 +811,7 @@ def test_typing_success_reports_pasted_and_restores_clipboard(
     ctx.controller._active_profile = AppProfile(name="Kod", match="code", paste="type")
     ctx.settings = ctx.settings.model_copy(update={"restore_clipboard": True})
     QApplication.clipboard().setText("eski")
-    monkeypatch.setattr(app_mod, "type_unicode_text", lambda text: True)
+    monkeypatch.setattr(app_mod, "type_text", lambda text: TypeOutcome.TYPED)
     done = []
     app_mod._on_result_ready(ctx, "yeni", on_done=done.append)
     qtbot.waitUntil(lambda: done == [True], timeout=2000)
@@ -1088,7 +1100,7 @@ def test_ipc_toggle_applies_matching_profile(ctx, monkeypatch):
 
     profile = AppProfile(name="Terminal", match="gnome-terminal-server", mode="prompt")
     ctx.settings = ctx.settings.model_copy(update={"profiles": (profile,)})
-    monkeypatch.setattr(app_mod, "foreground_process_name", lambda: "gnome-terminal-server")
+    monkeypatch.setattr(app_mod, "probe_foreground_process", lambda: "gnome-terminal-server")
     app_mod._on_ipc_toggle(ctx, "correct")
     assert ctx.controller.state is DictationState.RECORDING
     assert ctx.controller.active_profile is profile
@@ -1100,7 +1112,7 @@ def test_ipc_start_applies_matching_profile(ctx, monkeypatch):
 
     profile = AppProfile(name="Kod", match="code", mode="translate")
     ctx.settings = ctx.settings.model_copy(update={"profiles": (profile,)})
-    monkeypatch.setattr(app_mod, "foreground_process_name", lambda: "code")
+    monkeypatch.setattr(app_mod, "probe_foreground_process", lambda: "code")
     app_mod._on_ipc_start(ctx, "correct")
     assert ctx.controller.session.mode == "translate"
 
@@ -1337,7 +1349,11 @@ def test_invalid_paste_last_hotkey_is_disabled():
     assert s.hotkey_paste_last == ""
 
 
-def test_controller_warning_reaches_overlay(ctx):
+def test_controller_warning_reaches_overlay(ctx, monkeypatch):
+    """Mikrofon uyarıları kayıt sürerken gelir ve overlay'de gösterilir."""
+    monkeypatch.setattr(
+        type(ctx.controller), "state", property(lambda self: DictationState.RECORDING)
+    )
     ctx.controller.warning.emit("Mikrofondan ses gelmiyor.")
     assert "Mikrofondan ses gelmiyor." in ctx.overlay._warning.text()
 
@@ -1517,3 +1533,68 @@ def test_modal_health_dialog_is_parented_to_main_window_and_reloads_model(ctx, m
     dialog.model_downloaded.emit()
     assert warmed == [True]
     dialog.close()
+
+
+def test_unknown_foreground_uses_default_profile_and_warns_once(ctx, monkeypatch):
+    """Wayland'de etkin uygulama bilinmez; profil uygulanmaz ve kullanıcı bir kez uyarılır."""
+    from dikte.config import AppProfile
+    from dikte.platform.foreground import FOREGROUND_UNKNOWN_MESSAGE
+
+    profile = AppProfile(name="Kod", match="code", mode="translate")
+    ctx.settings = ctx.settings.model_copy(update={"profiles": (profile,)})
+    monkeypatch.setattr(app_mod, "probe_foreground_process", lambda: None)
+    notes = []
+    monkeypatch.setattr(ctx.tray, "notify", lambda *a, **k: notes.append(a[1]))
+    assert app_mod._resolve_profile(ctx) is None
+    assert app_mod._resolve_profile(ctx) is None
+    assert notes == [FOREGROUND_UNKNOWN_MESSAGE]
+
+
+def test_ipc_warning_is_shown_in_tray(ctx, monkeypatch):
+    """Komut kanalı açılamaz ya da doğrulanamazsa kullanıcı tepsiden uyarılır."""
+    notes = []
+    monkeypatch.setattr(ctx.tray, "notify", lambda *a, **k: notes.append((a[1], k)))
+
+    class FakeSingle:
+        warning_message = "Komut kanalı açılamadı."
+
+    app_mod._notify_ipc_status(ctx, FakeSingle())
+    assert notes == [("Komut kanalı açılamadı.", {"critical": True})]
+
+
+def test_ipc_without_warning_is_silent(ctx, monkeypatch):
+    notes = []
+    monkeypatch.setattr(ctx.tray, "notify", lambda *a, **k: notes.append(a))
+
+    class FakeSingle:
+        warning_message = None
+
+    app_mod._notify_ipc_status(ctx, FakeSingle())
+    assert notes == []
+
+
+def test_controller_warning_outside_recording_goes_to_tray(ctx, monkeypatch):
+    """Sonuçtan hemen önce gelen uyarı (ör. kayıp parça) overlay RESULT'ta gizlendiği için
+    görünmezdi; kayıt dışındaki uyarılar tepsi bildirimiyle gösterilir."""
+    from dikte.core.controller import LOST_CHUNK_WARNING
+
+    notes = []
+    shown = []
+    monkeypatch.setattr(ctx.tray, "notify", lambda *a, **k: notes.append(a[1]))
+    monkeypatch.setattr(ctx.overlay, "show_warning", lambda text, *a: shown.append(text))
+    ctx.controller.warning.emit(LOST_CHUNK_WARNING)
+    assert notes == [LOST_CHUNK_WARNING]
+    assert shown == []
+
+
+def test_controller_warning_while_recording_stays_on_overlay(ctx, monkeypatch):
+    notes = []
+    shown = []
+    monkeypatch.setattr(ctx.tray, "notify", lambda *a, **k: notes.append(a[1]))
+    monkeypatch.setattr(ctx.overlay, "show_warning", lambda text, *a: shown.append(text))
+    monkeypatch.setattr(
+        type(ctx.controller), "state", property(lambda self: DictationState.RECORDING)
+    )
+    ctx.controller.warning.emit("Mikrofon sesi çok düşük.")
+    assert shown == ["Mikrofon sesi çok düşük."]
+    assert notes == []
