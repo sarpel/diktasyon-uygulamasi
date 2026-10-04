@@ -857,11 +857,15 @@ def test_missing_late_chunk_does_not_hang_forever(qtbot, monkeypatch):
     c = DictationController(
         _live_chunk_settings(), recorder=rec, stt=stt, llm=FakeLlm(), pool=QThreadPool()
     )
+    warnings = []
+    c.warning.connect(warnings.append)
     c.toggle()
     rec.chunks_emitted = 1  # parça kesildi ama hiç teslim edilmeyecek
     c.toggle()
     qtbot.waitUntil(lambda: c.state is DictationState.RESULT, timeout=3000)
     assert c.session.raw_text == "Kuyruk."
+    # Ses parçası kayboldu: kullanıcı metnin eksik olabileceğini bilmeli.
+    assert warnings == ["Kaydın bir bölümü işlenemedi; metin eksik olabilir."]
 
 
 def test_late_chunk_after_cancel_is_ignored(qtbot):

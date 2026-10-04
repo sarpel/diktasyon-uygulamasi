@@ -26,6 +26,8 @@ log = logging.getLogger(__name__)
 # Durdurma anında kayıtçının kestiği ama kuyruklu sinyali henüz gelmemiş parçalar için
 # azami bekleme; normalde milisaniyeler içinde gelir, bu yalnızca takılmaya karşı güvence.
 LATE_CHUNK_TIMEOUT_MS = 3000
+# Geç parça hiç gelmezse o bölümün sesi metne girmez; kullanıcı bunu bilmeli.
+LOST_CHUNK_WARNING = "Kaydın bir bölümü işlenemedi; metin eksik olabilir."
 RETRY_HINT = (
     " Ses kaydı saklandı; tepsideki “Başarısız kaydı yeniden dene” ile tekrar deneyebilirsiniz."
 )
@@ -475,6 +477,7 @@ class DictationController(QObject):
             self._chunks_expected - self._chunks_received,
             LATE_CHUNK_TIMEOUT_MS,
         )
+        self.warning.emit(LOST_CHUNK_WARNING)
         self._chunks_expected = self._chunks_received
         self._release_tail_if_ready()
         self._maybe_finish_transcription()
