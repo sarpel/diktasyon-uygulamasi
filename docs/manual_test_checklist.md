@@ -178,9 +178,45 @@
 - [ ] Paketlenmiş `Dikte.exe --version` sürümü yazıp 0 ile çıkıyor; açılışta ve Ayarlar
       açılırken konsol penceresi yanıp sönmüyor.
 - [ ] Kurulum paketiyle (Dikte-Setup) kurulan uygulamada "Kayıt sırasında çalan medyayı
-      duraklat" açıkken Spotify/YouTube kayıtta duruyor, bitince devam ediyor (winsdk pakette).
+      duraklat" açıkken Spotify/YouTube kayıtta duruyor, bitince devam ediyor (winrt pakette).
 - [ ] Geçmiş panelinden ve sonuç panellerinden kopyalanan metin `Win+V` pano geçmişinde görünmüyor
       ("pano geçmişine alma" ayarı açıkken).
 - [ ] Ayarlar → Hakkında → "Durum kontrolü…": Ollama kapalıyken "Ollama'yı başlat" düğmesi çıkıyor.
 - [ ] Uzun bir dosya çözümlenirken Ayarlar'da Whisper modeli değiştirilip Kaydet'e basınca
       arayüz donmuyor; çözümleme bitince yeni model yükleniyor.
+
+## Kod incelemesi düzeltmeleri (gerçek cihazda doğrulanmalı)
+
+- [ ] Windows 11, Python 3.13 venv: `pip install ".[media]"`, Spotify/YouTube çalarken kayıt
+      başlat: medya duruyor, bitince devam ediyor. Aynısını PyInstaller paketiyle dene (winrt,
+      `msvcp140.dll` ve `foundation.collections` pakette).
+- [ ] Windows: Ctrl+Alt'lı bas-konuş kısayolu; sonuç gelirken tuşları basılı tut: `Ctrl+V`
+      yapıştırıyor (`Ctrl+Alt+V` değil); Win/Alt bırakılınca Başlat menüsü ve menü çubuğu açılmıyor.
+- [ ] Windows: Dikte'yi yönetici olarak, sonra ikinci kez normal başlat: tek örnek/IPC davranışı
+      ve gerekiyorsa uyarı görünüyor.
+- [ ] Windows: aynı kullanıcıdan `dikte --toggle` çalışıyor; başka bir kullanıcı hesabının
+      açtığı pipe reddediliyor.
+- [ ] Windows: Ayarlar ve diyalog düğmeleri Türkçe (Tamam/İptal/Evet/Hayır); paketlenmiş
+      sürümde de.
+- [ ] Kayıt ya da çözümleme sürerken oturumu kapat / Windows'u yeniden başlat: mikrofon
+      göstergesi sönüyor, kapanış takılmıyor, duraklatılan medya sürüyor.
+- [ ] Hakkında → Durum kontrolü → Modeli indir; indirme sürerken Ayarlar'ı kapat: çökme yok,
+      model indikten sonra yükleniyor.
+- [ ] Otomatik yapıştırma + "pencereyi öne getir" açık, Not Defteri'ne dikte: metin bir kez Not
+      Defteri'ne yapışıyor, pencere sonra öne geliyor, sonuç penceresinde metin ikilenmiyor.
+- [ ] "Eski panoyu geri yükle" açıkken Teams/Outlook/Word'e uzun metin dikte: dikte metni
+      yapışıyor, eski pano içeriği yapışmıyor; ardından eski pano geri geliyor.
+- [ ] RDP (mstsc), Hyper-V/VirtualBox penceresine ve `Ctrl+Shift+V` profilli Windows
+      Terminal'e dikte: eski pano geri yüklenmiyor.
+- [ ] Bir uygulama panoyu kilitli tutarken dikte: yapıştırma yapılmıyor, bildirim çıkıyor.
+- [ ] "Tuş tuş yaz" profiliyle 2000+ karakterlik dikte: arayüz donmuyor; araç yoksa ya da zaman
+      aşımında bildirim çıkıyor; Linux'ta `ps aux` metni göstermiyor.
+- [ ] Başka uygulamanın kullandığı bir çeviri kısayolunu ata: bildirim çıkıyor, önceki çeviri
+      kısayolu çalışmaya devam ediyor.
+- [ ] Gerçek mikrofonla canlı parçalamada kaydı iptal edip hemen yeniden başlat: eski konuşma
+      yeni metne karışmıyor.
+- [ ] Linux Wayland (KDE/Sway): yapıştırma ve "tuş tuş yaz" `wtype` ile; Türkçe karakterler ve
+      çok satırlı metin doğru.
+- [ ] Linux Wayland (GNOME): otomatik yapıştırma "yapılamadı" bildiriyor, metin panoda; profil
+      "bilinmiyor" uyarısı bir kez çıkıyor.
+- [ ] Linux, `XDG_RUNTIME_DIR` yokken: `/tmp/dikte-<uid>` 0700 oluşuyor ve `dikte --toggle` çalışıyor.

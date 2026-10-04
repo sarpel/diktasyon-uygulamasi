@@ -68,13 +68,19 @@ Kayıt bitip metin hazır olduğunda üç şey olur:
 1. Düzeltilmiş metin **panoya** yazılır (Ayarlar → Genel → "Sonucu panoya kopyala").
 2. Ön plandaki uygulama Dikte değilse metin oraya **Ctrl+V** ile yapıştırılır
    (Ayarlar → Genel → "Sonucu aktif pencereye yapıştır"). Windows'ta yerleşiktir; Linux'ta `xdotool`
-   (X11) veya `wtype` (Wayland) kurulu olmalıdır, yoksa metin yalnızca panoda kalır.
+   (X11) veya `wtype` (Wayland) kurulu olmalıdır, yoksa metin yalnızca panoda kalır. Wayland'de
+   önce `wtype` denenir; GNOME gibi sanal klavye desteklemeyen ortamlarda yapıştırma yapılamaz,
+   metin panodadır (`Ctrl+V` ile yapıştırın). Panoya yazılamazsa (başka bir uygulama panoyu
+   kilitlediyse) yapıştırma hiç yapılmaz ve bildirim gösterilir.
 3. Oturum **geçmişe** yazılır.
 
 Ek davranışlar:
 
-- "Yapıştırdıktan sonra eski pano içeriğini geri yükle" açıksa pano önceki içeriğine döner.
-  Bu arada yeni bir şey kopyaladıysanız geri yükleme yapılmaz.
+- "Yapıştırdıktan sonra eski pano içeriğini geri yükle" açıksa pano 2–5 sn sonra (metin
+  uzadıkça daha geç) önceki içeriğine döner; yavaş uygulamalar dikte yerine eski içeriği
+  yapıştırmasın diye beklenir. Bu arada yeni bir şey kopyaladıysanız geri yükleme yapılmaz.
+  `Ctrl+Shift+V` profillerinde (terminaller) ve uzak masaüstü / sanal makine pencerelerinde
+  (Uzak Masaüstü, Hyper-V, VirtualBox, VMware, Remmina…) hiç geri yükleme yapılmaz.
 - Windows'ta dikte metni varsayılan olarak pano geçmişine (`Win+V`) ve bulut panosuna girmez
   (Ayarlar → Genel → "Dikte metnini pano geçmişine ve bulut eşitlemesine alma").
 - Düzeltilmiş metni elle düzenleyip `Ctrl+Enter` ile yeniden yapıştırabilirsiniz; düzeltmeniz
@@ -146,8 +152,12 @@ Windows kurulum paketi (`Dikte-Setup-*.exe`) tüm sağlayıcı SDK'larını içe
 - Özel uç noktanın protokolü Ayarlar → Metin Düzeltme → "Biçim" ile seçilir. OpenAI-uyumlu sunucu
   `json_schema` desteklemiyorsa otomatik olarak `json_object` moduna düşülür.
 - Yanıt çıktı sınırına takılıp yarıda kesilirse yarım metin yapıştırılmaz; hata gösterilir.
-- "Düzeltme metinden çok saparsa ham metni kullan" açıkken (varsayılan) düzeltilmiş metnin kelime sayısı ham
-  metinden çok farklıysa (model düzeltmek yerine cevap verdi/özetledi) ham metne dönülür.
+- "Düzeltme metinden çok saparsa ham metni kullan" açıkken (varsayılan) model düzeltmek yerine
+  cevap verdi ya da özetlediyse ham metne dönülür. Kontroller: kelime sayısı ham metnin 0,5–1,6
+  katı olmalı ("ee", "şey" gibi dolgular sayılmaz); 4 kelimeden kısa diktelerde en fazla 2 kelime
+  eklenebilir; ham metnin içerik kelimelerinin en az %40'ı düzeltmede korunmalıdır (birleşen ve
+  yazımı düzeltilen kelimeler korunmuş sayılır). Çeviri ve prompt iyileştirmede boş ya da aşırı
+  uzun yanıtlar reddedilir ve düzeltilmiş metin gösterilir.
 - LLM tamamen kapatılabilir (Ayarlar → Metin Düzeltme → "LLM ile metin düzeltme"): ham metin
   doğrudan sonuç olur, ek VRAM kullanılmaz. Düşük VRAM'de `keep_alive` değerini `0` yaparak
   Ollama modelini her istekten sonra boşaltabilirsiniz.
@@ -230,10 +240,14 @@ yapıştırma tuşu, LLM düzeltmesi ve sonek değiştirilebilir:
 | Alan | Anlamı |
 |---|---|
 | Ad | Listede tanımak için; boş bırakılamaz |
-| Eşleşme | Süreç adı (`.exe` olmadan) veya içinde aranan alt dize, ör. `code`, `windowsterminal` |
+| Eşleşme | Süreç adı (`.exe` yazılabilir de, yazılmayabilir de) veya içinde aranan alt dize, ör. `code`, `windowsterminal` |
 | Mod | Düzelt / Çevir / Prompt. Yalnızca kısayol "düzelt" modundaysa devreye girer; ayrı çeviri/prompt kısayolları profille geçersiz kılınmaz |
 | Yapıştırma | `ctrl+v`, `ctrl+shift+v` (bazı terminaller) veya `type` (panoyu kullanmadan karakter karakter yazar; satır sonları `Shift+Enter` ile gönderilir) |
 | LLM | Kapatılırsa bu uygulamada ham metin doğrudan teslim edilir |
+
+Wayland oturumlarında etkin uygulama güvenilir biçimde algılanamaz; bu yüzden profiller
+uygulanmaz, varsayılan ayarlar kullanılır ve durum bir kez bildirilir. "Tuş tuş yaz" yarıda
+kalırsa ya da hedefe ulaştığı doğrulanamazsa metin panodadır ve bildirim gösterilir.
 | Sonek | Sonuca eklenecek `(yok)` / `boşluk` / `yeni satır` |
 
 Birden fazla profil eşleşirse önce süreç adıyla **tam eşleşen**, yoksa **en uzun alt dizeyle**

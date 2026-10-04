@@ -43,7 +43,7 @@ kartlarda (ör. GTX 970) Dikte otomatik olarak `float32`'ye düşer ve uyarı g�
 4. `Ctrl+Alt+Space` ile ilk diktenizi yapın.
 
 Kurulum paketi Python, CUDA kütüphaneleri (cuBLAS/cuDNN), tüm LLM sağlayıcı SDK'larını ve
-medya duraklatma için `winsdk`'yı içerir. Bilgisayarda yalnızca NVIDIA sürücüsü kurulu olmalıdır.
+medya duraklatma için pywinrt (`winrt-*`) paketlerini içerir. Bilgisayarda yalnızca NVIDIA sürücüsü kurulu olmalıdır.
 
 > Windows SmartScreen imzasız kurulum dosyaları için "Windows bilgisayarınızı korudu" uyarısı
 > gösterebilir. Dosyayı bu repodaki Releases sayfasından indirdiyseniz "Ek bilgi" →
@@ -179,7 +179,7 @@ Kaynaktan kurulumda ihtiyacınıza göre extra'ları birleştirin, ör. `uv pip 
 | `openai` | `openai` SDK | OpenAI, LM Studio veya OpenAI-uyumlu özel uç nokta |
 | `anthropic` | `anthropic` SDK | Anthropic veya Anthropic-uyumlu özel uç nokta |
 | `gemini` | `google-genai` SDK | Gemini |
-| `media` | `winsdk` (yalnızca Windows) | Kayıtta çalan medyayı duraklatma (Linux'ta `playerctl` kullanılır) |
+| `media` | `winrt-*` (pywinrt, yalnızca Windows) | Kayıtta çalan medyayı duraklatma (Linux'ta `playerctl` kullanılır) |
 | `dev` | pytest, ruff, pyright, PyInstaller ve sağlayıcı SDK'ları | Geliştirme ve paketleme |
 
 ## Güncelleme
