@@ -269,7 +269,7 @@ def test_shutdown_runs_when_application_is_about_to_quit(ctx, monkeypatch):
     from PySide6.QtCore import QObject, Signal
 
     class FakeApp(QObject):
-        aboutToQuit = Signal()
+        aboutToQuit = Signal()  # noqa: N815 - Qt sinyal adı
 
     calls = _record_shutdown_calls(ctx, monkeypatch)
     fake_app = FakeApp()
@@ -376,9 +376,7 @@ def test_apply_hotkey_notifies_on_windows_failure(ctx, monkeypatch):
         ("hotkey_paste_last", "hotkey_paste_last"),
     ],
 )
-def test_optional_hotkey_failure_keeps_previous_binding_and_notifies(
-    ctx, monkeypatch, field, attr
-):
+def test_optional_hotkey_failure_keeps_previous_binding_and_notifies(ctx, monkeypatch, field, attr):
     """register() başarısızlıkta önceki kısayolu geri kaydeder; öncesinde unregister()
     çağrılırsa geri yüklenecek bir şey kalmaz ve kullanıcı kısayolsuz kalır."""
     monkeypatch.setattr(app_mod.sys, "platform", "win32")
@@ -594,7 +592,15 @@ def test_window_not_raised_when_setting_off(ctx, monkeypatch):
     assert scheduled == []
 
 
-def test_restore_clipboard_after_paste(ctx, monkeypatch, qtbot):
+@pytest.fixture
+def fast_restore(monkeypatch):
+    """Gerçek geri yükleme gecikmesi saniyelerdir; testlerde kısaltılır. Ön plan süreci
+    sıradan bir uygulamadır (uzak masaüstü/VM değil)."""
+    monkeypatch.setattr(app_mod, "restore_delay_ms", lambda _text: 50)
+    monkeypatch.setattr(app_mod, "foreground_process_name", lambda: "notepad")
+
+
+def test_restore_clipboard_after_paste(ctx, monkeypatch, qtbot, fast_restore):
     from PySide6.QtWidgets import QApplication
 
     ctx.settings = ctx.settings.model_copy(update={"restore_clipboard": True})
@@ -605,7 +611,7 @@ def test_restore_clipboard_after_paste(ctx, monkeypatch, qtbot):
     qtbot.waitUntil(lambda: QApplication.clipboard().text() == "eski", timeout=2000)
 
 
-def test_restore_clipboard_preserves_image_not_just_text(ctx, monkeypatch, qtbot):
+def test_restore_clipboard_preserves_image_not_just_text(ctx, monkeypatch, qtbot, fast_restore):
     """F: restore_clipboard yalnızca metni koruyordu; panodaki bir resim dikte sonrası
     geri yükleme sırasında sessizce kayboluyordu."""
     from PySide6.QtGui import QImage
@@ -623,15 +629,89 @@ def test_restore_clipboard_preserves_image_not_just_text(ctx, monkeypatch, qtbot
     assert restored.size() == image.size()
 
 
-def test_clipboard_not_restored_when_paste_skipped(ctx, monkeypatch, qtbot):
+def test_clipboard_not_restored_when_paste_skipped(ctx, monkeypatch, qtbot, fast_restore):
     from PySide6.QtWidgets import QApplication
 
     ctx.settings = ctx.settings.model_copy(update={"restore_clipboard": True})
     QApplication.clipboard().setText("eski")
     monkeypatch.setattr(app_mod, "paste_active_window", lambda ids, **k: False)
     app_mod._on_result_ready(ctx, "yeni")
-    qtbot.wait(400)
+    qtbot.wait(200)
     assert QApplication.clipboard().text() == "yeni"
+
+
+@pytest.mark.parametrize(
+    ("paste_mode", "process"),
+    [("ctrl+shift+v", "windowsterminal"), ("ctrl+v", "mstsc"), ("ctrl+v", "remmina")],
+)
+def test_clipboard_not_restored_for_terminals_and_remote_clients(
+    ctx, monkeypatch, qtbot, paste_mode, process
+):
+    """Terminaller ve uzak masaüstü/VM istemcileri panoyu geç okur; eski (belki gizli)
+    içerik geri yüklenip yapıştırılmasın diye bu hedeflerde geri yükleme yapılmaz."""
+    from PySide6.QtWidgets import QApplication
+
+    from dikte.config import AppProfile
+
+    monkeypatch.setattr(app_mod, "restore_delay_ms", lambda _text: 50)
+    monkeypatch.setattr(app_mod, "foreground_process_name", lambda: process)
+    ctx.controller._active_profile = AppProfile(name="Hedef", match="x", paste=paste_mode)
+    ctx.settings = ctx.settings.model_copy(update={"restore_clipboard": True})
+    QApplication.clipboard().setText("eski parola")
+    monkeypatch.setattr(app_mod, "paste_active_window", lambda ids, **k: True)
+    app_mod._on_result_ready(ctx, "yeni")
+    qtbot.wait(200)
+    assert QApplication.clipboard().text() == "yeni"
+
+
+class _StubbornClipboard:
+    """Başka bir süreç panoyu açık tuttuğunda olduğu gibi yazmayı sessizce yok sayar."""
+
+    def __init__(self, failures: int):
+        self.failures = failures
+        self.current = "eski gizli"
+        self.writes = 0
+
+    def mimeData(self):
+        from dikte.platform.clipboard import new_mime_data
+
+        mime = new_mime_data()
+        mime.setText(self.current)
+        return mime
+
+    def setMimeData(self, mime):
+        self.writes += 1
+        if self.failures:
+            self.failures -= 1
+            return
+        self.current = mime.text()
+
+    def text(self):
+        return self.current
+
+
+def test_clipboard_write_failure_skips_paste_and_notifies(ctx, monkeypatch):
+    """Pano yazılamadıysa Ctrl+V önceki (belki gizli) içeriği yapıştırırdı."""
+    board = _StubbornClipboard(failures=2)
+    monkeypatch.setattr(app_mod, "_system_clipboard", lambda: board)
+    monkeypatch.setattr(app_mod, "CLIPBOARD_RETRY_S", 0)
+    pasted = []
+    monkeypatch.setattr(app_mod, "paste_active_window", lambda ids, **k: pasted.append(1) or True)
+    notes = []
+    monkeypatch.setattr(ctx.tray, "notify", lambda *a, **k: notes.append(a[1]))
+    app_mod._on_result_ready(ctx, "yeni")
+    assert board.writes == 2 and pasted == []
+    assert notes and "panoya yazılamadı" in notes[0]
+
+
+def test_clipboard_write_is_retried_once(ctx, monkeypatch):
+    board = _StubbornClipboard(failures=1)
+    monkeypatch.setattr(app_mod, "_system_clipboard", lambda: board)
+    monkeypatch.setattr(app_mod, "CLIPBOARD_RETRY_S", 0)
+    pasted = []
+    monkeypatch.setattr(app_mod, "paste_active_window", lambda ids, **k: pasted.append(1) or True)
+    app_mod._on_result_ready(ctx, "yeni")
+    assert board.writes == 2 and board.current == "yeni" and pasted == [1]
 
 
 def test_result_ready_uses_profile_paste_combo(ctx, monkeypatch):
@@ -646,7 +726,7 @@ def test_result_ready_uses_profile_paste_combo(ctx, monkeypatch):
     assert combos == ["ctrl+shift+v"]
 
 
-def test_result_ready_uses_type_when_profile_paste_is_type(ctx, monkeypatch):
+def test_result_ready_uses_type_when_profile_paste_is_type(ctx, monkeypatch, qtbot):
     from dikte.config import AppProfile
 
     ctx.controller._active_profile = AppProfile(name="Kod", match="code", paste="type")
@@ -655,8 +735,64 @@ def test_result_ready_uses_type_when_profile_paste_is_type(ctx, monkeypatch):
     monkeypatch.setattr(app_mod, "type_unicode_text", lambda text: typed.append(text) or True)
     monkeypatch.setattr(app_mod, "paste_active_window", lambda *a, **k: pasted.append(1) or True)
     app_mod._on_result_ready(ctx, "Merhaba.")
-    assert typed == ["Merhaba."]
+    qtbot.waitUntil(lambda: typed == ["Merhaba."], timeout=2000)
     assert pasted == []
+
+
+def test_typing_runs_off_the_gui_thread(ctx, monkeypatch, qtbot):
+    """Uzun metinde yazma alt süreci onlarca saniye sürebilir; GUI donmamalı."""
+    import threading
+
+    from dikte.config import AppProfile
+
+    ctx.controller._active_profile = AppProfile(name="Kod", match="code", paste="type")
+    threads = []
+    monkeypatch.setattr(
+        app_mod, "type_unicode_text", lambda text: threads.append(threading.current_thread())
+    )
+    done = []
+    app_mod._on_result_ready(ctx, "Merhaba.", on_done=done.append)
+    qtbot.waitUntil(lambda: done == [False], timeout=2000)
+    assert threads and threads[0] is not threading.main_thread()
+
+
+@pytest.mark.parametrize("outcome", ["false", "raise"])
+def test_typing_failure_notifies_text_is_on_clipboard(ctx, monkeypatch, qtbot, outcome):
+    from PySide6.QtWidgets import QApplication
+
+    from dikte.config import AppProfile
+
+    def fake_type(text):
+        if outcome == "raise":
+            raise TimeoutError("yazma zaman aşımı")
+        return False
+
+    ctx.controller._active_profile = AppProfile(name="Kod", match="code", paste="type")
+    monkeypatch.setattr(app_mod, "type_unicode_text", fake_type)
+    notes = []
+    monkeypatch.setattr(ctx.tray, "notify", lambda *a, **k: notes.append(a[1]))
+    done = []
+    app_mod._on_result_ready(ctx, "Uzun metin.", on_done=done.append)
+    qtbot.waitUntil(lambda: done == [False], timeout=2000)
+    assert notes == ["Metnin bir kısmı yazılamadı; tamamı panoda."]
+    assert QApplication.clipboard().text() == "Uzun metin."
+
+
+def test_typing_success_reports_pasted_and_restores_clipboard(
+    ctx, monkeypatch, qtbot, fast_restore
+):
+    from PySide6.QtWidgets import QApplication
+
+    from dikte.config import AppProfile
+
+    ctx.controller._active_profile = AppProfile(name="Kod", match="code", paste="type")
+    ctx.settings = ctx.settings.model_copy(update={"restore_clipboard": True})
+    QApplication.clipboard().setText("eski")
+    monkeypatch.setattr(app_mod, "type_unicode_text", lambda text: True)
+    done = []
+    app_mod._on_result_ready(ctx, "yeni", on_done=done.append)
+    qtbot.waitUntil(lambda: done == [True], timeout=2000)
+    qtbot.waitUntil(lambda: QApplication.clipboard().text() == "eski", timeout=2000)
 
 
 def test_result_ready_appends_profile_trailing(ctx, monkeypatch):
@@ -1057,7 +1193,9 @@ def test_sanitized_hotkeys_include_paste_last():
     assert app_mod._sanitized_hotkeys(before, before) == ()
 
 
-def test_restore_clipboard_skipped_when_user_copied_meanwhile(ctx, monkeypatch, qtbot):
+def test_restore_clipboard_skipped_when_user_copied_meanwhile(
+    ctx, monkeypatch, qtbot, fast_restore
+):
     from PySide6.QtWidgets import QApplication
 
     ctx.settings = ctx.settings.model_copy(update={"restore_clipboard": True})

@@ -8,6 +8,7 @@ from __future__ import annotations
 import argparse
 import logging
 import sys
+import time
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -55,7 +56,9 @@ from dikte.platform.clipboard import (
     build_mime,
     copy_text,
     new_mime_data,
+    restore_allowed,
     restore_delay_ms,
+    same_text,
     should_restore,
 )
 from dikte.platform.foreground import foreground_process_name
@@ -64,7 +67,12 @@ from dikte.platform.hold_detect import HoldDetector
 from dikte.platform.hotkey import HOTKEY_ID, GlobalHotkey
 from dikte.platform.hotkey_parse import HotkeyParseError, parse_hotkey
 from dikte.platform.media import MediaPauser
-from dikte.platform.paste import foreground_window_id, paste_active_window, type_unicode_text
+from dikte.platform.paste import (
+    KeyCombo,
+    foreground_window_id,
+    paste_active_window,
+    type_unicode_text,
+)
 from dikte.platform.single_instance import (
     DEFAULT_NAME,
     START_MESSAGE,
@@ -92,6 +100,13 @@ MEDIA_QUIT_WAIT_MS = 2000
 SHUTDOWN_WAIT_MS = 3000
 # Qt'nin standart metinleri (QDialogButtonBox, QMessageBox, sağ tık menüsü) için çeviri.
 QT_TRANSLATION = "qtbase_tr"
+# Pano yazımı doğrulanamazsa yeniden denemeden önce bekleme (başka süreç panoyu tutuyor).
+CLIPBOARD_RETRY_S = 0.1
+CLIPBOARD_WRITE_FAILED = (
+    "Metin panoya yazılamadı (pano başka bir uygulama tarafından kullanılıyor olabilir); "
+    "yapıştırma yapılmadı. Metni Dikte penceresinden kopyalayabilirsiniz."
+)
+TYPING_FAILED = "Metnin bir kısmı yazılamadı; tamamı panoda."
 
 
 @dataclass
@@ -560,50 +575,124 @@ def _on_result_ready(
     `force_paste=True` (yalnızca "Yeniden yapıştır" eylemi): dosyadan çözümlenen bir
     oturumda bile kullanıcı açıkça yapıştırmayı istedi, otomatik-teslim kısıtlaması
     (aşağıdaki source_path kontrolü) burada atlanır. `on_done(yapıştırıldı_mı)` teslim
-    bitince bir kez çağrılır.
+    bitince bir kez çağrılır ("yaz" modunda yazma arka planda bittiğinde).
+
+    Pano yazılamazsa yapıştırma yapılmaz (önceki içerik yapıştırılırdı). Önceki pano
+    terminal/uzak masaüstü hedeflerinde hiç, diğerlerinde ancak pano hâlâ bizim metnimizi
+    tutuyorsa geri yüklenir.
     """
-    pasted = _deliver_result(ctx, text, force_paste=force_paste)
-    if on_done is not None:
-        on_done(pasted)
-
-
-def _deliver_result(ctx: AppContext, text: str, *, force_paste: bool) -> bool:
-    """`_on_result_ready`ın gövdesi; yapıştırma (ya da yazma) gönderildiyse True döner."""
+    finish = on_done or (lambda _pasted: None)
     if not text or not ctx.settings.auto_copy:
-        return False
+        finish(False)
+        return
     # ctx.active_profile yalnızca en son global kısayolu izler; tepsi/pencere düğmesi/IPC
     # ile başlatılan bir dikte hiç ondan geçmez, o zaman yanlış (eski) profil uygulanırdı.
     # controller.active_profile bu SONUCU üreten oturuma ait gerçek profildir.
     profile = ctx.controller.active_profile
     if profile and profile.trailing:
         text += profile.trailing
-    clipboard = QApplication.clipboard()
+    clipboard = _system_clipboard()
     # Yalnızca clipboard.text() değil tüm QMimeData (resim/dosya de dahil) korunur; aksi
     # hâlde panoda bir resim varken dikte sonrası geri yükleme onu sessizce kaybederdi.
     # mimeData() clipboard'a ait olduğundan, clipboard değişmeden önce kopyalanmalı.
     previous_mime = _clone_mime(clipboard.mimeData()) if ctx.settings.restore_clipboard else None
-    clipboard.setMimeData(build_mime(text, exclude_history=ctx.settings.clipboard_exclude_history))
-    if ctx.controller.session.source_path and not force_paste:
-        return False  # dosyadan çözümlenen sonuç otomatik olarak yalnızca panoya kopyalanır
-    if not ctx.settings.auto_paste or ctx.window.isActiveWindow():
-        return False
-    own_ids = {int(ctx.window.winId()), int(ctx.overlay.winId())}
-    foreground = foreground_window_id()
-    if foreground is not None and foreground in own_ids:
-        return False
-    paste_mode = profile.paste if profile else "ctrl+v"
+    if not _write_clipboard(clipboard, text, ctx.settings.clipboard_exclude_history):
+        log.error("sonuç panoya yazılamadı; yapıştırma yapılmadı")
+        ctx.tray.notify(APP_NAME, CLIPBOARD_WRITE_FAILED, critical=True)
+        finish(False)
+        return
+    paste_mode = _paste_mode_for(ctx, profile, force_paste=force_paste)
+    if paste_mode is None:
+        finish(False)
+        return
+
+    def _delivered(pasted: bool) -> None:
+        if pasted and previous_mime is not None and previous_mime.formats():
+            _schedule_clipboard_restore(clipboard, previous_mime, text, paste_mode)
+        finish(pasted)
+
     if paste_mode == "type":
-        pasted = type_unicode_text(text)
-    else:
-        pasted = paste_active_window(own_ids, combo=paste_mode)
+        # Uzun metinde yazma alt süreci onlarca saniye sürebilir; GUI donmasın.
+        _run_background(
+            ctx,
+            lambda: type_unicode_text(text),
+            lambda ok: _on_typed(ctx, bool(ok), _delivered),
+            lambda message: _on_typing_error(ctx, message, _delivered),
+        )
+        return
+    # "type" yukarıda ayrıldı; kalan profil değerleri birer tuş bileşimidir.
+    pasted = paste_active_window(_own_window_ids(ctx), combo=cast("KeyCombo", paste_mode))
     if not pasted:
         log.info("yapıştırma atlandı; metin panoda")
-        return False
-    if ctx.settings.restore_clipboard and previous_mime is not None and previous_mime.formats():
-        QTimer.singleShot(
-            restore_delay_ms(text), lambda: _restore_clipboard(clipboard, previous_mime, text)
+    _delivered(pasted)
+
+
+def _system_clipboard():
+    """Sistem panosu (testlerde sahtesiyle değiştirilir)."""
+    return QApplication.clipboard()
+
+
+def _own_window_ids(ctx: AppContext) -> set[int]:
+    return {int(ctx.window.winId()), int(ctx.overlay.winId())}
+
+
+def _paste_mode_for(
+    ctx: AppContext, profile: AppProfile | None, *, force_paste: bool
+) -> str | None:
+    """Yapıştırma yapılacaksa tuş bileşimi ya da "type"; yapılmayacaksa None."""
+    if ctx.controller.session.source_path and not force_paste:
+        return None  # dosyadan çözümlenen sonuç otomatik olarak yalnızca panoya kopyalanır
+    if not ctx.settings.auto_paste or ctx.window.isActiveWindow():
+        return None
+    foreground = foreground_window_id()
+    if foreground is not None and foreground in _own_window_ids(ctx):
+        return None
+    return profile.paste if profile else "ctrl+v"
+
+
+def _write_clipboard(clipboard, text: str, exclude_history: bool) -> bool:
+    """Metni panoya yazar ve gerçekten yazıldığını doğrular; bir kez yeniden dener.
+
+    Windows'ta başka bir süreç panoyu açık tutarken QClipboard.setMimeData sessizce
+    başarısız olabilir; doğrulanmadan Ctrl+V gönderilirse önceki içerik yapıştırılırdı."""
+    for attempt in range(2):
+        if attempt:
+            time.sleep(CLIPBOARD_RETRY_S)
+        clipboard.setMimeData(build_mime(text, exclude_history=exclude_history))
+        if same_text(clipboard.text(), text):
+            return True
+        log.warning("pano yazımı doğrulanamadı (deneme %d)", attempt + 1)
+    return False
+
+
+def _on_typed(ctx: AppContext, ok: bool, delivered: Callable[[bool], None]) -> None:
+    if not ok:
+        log.error("metin yazılamadı ya da yarıda kaldı; metin panoda")
+        ctx.tray.notify(APP_NAME, TYPING_FAILED)
+    delivered(ok)
+
+
+def _on_typing_error(ctx: AppContext, message: str, delivered: Callable[[bool], None]) -> None:
+    # Ayrıntı (yığın izi) run_in_pool tarafından log.exception ile yazıldı.
+    log.error("metin yazılırken hata: %s", message)
+    ctx.tray.notify(APP_NAME, TYPING_FAILED)
+    delivered(False)
+
+
+def _schedule_clipboard_restore(
+    clipboard, previous_mime: QMimeData, text: str, paste_mode: str
+) -> None:
+    process = foreground_process_name()
+    if not restore_allowed(paste_mode, process):
+        log.info(
+            "pano geri yüklenmedi: hedef (%s, %s) panoyu geç okuyabilir",
+            paste_mode,
+            process or "bilinmiyor",
         )
-    return True
+        return
+    QTimer.singleShot(
+        restore_delay_ms(text), lambda: _restore_clipboard(clipboard, previous_mime, text)
+    )
 
 
 def _restore_clipboard(clipboard, previous_mime: QMimeData, pasted_text: str) -> None:

@@ -204,8 +204,10 @@ def test_llm_buttons_disabled_while_new_dictation_runs(qtbot):
 
 
 def test_bind_reads_initial_controller_state(qtbot):
-    c = FakeController()
-    c.state = DictationState.IDLE
+    class IdleController(FakeController):
+        state = DictationState.IDLE
+
+    c = IdleController()
     w = ResultWindow()
     qtbot.addWidget(w)
     w.bind(c)
