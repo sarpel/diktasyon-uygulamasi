@@ -740,44 +740,17 @@ def test_ineffective_hallucination_silence_control_is_hidden_but_value_kept(qtbo
     assert d.result_settings().stt.hallucination_silence_threshold_s == 4.5
 
 
-def test_about_tab_health_dialog_offers_ollama_fixes(qtbot, monkeypatch):
-    """Hakkında'dan açılan durum kontrolü de 'Ollama'yı başlat'/'ollama pull' sunmalı."""
-    from dikte.ui.settings import about_tab as about_mod
+def test_about_tab_health_button_requests_app_health_dialog(qtbot):
+    """Durum penceresini sekme değil uygulama açar: indirilen model yüklenir ve pencere
+    ayarlar diyaloğu silinince (deleteLater) onunla birlikte yok olmaz."""
+    from dikte.ui.settings.about_tab import AboutTab
 
-    captured = {}
-
-    class FakeDialog:
-        def __init__(self, items, **kwargs):
-            captured.update(kwargs)
-
-        def exec(self):
-            return 0
-
-    monkeypatch.setattr(about_mod, "HealthDialog", FakeDialog)
-    settings = Settings()
-    tab = about_mod.AboutTab(settings, gpu_probe=lambda: "g", vram_probe=lambda: "v")
+    tab = AboutTab(Settings(), gpu_probe=lambda: "g", vram_probe=lambda: "v")
     qtbot.addWidget(tab)
-    tab._on_health_checked(())
-    assert captured["ollama_model"] == settings.llm.model
-    assert captured["ollama_host"] == settings.llm.ollama_host
-    assert callable(captured["health_probe"])
+    with qtbot.waitSignal(tab.health_requested, timeout=1000):
+        tab.health_btn.click()
 
 
-def test_about_tab_health_dialog_skips_ollama_for_other_providers(qtbot, monkeypatch):
-    from dikte.ui.settings import about_tab as about_mod
-
-    captured = {}
-
-    class FakeDialog:
-        def __init__(self, items, **kwargs):
-            captured.update(kwargs)
-
-        def exec(self):
-            return 0
-
-    monkeypatch.setattr(about_mod, "HealthDialog", FakeDialog)
-    settings = Settings(llm=Settings().llm.model_copy(update={"provider": "openai"}))
-    tab = about_mod.AboutTab(settings, gpu_probe=lambda: "g", vram_probe=lambda: "v")
-    qtbot.addWidget(tab)
-    tab._on_health_checked(())
-    assert captured["ollama_model"] is None
+def test_settings_dialog_forwards_health_request(dlg, qtbot):
+    with qtbot.waitSignal(dlg.health_requested, timeout=1000):
+        dlg.health_btn.click()

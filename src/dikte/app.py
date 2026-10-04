@@ -646,9 +646,15 @@ def _keep_job(job) -> None:
             )
 
 
-def _show_health_dialog(ctx: AppContext, items: tuple[HealthItem, ...] | None = None) -> None:
+def _show_health_dialog(
+    ctx: AppContext, items: tuple[HealthItem, ...] | None = None, *, modal: bool = False
+) -> None:
+    """Durum penceresini ana pencereye bağlı açar; `items` yoksa önce arka planda denetler.
+
+    `modal=True`: kalıcı (modal) Ayarlar diyaloğu açıkken istenince; aksi hâlde o diyalog
+    bu pencereye girdiyi engellerdi. Pencere ana pencereye aittir, Ayarlar silinince yaşar."""
     if items is None:
-        _check_health_async(ctx, lambda result: _show_health_dialog(ctx, result))
+        _check_health_async(ctx, lambda result: _show_health_dialog(ctx, result, modal=modal))
         return
     if ctx.health_dialog is not None:
         # Tekrarlayan model yükleme hataları (ör. her başarısız dikte denemesi) her
@@ -673,7 +679,7 @@ def _show_health_dialog(ctx: AppContext, items: tuple[HealthItem, ...] | None = 
     dialog.destroyed.connect(lambda *_a: _forget_health_dialog(ctx, dialog))
     dialog.model_downloaded.connect(lambda: _on_model_downloaded(ctx))
     ctx.health_dialog = dialog
-    dialog.setModal(False)
+    dialog.setModal(modal)
     dialog.show()
 
 
@@ -818,6 +824,9 @@ def _run_toggle(mode: str = "correct") -> int:
 
 def _open_settings(ctx: AppContext) -> None:
     dlg = SettingsDialog(ctx.settings, list_input_devices(), ctx.window)
+    # Durum penceresi Ayarlar'ın değil uygulamanın: indirilen model yüklenir, Ayarlar
+    # kapanıp silinince süren indirme silinmiş bir nesneye yazmaz.
+    dlg.health_requested.connect(lambda: _show_health_dialog(ctx, modal=True))
     try:
         if dlg.exec() != QDialog.DialogCode.Accepted:
             return

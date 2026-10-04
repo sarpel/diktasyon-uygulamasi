@@ -13,6 +13,13 @@ from dikte.ui.icons import copy_icon, make_tray_icon
 from dikte.ui.toast import Toast
 
 
+class _FakeSignal:
+    """Sahte ayarlar diyaloglarının `health_requested` sinyali (bağlanır, hiç yayılmaz)."""
+
+    def connect(self, *_a, **_k):
+        return None
+
+
 @pytest.fixture
 def ctx(qtbot, tmp_path, monkeypatch):
     monkeypatch.setattr(app_mod.paths, "history_path", lambda: tmp_path / "history.jsonl")
@@ -119,6 +126,8 @@ def test_open_settings_applies_new_settings(ctx, monkeypatch, tmp_path):
     monkeypatch.setattr(app_mod.QMessageBox, "information", staticmethod(lambda *a, **k: None))
 
     class FakeDialog:
+        health_requested = _FakeSignal()
+
         def __init__(self, settings, devices, parent=None):
             self._settings = settings
 
@@ -150,6 +159,8 @@ def test_open_settings_model_change_triggers_reload(ctx, monkeypatch):
     monkeypatch.setattr(ctx.controller, "warm_up", lambda: warmed.append(True))
 
     class FakeDialog:
+        health_requested = _FakeSignal()
+
         def __init__(self, settings, devices, parent=None):
             self._settings = settings
 
@@ -171,6 +182,8 @@ def test_open_settings_cancelled_changes_nothing(ctx, monkeypatch):
     monkeypatch.setattr(app_mod, "list_input_devices", lambda: ())
 
     class Cancelled:
+        health_requested = _FakeSignal()
+
         def __init__(self, *a, **k):
             pass
 
@@ -387,6 +400,8 @@ def test_open_settings_rebuilds_llm_without_restart(ctx, monkeypatch):
     )
 
     class FakeDialog:
+        health_requested = _FakeSignal()
+
         def __init__(self, settings, devices, parent=None):
             self._settings = settings
 
@@ -901,6 +916,8 @@ def test_model_change_while_busy_reloads_when_idle(ctx, monkeypatch):
     )
 
     class FakeDialog:
+        health_requested = _FakeSignal()
+
         def __init__(self, settings, devices, parent=None):
             self._settings = settings
 
@@ -1121,6 +1138,8 @@ def test_lowering_history_limit_to_zero_deletes_file(ctx, monkeypatch, tmp_path)
     assert (tmp_path / "history.jsonl").exists()
 
     class FakeDialog:
+        health_requested = _FakeSignal()
+
         def __init__(self, settings, devices, parent=None):
             self._settings = settings
 
@@ -1183,3 +1202,39 @@ def test_quit_resumes_media_after_queued_pause(ctx, qtbot):
     app_mod._shutdown(ctx)
     qtbot.waitUntil(lambda: len(calls) == 2, timeout=3000)
     assert calls == ["pause", "resume"]
+
+
+def test_settings_health_request_opens_app_owned_health_dialog(ctx, monkeypatch):
+    """Ayarlar → Hakkında → "Durum kontrolü…" uygulamanın kendi durum penceresini açar:
+    model_downloaded bağlıdır ve pencere ayarlar diyaloğu silinince yok olmaz."""
+    from PySide6.QtCore import QObject, Signal
+
+    monkeypatch.setattr(app_mod, "list_input_devices", lambda: ())
+    opened = []
+    monkeypatch.setattr(app_mod, "_show_health_dialog", lambda c, *a, **k: opened.append(k))
+
+    class FakeDialog(QObject):
+        health_requested = Signal()
+
+        def __init__(self, settings, devices, parent=None):
+            super().__init__()
+
+        def exec(self):
+            self.health_requested.emit()
+            return 0
+
+    monkeypatch.setattr(app_mod, "SettingsDialog", FakeDialog)
+    app_mod._open_settings(ctx)
+    assert opened == [{"modal": True}]
+
+
+def test_modal_health_dialog_is_parented_to_main_window_and_reloads_model(ctx, monkeypatch):
+    warmed = []
+    monkeypatch.setattr(ctx.controller, "warm_up", lambda: warmed.append(True))
+    app_mod._show_health_dialog(ctx, (), modal=True)
+    dialog = ctx.health_dialog
+    assert dialog is not None
+    assert dialog.parent() is ctx.window and dialog.isModal()
+    dialog.model_downloaded.emit()
+    assert warmed == [True]
+    dialog.close()

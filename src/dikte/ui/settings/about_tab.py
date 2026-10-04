@@ -7,7 +7,7 @@ import sys
 from collections.abc import Callable
 from importlib.metadata import PackageNotFoundError, version
 
-from PySide6.QtCore import QThreadPool, QUrl
+from PySide6.QtCore import QThreadPool, QUrl, Signal
 from PySide6.QtGui import QDesktopServices
 from PySide6.QtWidgets import (
     QFormLayout,
@@ -21,15 +21,7 @@ from PySide6.QtWidgets import (
 
 from dikte import APP_NAME, __version__, paths
 from dikte.config import Settings
-from dikte.core.health import (
-    check_health,
-    default_cuda_probe,
-    default_llm_probe,
-    default_model_probe,
-)
 from dikte.core.workers import run_in_pool
-from dikte.stt.download import download_model
-from dikte.ui.health_dialog import HealthDialog
 
 log = logging.getLogger(__name__)
 PACKAGES = ("PySide6", "faster-whisper", "ctranslate2", "pydantic", "ollama")
@@ -66,9 +58,11 @@ def _default_vram_probe() -> str:
 class AboutTab(QWidget):
     """Sürüm bilgileri, GPU/VRAM durumu, log ve ayar klasörünü açma, durum kontrolü.
 
-    GPU/VRAM ve durum kontrolü arka planda sorgulanır; hiçbir ayarı değiştirmez."""
+    GPU/VRAM arka planda sorgulanır; hiçbir ayarı değiştirmez. "Durum kontrolü…"
+    `health_requested` yayar; durum penceresini uygulama açar (indirilen modeli yükler)."""
 
     title = "Hakkında"
+    health_requested = Signal()
 
     def __init__(
         self,
@@ -79,7 +73,6 @@ class AboutTab(QWidget):
     ):
         super().__init__(parent)
         self._settings = settings
-        self._health_job = None
         # run_in_pool'un döndürdüğü sinyal nesnesi iş bitene kadar canlı tutulur.
         self._probe_job: object | None = None
         form = QFormLayout()
@@ -98,7 +91,9 @@ class AboutTab(QWidget):
         self.open_config_btn = QPushButton("Ayar klasörünü aç")
         self.open_config_btn.clicked.connect(lambda: self._open(paths.config_path().parent))
         self.health_btn = QPushButton("Durum kontrolü…")
-        self.health_btn.clicked.connect(self._open_health_dialog)
+        # Pencereyi sekme açmaz: ayarlar diyaloğu kapanınca silinir (deleteLater) ve süren
+        # bir model indirmesi silinmiş nesneye yazardı; indirilen model de yüklenmezdi.
+        self.health_btn.clicked.connect(self.health_requested)
         buttons = QHBoxLayout()
         buttons.addWidget(self.open_log_btn)
         buttons.addWidget(self.open_config_btn)
@@ -145,48 +140,6 @@ class AboutTab(QWidget):
                 APP_NAME,
                 f"{path} açılamadı. Konumu dosya yöneticinizden elle açabilirsiniz.",
             )
-
-    def _open_health_dialog(self) -> None:
-        # check_health LLM kontrolü için ağ isteği yapar (SDK yeniden deneme + zaman
-        # aşımıyla dakikalarca sürebilir); GUI iş parçacığını bloke etmemek için arka
-        # planda çalıştırılır.
-        self.health_btn.setEnabled(False)
-        self._health_job = run_in_pool(
-            self._probe_health,
-            self._on_health_checked,
-            self._on_health_check_failed,
-            QThreadPool.globalInstance(),
-        )
-
-    def _probe_health(self):
-        return check_health(
-            self._settings,
-            cuda_probe=default_cuda_probe,
-            model_probe=default_model_probe,
-            llm_probe=default_llm_probe,
-        )
-
-    def _on_health_checked(self, items) -> None:
-        self.health_btn.setEnabled(True)
-        llm = self._settings.llm
-        # Uygulamanın kendi açtığı pencereyle aynı: Ollama seçiliyse "Ollama'yı başlat" ve
-        # (onaylı) "Modeli indir" düğmeleri, düzeltmeden sonra yeniden denetleme için probe.
-        dlg = HealthDialog(
-            items,
-            on_download=self._download_model,
-            ollama_model=llm.model if llm.enabled and llm.provider == "ollama" else None,
-            ollama_host=llm.ollama_host,
-            health_probe=self._probe_health,
-            parent=self,
-        )
-        dlg.exec()
-
-    def _on_health_check_failed(self, message: str) -> None:
-        self.health_btn.setEnabled(True)
-        QMessageBox.warning(self, APP_NAME, f"Durum kontrolü başarısız: {message}")
-
-    def _download_model(self, progress) -> None:
-        download_model(self._settings.stt.model, paths.models_dir(), progress)
 
     def validate(self) -> str | None:
         return None
