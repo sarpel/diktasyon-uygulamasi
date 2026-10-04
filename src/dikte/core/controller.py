@@ -251,8 +251,8 @@ class DictationController(QObject):
     @Slot()
     def retry_last_failed(self) -> bool:
         """Saklanmış başarısız kaydı yeniden çözümler (ardından normal LLM/teslim akışı).
-        STT boş olmayan metin üretince dosya silinir (`failed_audio_changed(False)`);
-        yeniden deneme de başarısız olursa dosya korunur. Başlatılamazsa `error`
+        Oturum sonuca ulaşınca (RESULT) dosya silinir (`failed_audio_changed(False)`);
+        yeniden deneme başarısız olur ya da iptal edilirse dosya korunur. Başlatılamazsa `error`
         yayınlanır ve False döner."""
         if self._state not in (DictationState.IDLE, DictationState.RESULT):
             self.error.emit("Önce süren işi bitirin.")
@@ -551,8 +551,6 @@ class DictationController(QObject):
             self._fail("Konuşma algılanamadı, ses boş görünüyor.", keep_audio=False)
             return
         self._session_audio = []
-        if self._source == "retry":
-            self._discard_failed_audio()
         if self._settings.voice_commands and is_undo_command(result.text):
             self.undo_requested.emit()
             self._set_state(DictationState.IDLE)
@@ -641,7 +639,12 @@ class DictationController(QObject):
 
     def _finish_result(self) -> None:
         """RESULT durumuna geçer, ardından metni teslim için yayınlar (sıra önemlidir:
-        geçmişe yazma ve pencere güncellemesi yapıştırmadan önce tamamlanmalı)."""
+        geçmişe yazma ve pencere güncellemesi yapıştırmadan önce tamamlanmalı).
+
+        Yeniden denenen kaydın dosyası ancak burada, oturum başarıyla bittiğinde silinir:
+        LLM/teslim sırasında iptal edilirse kayıt kaybolmaz."""
+        if self._source == "retry":
+            self._discard_failed_audio()
         self._set_state(DictationState.RESULT)
         self.result_ready.emit(self._session.output_text)
 

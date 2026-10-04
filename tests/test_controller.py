@@ -1315,3 +1315,29 @@ def test_failed_start_from_result_keeps_previous_session(ctl, qtbot):
     c.start_recording()
     assert c.state is DictationState.RESULT
     assert c.session is before and seen == []
+
+
+def test_retry_keeps_file_until_result_is_finished(qtbot, tmp_path):
+    """Dosya STT metin döndürür döndürmez siliniyordu; LLM sırasında iptal edilirse kayıt kayboluyordu."""
+    stt = FailingStt()
+    c = _failing_ctl(tmp_path, stt)
+    c.toggle()
+    c.toggle()
+    qtbot.waitUntil(lambda: c.state is DictationState.IDLE, timeout=3000)
+    stt.transcribe = lambda audio, language=None, **kw: (  # type: ignore[method-assign]
+        TranscriptResult("merhaba dünya", "tr", 1.0, ())
+    )
+    llm = BlockingLlm()
+    c.set_llm(llm)
+    assert c.retry_last_failed()
+    qtbot.waitUntil(lambda: c.state is DictationState.CORRECTING, timeout=3000)
+    assert c.has_failed_audio
+    c.cancel()
+    llm.release()
+    qtbot.wait(100)
+    assert c.has_failed_audio
+    llm2 = FakeLlm()
+    c.set_llm(llm2)
+    assert c.retry_last_failed()
+    qtbot.waitUntil(lambda: c.state is DictationState.RESULT, timeout=3000)
+    assert not c.has_failed_audio
