@@ -1412,3 +1412,55 @@ def test_stale_chunk_from_cancelled_recording_is_ignored(qtbot):
     c.toggle()
     qtbot.waitUntil(lambda: c.state is DictationState.RESULT, timeout=3000)
     assert c.session.raw_text == "Yeni. Kuyruk."
+
+
+# ---- GUI iş parçacığı geri çağrılarında istisna (takılı kalan durum regresyonu)
+
+
+def test_exception_in_result_callback_fails_session_and_returns_idle(ctl, qtbot):
+    c, *_ = ctl
+    errors = []
+    c.error.connect(errors.append)
+
+    def broken(_result):
+        raise ValueError("beklenmedik veri")
+
+    c._on_transcribed = broken  # type: ignore[method-assign]
+    c.toggle()
+    c.toggle()
+    qtbot.waitUntil(lambda: c.state is DictationState.IDLE, timeout=3000)
+    assert errors and "beklenmedik veri" in errors[-1]
+    c.toggle()  # yeniden kullanılabilir
+    assert c.state is DictationState.RECORDING
+
+
+def test_exception_in_correction_callback_still_reaches_result(ctl, qtbot):
+    c, *_ = ctl
+    errors = []
+    c.error.connect(errors.append)
+
+    def broken(_result):
+        raise ValueError("düzeltme bozuk")
+
+    c._on_corrected = broken  # type: ignore[method-assign]
+    _reach_result(c, qtbot)
+    assert c.session.corrected_text == "merhaba dünya"  # ham metin gösterilir
+    assert errors and "düzeltme bozuk" in errors[-1]
+
+
+def test_exception_in_error_callback_recovers_to_idle(qtbot):
+    c = DictationController(
+        Settings(), recorder=FakeRecorder(), stt=FailingStt(), llm=FakeLlm(), pool=QThreadPool()
+    )
+    errors = []
+    c.error.connect(errors.append)
+
+    def broken(_msg):
+        raise RuntimeError("hata yolu da bozuk")
+
+    c._on_stt_error = broken  # type: ignore[method-assign]
+    c._on_chunk_error = broken  # type: ignore[method-assign]
+    c.toggle()
+    c.toggle()
+    qtbot.waitUntil(lambda: c.state is DictationState.IDLE, timeout=3000)
+    assert errors and "Beklenmeyen bir hata" in errors[-1]

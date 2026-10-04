@@ -774,12 +774,33 @@ class DictationController(QObject):
                 log.debug("iptal edilmiş işin sonucu yok sayıldı")
 
         def guarded_error(message: str) -> None:
-            if gen == self._gen:
-                on_error(message)
-            else:
+            if gen != self._gen:
                 log.debug("iptal edilmiş işin hatası yok sayıldı: %s", message)
+                return
+            try:
+                on_error(message)
+            except Exception:
+                # Hata yolu da bozuldu: durum makinesi meşgul durumda takılı kalmasın.
+                log.exception("hata işlenirken beklenmeyen hata")
+                self._recover_from_crash()
 
+        # on_result'ın istisnası run_in_pool tarafından yakalanıp on_error'a (yani
+        # guarded_error'a) Türkçe mesajla iletilir; oturum normal hata yolundan düşer.
         self._run(fn, guarded_result, guarded_error)
+
+    def _recover_from_crash(self) -> None:
+        """Son çare: süren işi bırakır, mikrofonu kapatır ve kullanıcıyı bilgilendirip IDLE'a
+        döner. Yalnızca hata işleyicisinin kendisi istisna fırlattığında kullanılır."""
+        self._gen += 1
+        if self._state is DictationState.RECORDING:
+            self._recorder.stop()
+        self._reset_chunks()
+        self.error.emit(
+            "Beklenmeyen bir hata oluştu; dikte durduruldu. Yeniden deneyin, sorun sürerse "
+            "günlük dosyasını kontrol edin."
+        )
+        if self._state is not DictationState.RESULT:
+            self._set_state(DictationState.IDLE)
 
     def _run(self, fn, on_result, on_error) -> None:
         """run_in_pool + sinyal nesnesini sonucu teslim edilene kadar canlı tutma
