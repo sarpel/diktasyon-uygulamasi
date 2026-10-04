@@ -122,7 +122,9 @@ class AudioSettings(BaseModel):
     device_name: str = ""  # boş = device_index'e, o da yoksa sistem varsayılanına bakılır
     # Kayıt başladıktan sonra bu kadar saniye hiç ses gelmezse uyarı; 0 = kapalı.
     dead_mic_warn_s: float = Field(default=3.0, ge=0)
-    sample_rate: int = 16000
+    # STT (faster-whisper) ve başarısız kayıt WAV'ı 16 kHz varsayar; başka değer (ör. elle
+    # yazılmış 0 → sıfıra bölme) eski config'ten gelirse yalnızca bu alan varsayılana döner.
+    sample_rate: Literal[16000] = 16000
     max_seconds: int = Field(default=0, ge=0)  # 0 = sınırsız
     silence_stop_s: float = Field(
         default=0.0, ge=0

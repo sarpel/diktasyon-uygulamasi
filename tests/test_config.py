@@ -285,3 +285,43 @@ def test_unreadable_file_is_reported_separately_without_backup(tmp_path: Path):
     s, issues = load_settings_with_issues(p)
     assert s == Settings() and issues == UNREADABLE
     assert not (tmp_path / "config.json.bak").exists()
+
+
+# ---- örnekleme hızı yalnızca 16 kHz
+
+
+@pytest.mark.parametrize("rate", [0, 44100, 48000, -1])
+def test_sample_rate_other_than_16k_is_rejected(rate):
+    from pydantic import ValidationError
+
+    from dikte.config import AudioSettings
+
+    with pytest.raises(ValidationError):
+        AudioSettings(sample_rate=rate)
+
+
+def test_old_config_with_bad_sample_rate_resets_only_that_field(tmp_path: Path):
+    import json
+
+    from dikte.config import load_settings_with_issues
+
+    p = tmp_path / "config.json"
+    p.write_text(
+        json.dumps({"hotkey": "f9", "audio": {"sample_rate": 0, "max_seconds": 30}}),
+        encoding="utf-8",
+    )
+    s, issues = load_settings_with_issues(p)
+    assert s.hotkey == "f9" and s.audio.max_seconds == 30
+    assert s.audio.sample_rate == 16000
+    assert issues == ("audio.sample_rate",)
+
+
+def test_config_with_16k_sample_rate_still_loads(tmp_path: Path):
+    import json
+
+    from dikte.config import load_settings_with_issues
+
+    p = tmp_path / "config.json"
+    p.write_text(json.dumps({"audio": {"sample_rate": 16000}}), encoding="utf-8")
+    s, issues = load_settings_with_issues(p)
+    assert s.audio.sample_rate == 16000 and issues == ()
