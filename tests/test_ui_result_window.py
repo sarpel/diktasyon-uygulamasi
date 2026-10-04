@@ -176,6 +176,84 @@ def test_session_stats_survive_enhanced_prompt_post_processing(qtbot):
     assert "12 sn" in msg and "3 kelime" in msg
 
 
+def test_set_llm_enabled_keeps_buttons_off_while_viewing_history(qtbot):
+    w, _c = make(qtbot)
+    w.load_session(Session(corrected_text="eski kayıt"))
+    w.set_llm_enabled(True)  # ör. Ayarlar kaydedildi
+    assert not w.translate_btn.isEnabled() and not w.enhance_btn.isEnabled()
+
+
+def test_set_llm_enabled_keeps_buttons_off_while_request_pending(qtbot):
+    w, _c = make(qtbot)
+    w.corrected_pane.set_text("Merhaba.")
+    w.translate_btn.click()
+    w.set_llm_enabled(True)
+    assert not w.translate_btn.isEnabled() and not w.enhance_btn.isEnabled()
+
+
+def test_llm_buttons_disabled_while_new_dictation_runs(qtbot):
+    """Yeni dikte sürerken eski metnin çevirisi istenemez (sonuç yeni oturumu ezerdi)."""
+    w, c = make(qtbot)
+    c.state_changed.emit(DictationState.RECORDING)
+    assert not w.translate_btn.isEnabled() and not w.enhance_btn.isEnabled()
+    c.state_changed.emit(DictationState.TRANSCRIBING)
+    w.set_llm_enabled(True)
+    assert not w.translate_btn.isEnabled()
+    c.state_changed.emit(DictationState.RESULT)
+    assert w.translate_btn.isEnabled() and w.enhance_btn.isEnabled()
+
+
+def test_bind_reads_initial_controller_state(qtbot):
+    c = FakeController()
+    c.state = DictationState.IDLE
+    w = ResultWindow()
+    qtbot.addWidget(w)
+    w.bind(c)
+    assert not w.translate_btn.isEnabled()
+
+
+def _record_edits(w):
+    edits = []
+    w.text_edited.connect(lambda sid, text: edits.append((sid, text)))
+    return edits
+
+
+def test_new_session_flushes_pending_edit_first(qtbot):
+    w, c = make(qtbot)
+    first = Session(corrected_text="ilk")
+    c.session_updated.emit(first)
+    edits = _record_edits(w)
+    w.corrected_pane.editor.setPlainText("ilk, düzenlendi")
+    c.session_updated.emit(Session(corrected_text="ikinci"))
+    assert edits == [(first.id, "ilk, düzenlendi")]
+    assert w.corrected_pane.text() == "ikinci"
+
+
+def test_loading_history_flushes_pending_edit_first(qtbot):
+    w, c = make(qtbot)
+    live = Session(corrected_text="canlı")
+    c.session_updated.emit(live)
+    edits = _record_edits(w)
+    w.corrected_pane.editor.setPlainText("canlı, düzenlendi")
+    w.load_session(Session(corrected_text="geçmiş"))
+    assert edits == [(live.id, "canlı, düzenlendi")]
+    assert w.corrected_pane.text() == "geçmiş"
+
+
+def test_flushed_edit_is_not_overwritten_by_stale_session(qtbot):
+    """Düzenleme sürerken gelen (ör. çeviri) güncellemesi eski metni taşır; kaydedilen
+    düzenlemenin denetleyiciden dönen yeni oturumu ekranda kalmalı."""
+    w, c = make(qtbot)
+    s = Session(corrected_text="eski")
+    c.session_updated.emit(s)
+    w.text_edited.connect(
+        lambda _sid, text: c.session_updated.emit(s.with_(corrected_text=text, translation="tr"))
+    )
+    w.corrected_pane.editor.setPlainText("yeni")
+    c.session_updated.emit(s.with_(translation="tr"))
+    assert w.corrected_pane.text() == "yeni"
+
+
 def test_status_info_label_shows_model_and_llm(qtbot):
     w, _ = make(qtbot)
     w.set_status_info("large-v3-turbo", "float16", "qwen3.5:4b")
