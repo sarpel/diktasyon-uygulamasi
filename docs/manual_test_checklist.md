@@ -220,3 +220,11 @@
 - [ ] Linux Wayland (GNOME): otomatik yapıştırma "yapılamadı" bildiriyor, metin panoda; profil
       "bilinmiyor" uyarısı bir kez çıkıyor.
 - [ ] Linux, `XDG_RUNTIME_DIR` yokken: `/tmp/dikte-<uid>` 0700 oluşuyor ve `dikte --toggle` çalışıyor.
+
+## Kayıt göstergesi (küre)
+
+- [ ] Kayıt sırasında overlay'deki küre konuşunca dikenleniyor, susunca yumuşakça küçülüyor;
+      başka bir pencere odaktayken de en üstte görünüyor ve odağı çalmıyor.
+- [ ] Ayarlar → Genel → "Kayıt göstergesi" Dalga yapılınca bir sonraki kayıtta çubuk dalga,
+      Küre yapılınca küre görünüyor; kayıt sürerken değiştirilirse hemen değişiyor.
+- [ ] Uzun kayıtta (2+ dk) CPU kullanımı belirgin artmıyor; overlay gizliyken animasyon durmuş.

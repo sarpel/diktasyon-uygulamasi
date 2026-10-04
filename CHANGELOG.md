@@ -8,6 +8,8 @@ Bu projedeki önemli değişiklikler bu dosyada tutulur. Biçim
 
 ### Eklendi
 
+- Kayıt göstergesinde sese tepki veren dikenli küre animasyonu (varsayılan); Ayarlar → Genel →
+  "Kayıt göstergesi" ile çubuk dalgaya geri dönülebilir.
 - Lisans (MIT), İngilizce README özeti, kurulum ve kullanım kılavuzları, katkı rehberi, güvenlik
   politikası, davranış kuralları, üçüncü taraf lisans bildirimleri, issue/PR şablonları.
 - "Son sonucu yapıştır" (tray menüsü ve isteğe bağlı kısayol).

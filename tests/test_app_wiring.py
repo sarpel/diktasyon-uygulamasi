@@ -1598,3 +1598,35 @@ def test_controller_warning_while_recording_stays_on_overlay(ctx, monkeypatch):
     ctx.controller.warning.emit("Mikrofon sesi çok düşük.")
     assert shown == ["Mikrofon sesi çok düşük."]
     assert notes == []
+
+
+def test_build_app_applies_overlay_indicator(qtbot, tmp_path, monkeypatch):
+    monkeypatch.setattr(app_mod.paths, "history_path", lambda: tmp_path / "history.jsonl")
+    monkeypatch.setattr(app_mod.paths, "failed_audio_path", lambda: tmp_path / "failed.wav")
+    c = app_mod.build_app(Settings(overlay_indicator="wave"))
+    for w in (c.window, c.overlay):
+        qtbot.addWidget(w)
+    assert c.overlay.indicator == "wave"
+
+
+def test_settings_change_switches_overlay_indicator(ctx, monkeypatch):
+    monkeypatch.setattr(app_mod, "save_settings", lambda s: None)
+    monkeypatch.setattr(app_mod, "set_autostart", lambda *a, **k: None)
+    monkeypatch.setattr(app_mod, "list_input_devices", lambda: ())
+
+    class FakeDialog:
+        health_requested = _FakeSignal()
+
+        def __init__(self, settings, devices, parent=None):
+            self._settings = settings
+
+        def exec(self):
+            return 1
+
+        def result_settings(self):
+            return self._settings.model_copy(update={"overlay_indicator": "wave"})
+
+    monkeypatch.setattr(app_mod, "SettingsDialog", FakeDialog)
+    assert ctx.overlay.indicator == "sphere"
+    app_mod._open_settings(ctx)
+    assert ctx.overlay.indicator == "wave"

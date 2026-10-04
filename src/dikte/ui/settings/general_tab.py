@@ -27,6 +27,12 @@ OVERLAY_POSITIONS = (
 )
 
 
+OVERLAY_INDICATORS = (
+    ("sphere", "Küre"),
+    ("wave", "Dalga"),
+)
+
+
 def _optional_hotkey(edit: QKeySequenceEdit) -> str:
     """Boş dizi = kısayol kapalı; from_key_sequence boş girdide hata verir, burada önlenir."""
     if edit.keySequence().isEmpty():
@@ -127,6 +133,14 @@ class GeneralTab(QWidget):
             "sürükleyerek bıraktığınız yer hatırlanır."
         )
 
+        self.overlay_indicator_combo = QComboBox()
+        for value, label in OVERLAY_INDICATORS:
+            self.overlay_indicator_combo.addItem(label, value)
+        self.overlay_indicator_combo.setToolTip(
+            "Kayıt sırasında sese tepki veren animasyon: dikenleri sesle uzayan dönen bir "
+            "küre ya da çubuk dalga."
+        )
+
         self.history_spin = QSpinBox()
         self.history_spin.setRange(0, HISTORY_LIMIT_MAX)
         self.history_spin.setSpecialValueText("Kapalı")
@@ -149,6 +163,7 @@ class GeneralTab(QWidget):
         form.addRow("Kısayol (agent prompt)", self.hotkey_prompt_edit)
         form.addRow("Kısayol (son sonucu yapıştır)", self.hotkey_paste_last_edit)
         form.addRow("Gösterge konumu", self.overlay_position_combo)
+        form.addRow("Kayıt göstergesi", self.overlay_indicator_combo)
         form.addRow("Geçmiş kayıt sayısı", self.history_spin)
         form.addRow("Geçmiş saklama süresi", self.history_retention_spin)
         for check in (
@@ -195,6 +210,8 @@ class GeneralTab(QWidget):
         self.voice_commands_check.setChecked(settings.voice_commands)
         pos = self.overlay_position_combo.findData(settings.overlay_position)
         self.overlay_position_combo.setCurrentIndex(max(pos, 0))
+        kind = self.overlay_indicator_combo.findData(settings.overlay_indicator)
+        self.overlay_indicator_combo.setCurrentIndex(max(kind, 0))
         self.history_spin.setValue(settings.history_limit)
         self.history_retention_spin.setValue(settings.history_retention_days)
         # toggled yalnızca değer değişince yayılır; bağımlı alanlar açıkça eşitlenir.
@@ -243,6 +260,7 @@ class GeneralTab(QWidget):
                 "suggest_dictionary": self.suggest_dictionary_check.isChecked(),
                 "voice_commands": self.voice_commands_check.isChecked(),
                 "overlay_position": self.overlay_position_combo.currentData(),
+                "overlay_indicator": self.overlay_indicator_combo.currentData(),
                 "history_limit": self.history_spin.value(),
                 "history_retention_days": self.history_retention_spin.value(),
             }

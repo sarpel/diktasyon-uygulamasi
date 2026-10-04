@@ -7,6 +7,7 @@ from PySide6.QtGui import QCursor, QGuiApplication, QMouseEvent
 from PySide6.QtWidgets import QHBoxLayout, QLabel, QPushButton, QVBoxLayout, QWidget
 
 from dikte.core.state import DictationState
+from dikte.ui.sphere import SphereWidget
 from dikte.ui.waveform import WaveformWidget
 
 _STATUS = {
@@ -53,6 +54,10 @@ class RecordingOverlay(QWidget):
         self._dot.setStyleSheet("color:#E53935;font-size:22px;")
         self._wave = WaveformWidget()
         self._wave.setFixedSize(220, 44)
+        self._sphere = SphereWidget()
+        self._sphere.setFixedSize(88, 88)
+        self._sphere.hide()
+        self._indicator = "wave"
         self._time = QLabel("00:00")
         self._time.setMinimumWidth(48)
         self._status = QLabel("")
@@ -62,7 +67,7 @@ class RecordingOverlay(QWidget):
         self.cancel_btn.clicked.connect(self.cancel_requested)
         self.cancel_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self.setCursor(Qt.CursorShape.OpenHandCursor)  # panel sürüklenerek taşınabilir
-        for w in (self._dot, self._wave, self._time, self._status, self.cancel_btn):
+        for w in (self._dot, self._wave, self._sphere, self._time, self._status, self.cancel_btn):
             row.addWidget(w)
         self._partial = QLabel("")
         self._partial.setStyleSheet("color:#BBBBBB;font-size:12px;")
@@ -111,11 +116,37 @@ class RecordingOverlay(QWidget):
         if self.isVisible():
             self._place()
 
+    @property
+    def indicator(self) -> str:
+        """Kayıtta gösterilen ses animasyonu: "sphere" ya da "wave"."""
+        return self._indicator
+
+    def set_indicator(self, kind: str) -> None:
+        """Dalga ile küre birbirinin yerine geçer. Kayıt sürüyorsa hemen değişir; overlay
+        gizliyse yalnızca bir sonraki kayıt için hatırlanır (görünür hâle getirmez)."""
+        self._indicator = "sphere" if kind == "sphere" else "wave"
+        if self._time.isVisibleTo(self):  # kayıt görünümündeyiz
+            self._show_indicator()
+            self._resize_keeping_anchor()
+
+    def _active_indicator(self) -> WaveformWidget | SphereWidget:
+        return self._sphere if self._indicator == "sphere" else self._wave
+
+    def _show_indicator(self) -> None:
+        active = self._active_indicator()
+        for w in (self._wave, self._sphere):
+            w.setVisible(w is active)
+
+    def _hide_indicators(self) -> None:
+        self._wave.hide()
+        self._sphere.hide()
+
     def show_recording(self) -> None:
         self._showing_error = False
         self._clear_warning()
         self._wave.clear()
-        self._wave.show()
+        self._sphere.clear()
+        self._show_indicator()
         self._time.show()
         self._status.hide()
         self._partial.setText("")
@@ -137,7 +168,7 @@ class RecordingOverlay(QWidget):
         self._clock.stop()
         self._dot.setStyleSheet("color:#F5A623;font-size:22px;")
         self._dot.setVisible(True)
-        self._wave.hide()
+        self._hide_indicators()
         self._time.hide()
         self._status.setText(text)
         self._status.show()
@@ -157,7 +188,7 @@ class RecordingOverlay(QWidget):
         self._pending_error_token = self._error_token
         self._dot.setStyleSheet("color:#E53935;font-size:22px;")
         self._dot.setVisible(True)
-        self._wave.hide()
+        self._hide_indicators()
         self._time.hide()
         self._status.setText(f"✗ {text}")
         self._status.show()
@@ -201,7 +232,7 @@ class RecordingOverlay(QWidget):
         self._partial.setVisible(bool(truncated))
 
     def on_buckets(self, buckets) -> None:
-        self._wave.push_buckets(tuple(buckets))
+        self._active_indicator().push_buckets(tuple(buckets))
 
     def on_state(self, state: DictationState) -> None:
         """RECORDING'de kayıt görünümü, TRANSCRIBING/CORRECTING'de durum metni; diğerlerinde

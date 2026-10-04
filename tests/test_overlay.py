@@ -242,3 +242,39 @@ def test_new_recording_clears_previous_warning(qtbot):
     assert not o._warning.isVisible()
     o.on_state(DictationState.RECORDING)
     assert not o._warning.isVisible()
+
+
+def test_sphere_indicator_replaces_wave_while_recording(qtbot):
+    o = RecordingOverlay()
+    qtbot.addWidget(o)
+    o.set_indicator("sphere")
+    o.show_recording()
+    assert o._sphere.isVisibleTo(o) and not o._wave.isVisibleTo(o)
+    o.set_indicator("wave")
+    assert o._wave.isVisibleTo(o) and not o._sphere.isVisibleTo(o)
+
+
+def test_buckets_reach_only_the_active_indicator(qtbot):
+    o = RecordingOverlay()
+    qtbot.addWidget(o)
+    o.set_indicator("sphere")
+    o.show_recording()
+    o.on_buckets((1.0,) * 16)
+    assert o._sphere.level > 0.5
+    assert max(o._wave.bars) == 0.0
+
+
+def test_status_hides_both_indicators(qtbot):
+    o = RecordingOverlay()
+    qtbot.addWidget(o)
+    o.set_indicator("sphere")
+    o.show_recording()
+    o.show_status("Çözümleniyor…")
+    assert not o._sphere.isVisibleTo(o) and not o._wave.isVisibleTo(o)
+
+
+def test_indicator_change_while_hidden_does_not_show_overlay(qtbot):
+    o = RecordingOverlay()
+    qtbot.addWidget(o)
+    o.set_indicator("sphere")
+    assert not o.isVisible()
