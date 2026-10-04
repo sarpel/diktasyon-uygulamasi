@@ -14,7 +14,7 @@ metin panoya yazılır ve aktif pencereye yapıştırılır.
 
 ## Teknoloji (pyproject.toml'dan)
 
-Python 3.11–3.12 · PySide6 ≥ 6.7 · faster-whisper ≥ 1.1 · ctranslate2 ≥ 4.5 ·
+Python ≥ 3.11 (CI: 3.11–3.14) · PySide6 ≥ 6.7 · faster-whisper ≥ 1.1 · ctranslate2 ≥ 4.5 ·
 sounddevice · numpy · ollama ≥ 0.5 · pydantic ≥ 2.7
 İsteğe bağlı extra'lar: `cuda`, `anthropic`, `openai`, `gemini`, `media`, `dev`.
 

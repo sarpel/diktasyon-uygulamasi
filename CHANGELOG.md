@@ -35,6 +35,9 @@ Bu projedeki önemli değişiklikler bu dosyada tutulur. Biçim
 - Linux'ta CUDA kütüphaneleri başlatıcı olmadan da açılışta önceden yüklenir.
 - Sözlük kuralları tek geçişte uygulanır (bir düzeltme başka bir kuralı yeniden tetiklemez).
 - `anthropic` SDK alt sınırı `>=1.0`.
+- Python üst sürüm sınırı kaldırıldı (`>=3.11`); CI artık 3.11–3.14 üzerinde çalışır. Windows'ta
+  medya duraklatma (`winsdk`) yalnızca Python ≤ 3.12'de kurulur; daha yeni sürümlerde bu özellik
+  devre dışı kalır.
 
 ### Düzeltildi
 

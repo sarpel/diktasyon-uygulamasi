@@ -123,7 +123,7 @@ oturumdan geç gelen sonuçlar bu sayaçla ayıklanır.
 - Gerçek donanım gerektiren davranışlar (mikrofon, GPU, yapıştırma, pano) için
   [docs/manual_test_checklist.md](docs/manual_test_checklist.md)'ye madde ekleyin.
 
-CI her PR'da Linux ve Windows üzerinde Python 3.11/3.12 ile testleri, ruff ve pyright'ı,
+CI her PR'da Linux ve Windows üzerinde Python 3.11/3.12/3.13/3.14 ile testleri, ruff ve pyright'ı,
 ayrıca Linux `.desktop` dosyası ile kurulum betiğinin doğrulamasını çalıştırır.
 
 ## Sürüm yayımlama

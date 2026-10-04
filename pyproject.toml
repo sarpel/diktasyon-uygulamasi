@@ -18,9 +18,11 @@ classifiers = [
   "Operating System :: POSIX :: Linux",
   "Programming Language :: Python :: 3.11",
   "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
+  "Programming Language :: Python :: 3.14",
   "Topic :: Multimedia :: Sound/Audio :: Speech",
 ]
-requires-python = ">=3.11,<3.13"
+requires-python = ">=3.11"
 dependencies = [
   "PySide6>=6.7",
   "sounddevice>=0.5",
@@ -37,7 +39,9 @@ anthropic = ["anthropic>=1.0"]  # 0.x ANTHROPIC_AUTH_TOKEN'ı Bearer olarak sız
 openai = ["openai>=2"]
 gemini = ["google-genai>=1.30"]
 # Windows'ta kayıt sırasında medyayı duraklatma (WinRT oturum yöneticisi); Linux playerctl kullanır.
-media = ["winsdk>=1.0.0b10; sys_platform == 'win32'"]
+# winsdk'nın wheel'leri yalnızca Python ≤ 3.12 için var; 3.13+ üzerinde kaynaktan derlemeye
+# kalkışıp kurulumu bozmasın diye atlanır (medya duraklatma o sürümlerde devre dışı kalır).
+media = ["winsdk>=1.0.0b10; sys_platform == 'win32' and python_version < '3.13'"]
 dev = [
   "pytest>=8",
   "pytest-qt>=4.4",

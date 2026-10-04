@@ -24,7 +24,7 @@ sorunların çözümünü anlatır. Günlük kullanım için bkz. [USAGE.md](USA
 | GPU sürücüsü | CUDA 12 uyumlu NVIDIA sürücüsü (≥ 525). Ayrı CUDA Toolkit kurulumu **gerekmez** |
 | VRAM | Whisper `large-v3-turbo` ≈ 1,6 GB; yerel LLM (4B, q4) ≈ 3,5–4,5 GB. LLM'siz kullanımda 4 GB yeterli |
 | Disk | Uygulama birkaç GB (CUDA kütüphaneleri dâhil) + Whisper modeli ≈ 1,6 GB + (isteğe bağlı) Ollama modeli ≈ 4 GB |
-| Python (yalnızca kaynaktan kurulumda) | 3.11 veya 3.12 |
+| Python (yalnızca kaynaktan kurulumda) | 3.11 veya daha yenisi (3.11–3.14 test edilir) |
 | Mikrofon | Sistemin tanıdığı herhangi bir giriş cihazı |
 
 `float16` hassasiyeti için Compute Capability ≥ 7.0 (RTX 20xx ve üzeri) gerekir. Daha eski
@@ -110,7 +110,7 @@ cd diktasyon-uygulamasi
 Betik root gerektirmez ve şunları yapar:
 
 1. Uygulamayı `pipx` ile `[cuda]` extra'sıyla yalıtılmış bir ortama kurar
-   (Python 3.12 veya 3.11'i kendisi bulur; farklı bir yorumlayıcı için `DIKTE_PYTHON=/yol/python`).
+   (en yeni uygun Python 3.11+ sürümünü kendisi bulur; farklı bir yorumlayıcı için `DIKTE_PYTHON=/yol/python`).
 2. pip'in CUDA kütüphanelerini `LD_LIBRARY_PATH`'e ekleyen bir başlatıcı yazar
    (`~/.local/share/dikte/dikte-launcher`).
 3. Uygulama menüsü kaydını ve ikonu yazar.
