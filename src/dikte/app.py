@@ -1078,6 +1078,7 @@ def _shutdown(ctx: AppContext) -> None:
     ):
         if hk is not None:
             hk.unregister()
+    ctx.reload_pending = False  # iptalin yaydığı IDLE çıkışta model yüklemesin
     ctx.controller.cancel()  # süren işin sonuçları yok sayılır (kuşak sayacı)
     ctx.recorder.stop()  # kayıt yokken de güvenle çağrılabilir
     for pool in (QThreadPool.globalInstance(), ctx.media_pool):

@@ -230,6 +230,17 @@ def test_shutdown_unregisters_hotkeys_cancels_and_stops_recorder(ctx, monkeypatc
     assert calls.count("cancel") == 1 and calls.count("stop") == 1
 
 
+def test_shutdown_does_not_start_pending_model_reload(ctx, monkeypatch):
+    """İptalin yaydığı IDLE, bekleyen model yeniden yüklemesini çıkışta başlatmamalı."""
+    monkeypatch.setattr(ctx.recorder, "stop", lambda: None)
+    warmed = []
+    monkeypatch.setattr(ctx.controller, "warm_up", lambda: warmed.append(True))
+    ctx.controller.toggle()  # kayıt sürüyor
+    app_mod._warm_up_when_idle(ctx)
+    app_mod._shutdown(ctx)
+    assert warmed == []
+
+
 def test_shutdown_is_idempotent(ctx, monkeypatch):
     calls = _record_shutdown_calls(ctx, monkeypatch)
     app_mod._shutdown(ctx)
