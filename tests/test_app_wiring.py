@@ -511,15 +511,51 @@ def test_result_ready_respects_auto_copy_off(ctx, monkeypatch):
     assert QApplication.clipboard().text() == "eski"
 
 
+def _record_timers(monkeypatch):
+    from types import SimpleNamespace
+
+    scheduled = []
+    monkeypatch.setattr(
+        app_mod, "QTimer", SimpleNamespace(singleShot=lambda ms, fn: scheduled.append((ms, fn)))
+    )
+    return scheduled
+
+
 def test_paste_still_happens_when_raise_on_result_activates_window(ctx, qtbot, monkeypatch):
-    """result_ready, RESULT durumuna geçiş penceresini aktive etmeden önce işlenmeli
-    (aktivasyon artık ertelenmiş); aksi halde yapıştırma hedefi kaybolur."""
-    ctx.window.raise_on_result = True
+    """result_ready, RESULT durumuna geçiş penceresini aktive etmeden önce işlenmeli;
+    aksi halde yapıştırma hedefi kaybolur."""
+    ctx.settings = ctx.settings.model_copy(update={"raise_window_on_result": True})
     pasted = []
     monkeypatch.setattr(app_mod, "paste_active_window", lambda ids, **k: pasted.append(ids) or True)
     ctx.controller.state_changed.emit(DictationState.RESULT)
     ctx.controller.result_ready.emit("Merhaba.")
     assert len(pasted) == 1
+
+
+def test_raise_on_result_waits_until_sent_paste_lands(ctx, monkeypatch):
+    """SendInput Ctrl+V'yi eşzamansız kuyruğa koyar; pencere hemen öne gelirse yapıştırma
+    Dikte'nin kendi editörüne düşer (metin ikilenir ve geçmişe kaydedilir)."""
+    ctx.settings = ctx.settings.model_copy(update={"raise_window_on_result": True})
+    monkeypatch.setattr(app_mod, "paste_active_window", lambda ids, **k: True)
+    scheduled = _record_timers(monkeypatch)
+    ctx.controller.result_ready.emit("Merhaba.")
+    assert scheduled == [(app_mod.restore_delay_ms("Merhaba."), ctx.window.activate_result)]
+
+
+def test_raise_on_result_is_immediate_when_nothing_was_pasted(ctx, monkeypatch):
+    ctx.settings = ctx.settings.model_copy(
+        update={"raise_window_on_result": True, "auto_paste": False}
+    )
+    scheduled = _record_timers(monkeypatch)
+    ctx.controller.result_ready.emit("Merhaba.")
+    assert scheduled == [(0, ctx.window.activate_result)]
+
+
+def test_window_not_raised_when_setting_off(ctx, monkeypatch):
+    monkeypatch.setattr(app_mod, "paste_active_window", lambda ids, **k: True)
+    scheduled = _record_timers(monkeypatch)
+    ctx.controller.result_ready.emit("Merhaba.")
+    assert scheduled == []
 
 
 def test_restore_clipboard_after_paste(ctx, monkeypatch, qtbot):

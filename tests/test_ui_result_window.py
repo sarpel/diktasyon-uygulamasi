@@ -80,11 +80,11 @@ def test_enhance_button_sends_text_and_result_fills_output(qtbot):
     assert w.enhance_btn.isEnabled()
 
 
-def test_result_state_shows_window_when_raise_enabled(qtbot):
-    w, c = make(qtbot)
-    w.raise_on_result = True
-    c.state_changed.emit(DictationState.RESULT)
-    qtbot.waitUntil(lambda: w.isVisible(), timeout=1000)
+def test_activate_result_shows_window_and_focuses_corrected_text(qtbot):
+    w, _c = make(qtbot)
+    w.hide()
+    w.activate_result()
+    assert w.isVisible()
 
 
 def test_close_hides_instead_of_quitting(qtbot):
@@ -120,12 +120,14 @@ def test_window_not_raised_on_result_by_default(qtbot):
     assert not w.isVisible()
 
 
-def test_window_raised_when_setting_enabled(qtbot):
+def test_result_state_never_raises_window_itself(qtbot):
+    """Öne getirme kararı uygulamada (app.py): yapıştırma gönderildiyse beklenir; aksi
+    hâlde eşzamansız Ctrl+V Dikte'nin kendi editörüne düşerdi."""
     w, c = make(qtbot)
-    w.raise_on_result = True
     w.hide()
     c.state_changed.emit(DictationState.RESULT)
-    qtbot.waitUntil(lambda: w.isVisible(), timeout=1000)
+    qtbot.wait(50)
+    assert not w.isVisible()
 
 
 def test_changes_without_offsets_are_not_highlighted(qtbot):
@@ -172,16 +174,6 @@ def test_session_stats_survive_enhanced_prompt_post_processing(qtbot):
     )
     msg = w.statusBar().currentMessage()
     assert "12 sn" in msg and "3 kelime" in msg
-
-
-def test_result_state_activation_is_deferred_so_paste_target_is_preserved(qtbot):
-    w, c = make(qtbot)
-    w.raise_on_result = True
-    w.hide()
-    c.state_changed.emit(DictationState.RESULT)
-    # Aktivasyon 0 ms'ye ertelenir; qtbot.waitUntil senkron olmayan gösterimi bekler.
-    qtbot.waitUntil(lambda: w.isVisible(), timeout=1000)
-    assert w.isVisible()
 
 
 def test_status_info_label_shows_model_and_llm(qtbot):

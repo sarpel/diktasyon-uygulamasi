@@ -234,11 +234,7 @@ def _make_history(settings: Settings) -> History:
 
 def _wire(ctx: AppContext) -> None:
     c = ctx.controller
-    ctx.window.bind(
-        c,
-        close_after_copy=ctx.settings.close_after_copy,
-        raise_on_result=ctx.settings.raise_window_on_result,
-    )
+    ctx.window.bind(c, close_after_copy=ctx.settings.close_after_copy)
     ctx.window.set_clipboard_exclude_history(ctx.settings.clipboard_exclude_history)
     c.state_changed.connect(ctx.overlay.on_state)
     c.buckets_changed.connect(ctx.overlay.on_buckets)
@@ -277,7 +273,7 @@ def _wire(ctx: AppContext) -> None:
     c.undo_requested.connect(lambda: _undo_last_paste(ctx))
     if ctx.hotkey_paste_last is not None:
         ctx.hotkey_paste_last.activated.connect(lambda: _paste_last(ctx))
-    c.result_ready.connect(lambda text: _on_result_ready(ctx, text))
+    c.result_ready.connect(lambda text: _on_dictation_result(ctx, text))
     ctx.window.history_panel.delete_requested.connect(lambda sid: _delete_session(ctx, sid))
     ctx.window.history_panel.clear_requested.connect(lambda: _clear_history(ctx))
     ctx.window.history_panel.export_requested.connect(lambda path: _export_history(ctx, path))
@@ -534,17 +530,46 @@ def _clone_mime(src: QMimeData) -> QMimeData:
     return clone
 
 
-def _on_result_ready(ctx: AppContext, text: str, *, force_paste: bool = False) -> None:
+def _on_dictation_result(ctx: AppContext, text: str) -> None:
+    """Denetleyicinin `result_ready`ı: sonucu teslim eder, ardından (ayar açıksa) pencereyi
+    öne getirir — yapıştırma gönderildiyse hedef uygulama onu işleyene kadar bekleyerek."""
+    _on_result_ready(ctx, text, on_done=lambda pasted: _raise_after_result(ctx, text, pasted))
+
+
+def _raise_after_result(ctx: AppContext, text: str, pasted: bool) -> None:
+    """SendInput Ctrl+V'yi eşzamansız kuyruğa koyar: pencere hemen öne gelirse yapıştırma
+    Dikte'nin kendi editörüne düşer (metin ikilenir, düzenleme olarak kaydedilir)."""
+    if not ctx.settings.raise_window_on_result:
+        return
+    delay = restore_delay_ms(text) if pasted else 0
+    QTimer.singleShot(delay, ctx.window.activate_result)
+
+
+def _on_result_ready(
+    ctx: AppContext,
+    text: str,
+    *,
+    force_paste: bool = False,
+    on_done: Callable[[bool], None] | None = None,
+) -> None:
     """Sonucu panoya yazar ve (ayar açıksa) ön plandaki uygulamaya yapıştırır.
 
     `restore_clipboard` açıksa ve yapıştırma gerçekten gönderildiyse, panodaki eski
     metin kısa bir gecikmeyle geri yazılır (yapıştırma hedef uygulamaya ulaşsın diye).
     `force_paste=True` (yalnızca "Yeniden yapıştır" eylemi): dosyadan çözümlenen bir
     oturumda bile kullanıcı açıkça yapıştırmayı istedi, otomatik-teslim kısıtlaması
-    (aşağıdaki source_path kontrolü) burada atlanır.
+    (aşağıdaki source_path kontrolü) burada atlanır. `on_done(yapıştırıldı_mı)` teslim
+    bitince bir kez çağrılır.
     """
+    pasted = _deliver_result(ctx, text, force_paste=force_paste)
+    if on_done is not None:
+        on_done(pasted)
+
+
+def _deliver_result(ctx: AppContext, text: str, *, force_paste: bool) -> bool:
+    """`_on_result_ready`ın gövdesi; yapıştırma (ya da yazma) gönderildiyse True döner."""
     if not text or not ctx.settings.auto_copy:
-        return
+        return False
     # ctx.active_profile yalnızca en son global kısayolu izler; tepsi/pencere düğmesi/IPC
     # ile başlatılan bir dikte hiç ondan geçmez, o zaman yanlış (eski) profil uygulanırdı.
     # controller.active_profile bu SONUCU üreten oturuma ait gerçek profildir.
@@ -558,13 +583,13 @@ def _on_result_ready(ctx: AppContext, text: str, *, force_paste: bool = False) -
     previous_mime = _clone_mime(clipboard.mimeData()) if ctx.settings.restore_clipboard else None
     clipboard.setMimeData(build_mime(text, exclude_history=ctx.settings.clipboard_exclude_history))
     if ctx.controller.session.source_path and not force_paste:
-        return  # dosyadan çözümlenen sonuç otomatik olarak yalnızca panoya kopyalanır
+        return False  # dosyadan çözümlenen sonuç otomatik olarak yalnızca panoya kopyalanır
     if not ctx.settings.auto_paste or ctx.window.isActiveWindow():
-        return
+        return False
     own_ids = {int(ctx.window.winId()), int(ctx.overlay.winId())}
     foreground = foreground_window_id()
     if foreground is not None and foreground in own_ids:
-        return
+        return False
     paste_mode = profile.paste if profile else "ctrl+v"
     if paste_mode == "type":
         pasted = type_unicode_text(text)
@@ -572,11 +597,12 @@ def _on_result_ready(ctx: AppContext, text: str, *, force_paste: bool = False) -
         pasted = paste_active_window(own_ids, combo=paste_mode)
     if not pasted:
         log.info("yapıştırma atlandı; metin panoda")
-        return
+        return False
     if ctx.settings.restore_clipboard and previous_mime is not None and previous_mime.formats():
         QTimer.singleShot(
             restore_delay_ms(text), lambda: _restore_clipboard(clipboard, previous_mime, text)
         )
+    return True
 
 
 def _restore_clipboard(clipboard, previous_mime: QMimeData, pasted_text: str) -> None:
@@ -859,7 +885,6 @@ def _open_settings(ctx: AppContext) -> None:
     ctx.window.set_llm_enabled(new.llm.enabled)
     ctx.window.close_after_copy = new.close_after_copy
     ctx.window.set_clipboard_exclude_history(new.clipboard_exclude_history)
-    ctx.window.raise_on_result = new.raise_window_on_result
     ctx.sounds.set_enabled(new.sounds_enabled)
     ctx.overlay.set_position(new.overlay_position, new.overlay_xy)
     ctx.history = _make_history(new)

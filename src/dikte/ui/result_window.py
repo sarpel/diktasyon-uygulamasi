@@ -67,7 +67,6 @@ class ResultWindow(QMainWindow):
         self._displayed_session_id: str | None = None  # düzenleme sinyaline eklenen oturum kimliği
         self._viewing_history = False  # geçmişten bir oturum gösteriliyor (canlı değil)
         self.close_after_copy = False
-        self.raise_on_result = False
         self._last_shown_text = ""
         self._pending_suggestion: tuple[str, str] | None = None
         self._edit_timer = QTimer(self)
@@ -206,16 +205,13 @@ class ResultWindow(QMainWindow):
             pane.exclude_history = exclude
         self.history_panel.exclude_history = exclude
 
-    def bind(
-        self, controller, close_after_copy: bool = False, raise_on_result: bool = False
-    ) -> None:
+    def bind(self, controller, close_after_copy: bool = False) -> None:
         """Denetleyicinin `session_updated`, `state_changed` ve `error` sinyallerine bağlanır.
 
-        `close_after_copy`: kopyalayınca pencere gizlenir; `raise_on_result`: sonuç gelince
-        pencere öne getirilip düzeltilmiş metne odaklanılır."""
+        `close_after_copy`: kopyalayınca pencere gizlenir. Sonuçta pencereyi öne getirme
+        kararı uygulamadadır (yapıştırma gönderildiyse beklenir; bkz. `activate_result`)."""
         self._controller = controller
         self.close_after_copy = close_after_copy
-        self.raise_on_result = raise_on_result
         self.set_llm_enabled(getattr(controller, "llm_enabled", True))
         controller.session_updated.connect(self.on_session)
         controller.state_changed.connect(self.on_state)
@@ -256,11 +252,7 @@ class ResultWindow(QMainWindow):
             state not in (DictationState.TRANSCRIBING, DictationState.CORRECTING)
         )
         self.cancel_action.setEnabled(state in BUSY_STATES)
-        if state is DictationState.RESULT:
-            if self.raise_on_result:
-                # 0 ms'ye erteleme: result_ready önce işlenir, yapıştırma hedefi korunur.
-                QTimer.singleShot(0, self._activate_result)
-        elif state is DictationState.RECORDING:
+        if state is DictationState.RECORDING:
             self.output_pane.set_text("")
             self.output_pane.setVisible(False)
             self._finish_pending()
@@ -271,7 +263,8 @@ class ResultWindow(QMainWindow):
             self.output_pane.set_text("")
             self.output_pane.setVisible(False)
 
-    def _activate_result(self) -> None:
+    def activate_result(self) -> None:
+        """Pencereyi öne getirir ve düzeltilmiş metne odaklanır (sonuç gelince, ayar açıksa)."""
         self.showNormal()
         self.raise_()
         self.activateWindow()
