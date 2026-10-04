@@ -39,6 +39,11 @@ class WaveformWidget(QWidget):
         self._bars = tuple(max(float(n), o) for n, o in zip(resampled, self._bars, strict=True))
         self.update()
 
+    def set_color(self, color: str) -> None:
+        """Çubuk rengi (tema değişince)."""
+        self._color = QColor(color)
+        self.update()
+
     def clear(self) -> None:
         self._bars = (0.0,) * BAR_COUNT
         self.update()

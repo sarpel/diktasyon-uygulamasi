@@ -228,3 +228,6 @@
 - [ ] Ayarlar → Genel → "Kayıt göstergesi" Dalga yapılınca bir sonraki kayıtta çubuk dalga,
       Küre yapılınca küre görünüyor; kayıt sürerken değiştirilirse hemen değişiyor.
 - [ ] Uzun kayıtta (2+ dk) CPU kullanımı belirgin artmıyor; overlay gizliyken animasyon durmuş.
+- [ ] Ayarlar → Genel → "Gösterge teması" değiştirilip Kaydet'e basınca bir sonraki kayıtta
+      overlay paneli, yazılar, kayıt noktası ve küre/dalga yeni tema renkleriyle çıkıyor
+      (özellikle açık tema Catppuccin Latte'de panel açık renkte).

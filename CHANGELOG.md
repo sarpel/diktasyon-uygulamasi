@@ -10,6 +10,9 @@ Bu projedeki önemli değişiklikler bu dosyada tutulur. Biçim
 
 - Kayıt göstergesinde sese tepki veren dikenli küre animasyonu (varsayılan); Ayarlar → Genel →
   "Kayıt göstergesi" ile çubuk dalgaya geri dönülebilir.
+- Kayıt göstergesi için renk temaları (Ayarlar → Genel → "Gösterge teması"): Varsayılan,
+  Dracula, Nord, Catppuccin Mocha, Catppuccin Latte (açık), Gruvbox, Tokyo Night, Solarized
+  Dark, One Dark, Monokai. Tüm temalarda yazı/arka plan kontrastı en az 4.5:1.
 - Lisans (MIT), İngilizce README özeti, kurulum ve kullanım kılavuzları, katkı rehberi, güvenlik
   politikası, davranış kuralları, üçüncü taraf lisans bildirimleri, issue/PR şablonları.
 - "Son sonucu yapıştır" (tray menüsü ve isteğe bağlı kısayol).

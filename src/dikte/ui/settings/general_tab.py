@@ -19,6 +19,7 @@ from dikte.platform.hotkey_parse import (
     to_key_sequence,
 )
 from dikte.ui.settings._reset import make_reset_button, reset_row
+from dikte.ui.themes import THEMES
 
 OVERLAY_POSITIONS = (
     ("bottom", "Altta"),
@@ -141,6 +142,11 @@ class GeneralTab(QWidget):
             "küre ya da çubuk dalga."
         )
 
+        self.overlay_theme_combo = QComboBox()
+        for value, theme in THEMES.items():
+            self.overlay_theme_combo.addItem(theme.label, value)
+        self.overlay_theme_combo.setToolTip("Kayıt göstergesinin renk teması.")
+
         self.history_spin = QSpinBox()
         self.history_spin.setRange(0, HISTORY_LIMIT_MAX)
         self.history_spin.setSpecialValueText("Kapalı")
@@ -164,6 +170,7 @@ class GeneralTab(QWidget):
         form.addRow("Kısayol (son sonucu yapıştır)", self.hotkey_paste_last_edit)
         form.addRow("Gösterge konumu", self.overlay_position_combo)
         form.addRow("Kayıt göstergesi", self.overlay_indicator_combo)
+        form.addRow("Gösterge teması", self.overlay_theme_combo)
         form.addRow("Geçmiş kayıt sayısı", self.history_spin)
         form.addRow("Geçmiş saklama süresi", self.history_retention_spin)
         for check in (
@@ -212,6 +219,8 @@ class GeneralTab(QWidget):
         self.overlay_position_combo.setCurrentIndex(max(pos, 0))
         kind = self.overlay_indicator_combo.findData(settings.overlay_indicator)
         self.overlay_indicator_combo.setCurrentIndex(max(kind, 0))
+        theme = self.overlay_theme_combo.findData(settings.overlay_theme)
+        self.overlay_theme_combo.setCurrentIndex(max(theme, 0))
         self.history_spin.setValue(settings.history_limit)
         self.history_retention_spin.setValue(settings.history_retention_days)
         # toggled yalnızca değer değişince yayılır; bağımlı alanlar açıkça eşitlenir.
@@ -261,6 +270,7 @@ class GeneralTab(QWidget):
                 "voice_commands": self.voice_commands_check.isChecked(),
                 "overlay_position": self.overlay_position_combo.currentData(),
                 "overlay_indicator": self.overlay_indicator_combo.currentData(),
+                "overlay_theme": self.overlay_theme_combo.currentData(),
                 "history_limit": self.history_spin.value(),
                 "history_retention_days": self.history_retention_spin.value(),
             }

@@ -238,6 +238,7 @@ def build_app(settings: Settings) -> AppContext:
     ctx.hotkey_paste_last = GlobalHotkey(hotkey_id=HOTKEY_ID + 4)
     overlay.set_position(settings.overlay_position, settings.overlay_xy)
     overlay.set_indicator(settings.overlay_indicator)
+    overlay.set_theme(settings.overlay_theme)
     _wire(ctx)
     return ctx
 
@@ -1030,6 +1031,7 @@ def _open_settings(ctx: AppContext) -> None:
     ctx.sounds.set_enabled(new.sounds_enabled)
     ctx.overlay.set_position(new.overlay_position, new.overlay_xy)
     ctx.overlay.set_indicator(new.overlay_indicator)
+    ctx.overlay.set_theme(new.overlay_theme)
     ctx.history = _make_history(new)
     # Sınır/saklama süresi düşürüldüyse (ör. 0 = geçmiş kapalı) eski dikteler diskte kalmasın.
     _guard_history(ctx, lambda: _prune_history(ctx))

@@ -173,7 +173,7 @@ Ayarlar penceresi (tray menüsü veya araç çubuğu → "Ayarlar…") sekiz sek
 
 | Sekme | İçerik |
 |---|---|
-| Genel | Kısayol (tuşa basarak yakalanır) + isteğe bağlı çeviri / agent-prompt / son sonucu yapıştır kısayolları, bas-konuş (yalnızca Windows), geçmiş kayıt sayısı ve saklama süresi, açılışta başlat, panoya kopyala / yapıştır / pencereyi öne getir, pano geçmişinden hariç tutma, kayıtta medyayı duraklat, başarısız diktelerin sesini sakla, gösterge (overlay) konumu ve kayıt göstergesi (Küre / Dalga), sesli komutlar, elle düzeltmelerden sözlük önerisi |
+| Genel | Kısayol (tuşa basarak yakalanır) + isteğe bağlı çeviri / agent-prompt / son sonucu yapıştır kısayolları, bas-konuş (yalnızca Windows), geçmiş kayıt sayısı ve saklama süresi, açılışta başlat, panoya kopyala / yapıştır / pencereyi öne getir, pano geçmişinden hariç tutma, kayıtta medyayı duraklat, başarısız diktelerin sesini sakla, gösterge (overlay) konumu, kayıt göstergesi (Küre / Dalga) ve gösterge teması (Varsayılan, Dracula, Nord, Catppuccin Mocha/Latte, Gruvbox, Tokyo Night, Solarized Dark, One Dark, Monokai), sesli komutlar, elle düzeltmelerden sözlük önerisi |
 | Ses | Mikrofon (adıyla saklanır; Windows'ta WASAPI cihazları), kayıt süresi sınırı (0 = sınırsız), sessizlikte otomatik durdurma (0 = kapalı), sessiz mikrofon uyarısı, canlı seviye testi |
 | Konuşma Tanıma | Whisper modeli, hassasiyet (compute_type), dil, toplu çözümleme, açılışta ısıtma, canlı çözümleme parça süresi, "Sessizlik ve halüsinasyon" (VAD eşiği, en kısa sessizlik, konuşma yok eşiği, kara liste) |
 | Metin Düzeltme | LLM aç/kapa, sağlayıcı ve sağlayıcıya özel alanlar, bellekte tutma, sağlamlık kontrolü ("Düzeltme metinden çok saparsa ham metni kullan") |

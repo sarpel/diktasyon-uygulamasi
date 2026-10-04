@@ -189,6 +189,19 @@ class Settings(BaseModel):
     overlay_xy: tuple[int, int] | None = None  # "custom" konumda sürüklenen son yer
     # Kayıt göstergesindeki ses animasyonu: dikenli küre ya da çubuk dalga.
     overlay_indicator: Literal["sphere", "wave"] = "sphere"
+    # Kayıt göstergesinin renk teması (ui/themes.py ile aynı adlar).
+    overlay_theme: Literal[
+        "default",
+        "dracula",
+        "nord",
+        "catppuccin_mocha",
+        "catppuccin_latte",
+        "gruvbox",
+        "tokyo_night",
+        "solarized_dark",
+        "one_dark",
+        "monokai",
+    ] = "default"
     # Yapıştırılan metin Windows pano geçmişine/bulut senkronuna girmesin.
     clipboard_exclude_history: bool = True
     stt: SttSettings = SttSettings()

@@ -1630,3 +1630,31 @@ def test_settings_change_switches_overlay_indicator(ctx, monkeypatch):
     assert ctx.overlay.indicator == "sphere"
     app_mod._open_settings(ctx)
     assert ctx.overlay.indicator == "wave"
+
+
+def test_build_app_and_settings_apply_overlay_theme(qtbot, tmp_path, monkeypatch):
+    monkeypatch.setattr(app_mod.paths, "history_path", lambda: tmp_path / "history.jsonl")
+    monkeypatch.setattr(app_mod.paths, "failed_audio_path", lambda: tmp_path / "failed.wav")
+    monkeypatch.setattr(app_mod, "save_settings", lambda s: None)
+    monkeypatch.setattr(app_mod, "set_autostart", lambda *a, **k: None)
+    monkeypatch.setattr(app_mod, "list_input_devices", lambda: ())
+    c = app_mod.build_app(Settings(overlay_theme="nord"))
+    for w in (c.window, c.overlay):
+        qtbot.addWidget(w)
+    assert c.overlay.theme == "nord"
+
+    class FakeDialog:
+        health_requested = _FakeSignal()
+
+        def __init__(self, settings, devices, parent=None):
+            self._settings = settings
+
+        def exec(self):
+            return 1
+
+        def result_settings(self):
+            return self._settings.model_copy(update={"overlay_theme": "dracula"})
+
+    monkeypatch.setattr(app_mod, "SettingsDialog", FakeDialog)
+    app_mod._open_settings(c)
+    assert c.overlay.theme == "dracula"
