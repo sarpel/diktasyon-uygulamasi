@@ -89,7 +89,9 @@ def test_write_failure_raises_history_error(tmp_path: Path, monkeypatch):
     def boom(*a, **k):
         raise OSError("disk dolu")
 
-    monkeypatch.setattr(Path, "write_text", boom)
+    import os
+
+    monkeypatch.setattr(os, "fsync", boom)
     with pytest.raises(HistoryError, match="Geçmiş kaydedilemedi"):
         h.append(Session(raw_text="x"))
 

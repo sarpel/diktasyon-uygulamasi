@@ -10,6 +10,7 @@ from dataclasses import asdict, dataclass, fields
 from datetime import datetime, timedelta
 from pathlib import Path
 
+from dikte.core.fileio import write_private_atomic
 from dikte.core.state import Session
 from dikte.llm.tasks import Change
 
@@ -231,14 +232,10 @@ class History:
         """Geçmişi tek seferde ve atomik olarak yazar (yarım dosya kalmaz)."""
         self._backup_bad_lines()
         content = "".join(_to_json(s) + "\n" for s in sessions)
-        tmp = self._path.with_suffix(".tmp")
         try:
-            tmp.write_text(content, encoding="utf-8")
-            if sys.platform != "win32":
-                # Dikte edilen metnin kendisi burada; çok kullanıcılı bir Linux sisteminde
-                # başkaları okumasın.
-                tmp.chmod(0o600)
-            tmp.replace(self._path)
+            # Dikte edilen metnin kendisi burada: dosya baştan 0600 açılır (çok kullanıcılı
+            # bir sistemde başkaları okumasın) ve fsync ile diske indirilip yerine konur.
+            write_private_atomic(self._path, content.encode("utf-8"))
         except OSError as exc:
             log.exception("geçmiş yazılamadı: %s", self._path)
             raise HistoryError(

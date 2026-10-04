@@ -7,13 +7,13 @@ from __future__ import annotations
 
 import json
 import logging
-import sys
 from pathlib import Path
 from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator
 
 from dikte import paths
+from dikte.core.fileio import write_private_atomic
 
 log = logging.getLogger(__name__)
 
@@ -286,16 +286,11 @@ def save_settings(settings: Settings, path: Path | None = None) -> None:
 
     Yazılamazsa `SettingsError` fırlatır; mesaj kullanıcıya gösterilmeye uygundur."""
     p = path or paths.config_path()
-    tmp = p.with_suffix(".tmp")
+    content = json.dumps(settings.model_dump(), ensure_ascii=False, indent=2)
     try:
-        tmp.write_text(
-            json.dumps(settings.model_dump(), ensure_ascii=False, indent=2), encoding="utf-8"
-        )
-        if sys.platform != "win32":
-            # API anahtarı *adları* (değerleri değil) gibi bilgiler burada; yine de çok
-            # kullanıcılı bir sistemde başkaları okumasın.
-            tmp.chmod(0o600)
-        tmp.replace(p)
+        # API anahtarı *adları* (değerleri değil) gibi bilgiler burada; yine de çok
+        # kullanıcılı bir sistemde başkaları okumasın: dosya baştan 0600 açılır, fsync'lenir.
+        write_private_atomic(p, content.encode("utf-8"))
     except OSError as exc:
         log.exception("config yazılamadı: %s", p)
         raise SettingsError(

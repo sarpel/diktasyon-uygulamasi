@@ -1328,7 +1328,8 @@ def test_failed_start_from_result_keeps_previous_session(ctl, qtbot):
 
 
 def test_retry_keeps_file_until_result_is_finished(qtbot, tmp_path):
-    """Dosya STT metin döndürür döndürmez siliniyordu; LLM sırasında iptal edilirse kayıt kayboluyordu."""
+    """Dosya STT metin döndürür döndürmez siliniyordu; LLM sırasında iptal edilirse
+    kayıt kayboluyordu."""
     stt = FailingStt()
     c = _failing_ctl(tmp_path, stt)
     c.toggle()
