@@ -8,13 +8,16 @@ from functools import reduce
 from typing import Any
 
 from PySide6.QtCore import Signal
-from PySide6.QtGui import QPalette
+from PySide6.QtGui import QGuiApplication, QPalette
 from PySide6.QtWidgets import (
     QDialog,
     QDialogButtonBox,
+    QFrame,
     QLabel,
+    QScrollArea,
     QTabWidget,
     QVBoxLayout,
+    QWidget,
 )
 
 from dikte.config import Settings
@@ -31,6 +34,10 @@ from dikte.ui.settings import (
 from dikte.ui.settings.audio_tab import InputDevice, as_input_device
 
 log = logging.getLogger(__name__)
+
+# Pencere, açıldığı ekranın kullanılabilir yüksekliğinin en fazla bu oranını kaplar; böylece
+# Tamam/İptal düğmeleri görev çubuğunun ya da ekranın altında kalmaz.
+SCREEN_FILL = 0.9
 
 # Sekmelerden diyaloğa yansıtılan alanlar: çağıran kod ve testler tek bir yüzey görür.
 _PROXIED = {
@@ -178,7 +185,7 @@ class SettingsDialog(QDialog):
 
         self.tabs = QTabWidget()
         for tab in self._tabs_in_order:
-            self.tabs.addTab(tab, tab.title)
+            self.tabs.addTab(self._scrollable(tab), tab.title)
 
         self.error_label = QLabel("")
         self.error_label.setWordWrap(True)
@@ -200,6 +207,37 @@ class SettingsDialog(QDialog):
         lay.addWidget(self.error_label)
         lay.addWidget(buttons)
 
+    @staticmethod
+    def _scrollable(tab: QWidget) -> QScrollArea:
+        """Sekmeyi kaydırma alanına sarar: QTabWidget en uzun sekme kadar uzar, uzun bir
+        sekme (ör. Genel) pencereyi ekrandan taşırıp Tamam/İptal'i görünmez yapıyordu."""
+        area = QScrollArea()
+        area.setWidget(tab)
+        area.setWidgetResizable(True)
+        area.setFrameShape(QFrame.Shape.NoFrame)
+        return area
+
+    def current_tab(self) -> QWidget | None:
+        """Seçili sekmenin kendisi (kaydırma alanının içindeki widget)."""
+        page = self.tabs.currentWidget()
+        return page.widget() if isinstance(page, QScrollArea) else page
+
+    def _show_tab(self, tab: QWidget) -> None:
+        for i in range(self.tabs.count()):
+            page = self.tabs.widget(i)
+            if isinstance(page, QScrollArea) and page.widget() is tab:
+                self.tabs.setCurrentIndex(i)
+                return
+
+    def showEvent(self, event) -> None:
+        """İlk gösterimde pencereyi açıldığı ekrana sığdırır."""
+        screen = self.screen() or QGuiApplication.primaryScreen()
+        if screen is not None:
+            limit = int(screen.availableGeometry().height() * SCREEN_FILL)
+            if self.height() > limit:
+                self.resize(self.width(), limit)
+        super().showEvent(event)
+
     # ---- eski düz form arayüzüyle uyum
     def __getattr__(self, name: str):
         for tab_name, widgets in _PROXIED.items():
@@ -212,7 +250,7 @@ class SettingsDialog(QDialog):
             problem = tab.validate()
             if problem:
                 self.error_label.setText(problem)
-                self.tabs.setCurrentWidget(tab)
+                self._show_tab(tab)
                 return
         self.error_label.setText("")
         self.audio.stop_test()

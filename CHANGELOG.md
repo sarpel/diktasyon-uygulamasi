@@ -77,6 +77,8 @@ Bu projedeki önemli değişiklikler bu dosyada tutulur. Biçim
 
 ### Düzeltildi
 
+- Ayarlar penceresinin küçük ekranlarda ekrandan uzun olup Tamam/İptal düğmelerinin görünmemesi:
+  her sekme artık kendi içinde kaydırılır ve pencere açıldığı ekrana sığdırılır.
 - Panoda dikte metni varken uygulama kapanınca sürecin çökmesi (Python'da oluşturulan
   `QMimeData` Qt kapanışında geçersiz Python koduna yönleniyordu).
 - Windows kurulum paketinde `winsdk` olmadığı için "kayıtta medyayı duraklat" özelliğinin çalışmaması.
