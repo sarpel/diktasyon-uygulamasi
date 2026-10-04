@@ -1,6 +1,7 @@
 """Ön plandaki pencerenin süreç adını bulur (uygulama profili eşleştirmesi için).
 
 Windows'ta user32/kernel32 ile, Linux'ta (yalnızca X11) `xdotool` + `/proc` ile okunur.
+Wayland oturumunda ön plan uygulaması bilinemez (sonuç "bilinmiyor"dur).
 """
 
 from __future__ import annotations
@@ -9,8 +10,10 @@ import contextlib
 import logging
 import subprocess
 import sys
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from pathlib import Path
+
+from dikte.platform.paste import is_wayland_session
 
 log = logging.getLogger(__name__)
 
@@ -85,19 +88,48 @@ def _default_probe() -> str:
     if sys.platform == "win32":
         return _win32_probe()
     if sys.platform.startswith("linux"):
-        return _linux_probe()
+        # Modül öznitelikleri çağrı anında çözülür (testler bunları değiştirebilsin).
+        return _linux_probe(_run_xdotool, _PROC_ROOT)
     return ""
 
 
-def foreground_process_name(probe: Callable[[], str] | None = None) -> str:
-    """Ön plandaki pencerenin süreç adını küçük harfle döndürür (Windows'ta ".exe"siz).
+FOREGROUND_UNKNOWN_MESSAGE = (
+    "Wayland oturumunda etkin uygulama algılanamıyor; uygulama profilleri uygulanmıyor, "
+    "varsayılan ayarlar kullanılıyor."
+)
+_warned = {"wayland": False}
 
-    Ad alınamazsa (araç yok, izin yok, desteklenmeyen platform) boş dize döner; hata
-    yükseltilmez."""
-    run = probe or _default_probe
+
+def probe_foreground_process(
+    probe: Callable[[], str] | None = None, *, env: Mapping[str, str] | None = None
+) -> str | None:
+    """Ön plandaki pencerenin süreç adını küçük harfle döndürür; bilinmiyorsa None.
+
+    None, "profil eşleşmedi" değil "hangi uygulama olduğu bilinmiyor" demektir: araç yok,
+    izin yok, desteklenmeyen platform ya da Wayland oturumu. Wayland'de xdotool yalnızca
+    XWayland pencerelerini görür; "etkin pencere" diye döndürdüğü yanlış olabileceğinden
+    hiç sorulmaz (çağıran `FOREGROUND_UNKNOWN_MESSAGE` ile kullanıcıyı bir kez uyarabilir).
+    Hata yükseltilmez."""
+    if probe is None:
+        if sys.platform.startswith("linux") and is_wayland_session(env):
+            if not _warned["wayland"]:
+                log.info("Wayland oturumu: ön plan uygulaması algılanamıyor, profiller atlanıyor")
+                _warned["wayland"] = True
+            return None
+        probe = _default_probe
     try:
-        name = run()
+        name = probe()
     except (OSError, subprocess.SubprocessError, ValueError) as exc:
         log.info("ön plan süreci alınamadı: %s", exc)
-        return ""
-    return name.strip().lower()
+        return None
+    return name.strip().lower() or None
+
+
+def foreground_process_name(
+    probe: Callable[[], str] | None = None, *, env: Mapping[str, str] | None = None
+) -> str:
+    """Ön plandaki pencerenin süreç adını küçük harfle döndürür (Windows'ta ".exe"siz).
+
+    Ad alınamazsa (araç yok, izin yok, desteklenmeyen platform, Wayland) boş dize döner;
+    hata yükseltilmez. "Bilinmiyor"u ayırt etmek için `probe_foreground_process` kullanın."""
+    return probe_foreground_process(probe, env=env) or ""
