@@ -215,6 +215,27 @@ def test_set_chunking_updates_parameters(rec):
     assert len(fired) == 1
 
 
+def test_chunk_ready_carries_stream_token_of_its_recording(qtbot):
+    """İptal edilen kaydın kuyrukta kalan parçası yeni kayda sayılmasın diye her parça
+    kendi akışının belirteciyle yayınlanır."""
+    rec = AudioRecorder(AudioSettings(), stream_factory=FakeStream, chunk_s=1.0, max_chunk_s=2.0)
+    fired = []
+    rec.chunk_ready.connect(lambda audio, token: fired.append(token))
+    rec.start()
+    first = rec.stream_token
+    old_stream = FakeStream.instances[-1]
+    rec.stop()
+    rec.start()
+    second = rec.stream_token
+    assert second != first
+    for _ in range(20):
+        old_stream.push(np.ones(1600, dtype=np.float32) * 0.1)  # eski akışın geç geri çağrısı
+    new_stream = FakeStream.instances[-1]
+    for _ in range(20):
+        new_stream.push(np.ones(1600, dtype=np.float32) * 0.1)
+    assert fired[0] == first and fired[-1] == second
+
+
 def test_callback_copies_reused_input_buffer(rec):
     """PortAudio aynı tamponu yeniden kullanır; kayıt bu tampona view tutmamalı."""
     rec.start()

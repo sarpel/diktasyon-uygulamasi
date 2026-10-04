@@ -91,6 +91,7 @@ class DictationController(QObject):
         self._source = "mic"  # "mic" | "file" | "retry": başarısızlıkta ses saklanır mı
         self._chunk_mode = False  # kayıt başında sabitlenir; kayıt ortası ayar değiştirmez
         self._chunk_seq = 0
+        self._rec_token: int | None = None  # süren kaydın kayıtçı akış belirteci
         self._chunk_texts: dict[int, str] = {}
         self._chunk_queue: deque[np.ndarray] = deque()
         self._chunk_running = False  # parçalar sırayla, birer birer çözümlenir
@@ -392,6 +393,9 @@ class DictationController(QObject):
         self._source = "mic"
         self._reset_chunks()
         self._chunk_mode = self._settings.stt.live_chunk_s > 0
+        # Bu kaydın akış belirteci: iptal edilmiş eski kayıttan geç gelen parçalar ayıklanır.
+        token = getattr(self._recorder, "stream_token", None)
+        self._rec_token = token if isinstance(token, int) else None
         effective_mode = profile.mode if profile and mode == "correct" else mode
         self._begin_session(
             Session(mode=effective_mode, profile=profile.name if profile else ""),
@@ -428,7 +432,11 @@ class DictationController(QObject):
         self._release_tail_if_ready()
         self._maybe_finish_transcription()
 
-    def _on_chunk(self, audio: np.ndarray) -> None:
+    def _on_chunk(self, audio: np.ndarray, token: int | None = None) -> None:
+        if token is not None and self._rec_token is not None and token != self._rec_token:
+            # İptal edilmiş/önceki kaydın kuyrukta kalmış parçası: bu oturuma ait değil.
+            log.debug("eski kayda ait parça yok sayıldı (belirteç %s ≠ %s)", token, self._rec_token)
+            return
         if self._failure is not None and self._state is DictationState.TRANSCRIBING:
             # Hata sonrası geç gelen parça: çözümlenmez, yalnızca saklanacak sese sırayla eklenir.
             self._chunks_received += 1

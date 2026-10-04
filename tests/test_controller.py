@@ -1369,3 +1369,42 @@ def test_translation_result_dropped_when_session_changed(ctl, qtbot):
     llm.release()
     qtbot.wait(300)
     assert c.session.translation == ""
+
+
+# ---- parça akış belirteci (iptal edilen kaydın geç parçası)
+
+
+class TokenRecorder(FakeRecorder):
+    """Gerçek kayıtçı gibi parçaları akış belirteciyle yayınlar."""
+
+    chunk_ready = Signal(object, int)
+
+    def __init__(self):
+        super().__init__()
+        self.stream_token = 0
+
+    def start(self):
+        self.stream_token += 1
+        super().start()
+
+
+def test_stale_chunk_from_cancelled_recording_is_ignored(qtbot):
+    rec = TokenRecorder()
+    stt = SequentialStt(["Yeni.", "Kuyruk."])
+    c = DictationController(
+        _live_chunk_settings(), recorder=rec, stt=stt, llm=FakeLlm(), pool=QThreadPool()
+    )
+    partials = []
+    c.partial_text.connect(partials.append)
+    c.toggle()
+    old_token = rec.stream_token
+    c.cancel()
+    c.toggle()  # yeni kayıt
+    rec.chunk_ready.emit(np.ones(1600, dtype=np.float32), old_token)  # geç teslim edilen eski parça
+    qtbot.wait(100)
+    assert stt.calls == [] and partials == []
+    rec.chunk_ready.emit(np.ones(1600, dtype=np.float32), rec.stream_token)
+    qtbot.waitUntil(lambda: partials == ["Yeni."], timeout=3000)
+    c.toggle()
+    qtbot.waitUntil(lambda: c.state is DictationState.RESULT, timeout=3000)
+    assert c.session.raw_text == "Yeni. Kuyruk."
