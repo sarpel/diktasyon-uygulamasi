@@ -92,6 +92,12 @@ class FakeLlm:
         return "Hello world."
 
 
+def _reach_result(c, qtbot):
+    c.toggle()
+    c.toggle()
+    qtbot.waitUntil(lambda: c.state is DictationState.RESULT, timeout=3000)
+
+
 @pytest.fixture
 def ctl(qtbot):
     rec, stt, llm = FakeRecorder(), FakeStt(), FakeLlm()
@@ -174,6 +180,7 @@ def test_empty_transcript_goes_back_to_idle_with_error(qtbot):
 
 def test_request_translation_updates_session(ctl, qtbot):
     c, *_ = ctl
+    _reach_result(c, qtbot)
     with qtbot.waitSignal(
         c.session_updated, timeout=5000, check_params_cb=lambda s: s.translation != ""
     ):
@@ -183,6 +190,7 @@ def test_request_translation_updates_session(ctl, qtbot):
 
 def test_request_enhanced_prompt_updates_session(ctl, qtbot):
     c, *_ = ctl
+    _reach_result(c, qtbot)
     with qtbot.waitSignal(
         c.session_updated, timeout=5000, check_params_cb=lambda s: s.enhanced_prompt != ""
     ):
@@ -217,6 +225,7 @@ def test_llm_disabled_rejects_translation(qtbot):
     c = DictationController(
         settings, recorder=FakeRecorder(), stt=FakeStt(), llm=llm, pool=QThreadPool()
     )
+    _reach_result(c, qtbot)
     errors = []
     c.error.connect(errors.append)
     c.request_translation("merhaba")
@@ -303,6 +312,7 @@ def test_set_llm_replaces_provider(qtbot):
     c = DictationController(
         Settings(), recorder=FakeRecorder(), stt=FakeStt(), llm=FakeLlm(), pool=QThreadPool()
     )
+    _reach_result(c, qtbot)
     new = FakeLlm()
     c.set_llm(new)
     c.request_translation("merhaba")
@@ -799,6 +809,8 @@ def test_many_in_flight_jobs_all_deliver_callbacks(qtbot):
     pool = QThreadPool()
     pool.setMaxThreadCount(32)
     c = DictationController(Settings(), recorder=FakeRecorder(), stt=FakeStt(), llm=llm, pool=pool)
+    _reach_result(c, qtbot)
+    llm.calls.clear()
     delivered = []
     c.session_updated.connect(lambda s: delivered.append(s.translation))
     for i in range(24):
@@ -1255,12 +1267,6 @@ def test_undo_phrase_is_plain_text_when_voice_commands_off(qtbot):
 # ---- yeni oturum yayını ve geçmiş senkronu (boş satır/yinelenen kimlik regresyonu)
 
 
-def _reach_result(c, qtbot):
-    c.toggle()
-    c.toggle()
-    qtbot.waitUntil(lambda: c.state is DictationState.RESULT, timeout=3000)
-
-
 def test_new_session_is_not_emitted_while_still_in_result(ctl, qtbot):
     """Yeni (boş) oturum RESULT'tayken yayınlanırsa app geçmişe boş satır yazıyordu."""
     c, *_ = ctl
@@ -1341,3 +1347,25 @@ def test_retry_keeps_file_until_result_is_finished(qtbot, tmp_path):
     assert c.retry_last_failed()
     qtbot.waitUntil(lambda: c.state is DictationState.RESULT, timeout=3000)
     assert not c.has_failed_audio
+
+
+def test_translation_request_ignored_outside_result(ctl, qtbot):
+    c, _rec, _stt, llm = ctl
+    c.request_translation("metin")
+    c.request_enhanced_prompt("metin")
+    c.toggle()  # RECORDING
+    c.request_translation("metin")
+    qtbot.wait(100)
+    assert llm.calls == [] and c.session.translation == ""
+
+
+def test_translation_result_dropped_when_session_changed(ctl, qtbot):
+    c, *_ = ctl
+    _reach_result(c, qtbot)
+    llm = BlockingLlm()
+    c.set_llm(llm)
+    c.request_translation("eski metin")
+    c._session = c._session.with_(id="baska-oturum")  # kuşak değişmeden oturum değişti
+    llm.release()
+    qtbot.wait(300)
+    assert c.session.translation == ""

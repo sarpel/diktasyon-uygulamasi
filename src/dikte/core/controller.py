@@ -282,25 +282,46 @@ class DictationController(QObject):
 
     @Slot(str)
     def request_translation(self, text: str) -> None:
-        """Sonuç ekranından elle istenen çeviri; sonuç `session_updated` ile gelir."""
-        if not self._require_llm():
+        """Sonuç ekranından elle istenen çeviri; sonuç `session_updated` ile gelir.
+        Yalnızca RESULT'ta çalışır; yanıt geldiğinde oturum değişmişse sonuç atılır."""
+        if not self._result_request_allowed("request_translation"):
             return
-        self._spawn(
+        self._spawn_for_session(
             lambda: tasks.translate(self._llm, text),
-            lambda out: self._update_session(translation=out),
+            "translation",
             lambda e: self.error.emit(f"Çeviri başarısız: {e}"),
         )
 
     @Slot(str)
     def request_enhanced_prompt(self, text: str) -> None:
-        """Sonuç ekranından elle istenen prompt iyileştirme; sonuç `session_updated` ile gelir."""
-        if not self._require_llm():
+        """Sonuç ekranından elle istenen prompt iyileştirme; sonuç `session_updated` ile gelir.
+        Yalnızca RESULT'ta çalışır; yanıt geldiğinde oturum değişmişse sonuç atılır."""
+        if not self._result_request_allowed("request_enhanced_prompt"):
             return
-        self._spawn(
+        self._spawn_for_session(
             lambda: tasks.enhance_prompt(self._llm, text),
-            lambda out: self._update_session(enhanced_prompt=out),
+            "enhanced_prompt",
             lambda e: self.error.emit(f"Prompt oluşturma başarısız: {e}"),
         )
+
+    def _result_request_allowed(self, name: str) -> bool:
+        if self._state is not DictationState.RESULT:
+            log.debug("%s yok sayıldı (durum: %s)", name, self._state)
+            return False
+        return self._require_llm()
+
+    def _spawn_for_session(self, fn, field_name: str, on_error) -> None:
+        """İsteği başlatan oturumun kimliğini yakalar; sonuç geldiğinde hâlâ aynı oturumun
+        sonuç ekranındaysak alana yazar, değilse (yeni dikte, iptal) sonucu atar."""
+        session_id = self._session.id
+
+        def on_result(out) -> None:
+            if self._state is not DictationState.RESULT or self._session.id != session_id:
+                log.debug("başka oturuma ait %s sonucu yok sayıldı", field_name)
+                return
+            self._update_session(**{field_name: out})
+
+        self._spawn(fn, on_result, on_error)
 
     @Slot(str)
     def apply_edit(self, text: str) -> None:
