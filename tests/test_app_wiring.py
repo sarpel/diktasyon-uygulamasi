@@ -182,12 +182,87 @@ def test_open_settings_cancelled_changes_nothing(ctx, monkeypatch):
     assert ctx.settings.hotkey == "ctrl+alt+space"
 
 
-def test_quit_hides_tray_and_unregisters_hotkey(ctx):
+def test_quit_hides_tray_and_asks_app_to_quit(ctx, monkeypatch):
+    """Temizlik aboutToQuit'e bağlı _shutdown'dadır; _quit yalnızca tepsiyi gizleyip çıkar."""
+    from types import SimpleNamespace
+
     ctx.tray.show()
-    unregistered = []
-    ctx.hotkey.unregister = lambda: unregistered.append(True)
+    quits = []
+    fake_app = SimpleNamespace(quit=lambda: quits.append(True))
+    monkeypatch.setattr(app_mod, "QApplication", SimpleNamespace(instance=lambda: fake_app))
     app_mod._quit(ctx)
-    assert unregistered == [True] and not ctx.tray.isVisible()
+    assert quits == [True] and not ctx.tray.isVisible()
+
+
+def _record_shutdown_calls(ctx, monkeypatch):
+    calls = []
+    hotkeys = (
+        ctx.hotkey,
+        ctx.cancel_hotkey,
+        ctx.hotkey_translate,
+        ctx.hotkey_prompt,
+        ctx.hotkey_paste_last,
+    )
+    for hk in hotkeys:
+        monkeypatch.setattr(hk, "unregister", lambda: calls.append("unregister"))
+    monkeypatch.setattr(ctx.controller, "cancel", lambda: calls.append("cancel"))
+    monkeypatch.setattr(ctx.recorder, "stop", lambda: calls.append("stop"))
+    return calls
+
+
+def test_shutdown_unregisters_hotkeys_cancels_and_stops_recorder(ctx, monkeypatch):
+    calls = _record_shutdown_calls(ctx, monkeypatch)
+    app_mod._shutdown(ctx)
+    assert calls.count("unregister") == 5
+    assert calls.count("cancel") == 1 and calls.count("stop") == 1
+
+
+def test_shutdown_is_idempotent(ctx, monkeypatch):
+    calls = _record_shutdown_calls(ctx, monkeypatch)
+    app_mod._shutdown(ctx)
+    app_mod._shutdown(ctx)
+    assert calls.count("cancel") == 1 and calls.count("unregister") == 5
+
+
+def test_shutdown_waits_for_running_background_jobs(ctx, monkeypatch):
+    import time
+
+    from dikte.core.workers import run_in_pool
+
+    _record_shutdown_calls(ctx, monkeypatch)
+    finished = []
+    jobs = [
+        run_in_pool(
+            lambda: (time.sleep(0.2), finished.append("global")),
+            lambda _r: None,
+            lambda _e: None,
+        )
+    ]
+    ctx.media_pool = app_mod.QThreadPool()
+    jobs.append(
+        run_in_pool(
+            lambda: (time.sleep(0.2), finished.append("media")),
+            lambda _r: None,
+            lambda _e: None,
+            ctx.media_pool,
+        )
+    )
+    app_mod._shutdown(ctx)
+    assert sorted(finished) == ["global", "media"]
+
+
+def test_shutdown_runs_when_application_is_about_to_quit(ctx, monkeypatch):
+    """Oturum kapatma/Windows kapanışı _quit'ten geçmez; temizlik aboutToQuit'e bağlı."""
+    from PySide6.QtCore import QObject, Signal
+
+    class FakeApp(QObject):
+        aboutToQuit = Signal()
+
+    calls = _record_shutdown_calls(ctx, monkeypatch)
+    fake_app = FakeApp()
+    app_mod._install_shutdown(ctx, fake_app)
+    fake_app.aboutToQuit.emit()
+    assert "cancel" in calls and ctx.shut_down
 
 
 def test_run_toggle_returns_error_when_not_running(monkeypatch):
@@ -1105,6 +1180,6 @@ def test_quit_resumes_media_after_queued_pause(ctx, qtbot):
     ctx.media = SlowMedia()
     ctx.controller.state_changed.emit(DictationState.RECORDING)
     threading.Timer(0.2, gate.set).start()
-    app_mod._quit(ctx)
+    app_mod._shutdown(ctx)
     qtbot.waitUntil(lambda: len(calls) == 2, timeout=3000)
     assert calls == ["pause", "resume"]

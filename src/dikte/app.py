@@ -83,6 +83,8 @@ CLI_TOGGLE_HINT = "dikte --toggle"
 _background_jobs: list = []
 # Çıkışta kuyruktaki medya pause() çağrısı için en fazla bekleme (MediaPauser zaman aşımı ~1,5 sn).
 MEDIA_QUIT_WAIT_MS = 2000
+# Çıkışta süren arka plan işleri (STT/LLM/durum kontrolü) için en fazla bekleme.
+SHUTDOWN_WAIT_MS = 3000
 
 
 @dataclass
@@ -114,6 +116,7 @@ class AppContext:
     # (resume, kendi pause'undan önce çalışamaz).
     media_pool: QThreadPool | None = None
     hotkey_paste_last: GlobalHotkey | None = None  # isteğe bağlı: son sonucu yeniden yapıştırır
+    shut_down: bool = False  # _shutdown bir kez çalışır (tepsi + aboutToQuit)
 
 
 class _NullLlm:
@@ -883,23 +886,55 @@ def _apply_autostart(ctx: AppContext, enabled: bool) -> None:
 
 
 def _quit(ctx: AppContext) -> None:
+    """Tepsiden "Çıkış": temizlik `aboutToQuit`e bağlı `_shutdown`ta yapılır (bkz.
+    `_install_shutdown`) ki oturum kapatma/Windows kapanışı da aynı yoldan geçsin."""
+    ctx.tray.hide()
+    app = QApplication.instance()
+    if app is not None:
+        app.quit()
+
+
+def _install_shutdown(ctx: AppContext, app: QObject) -> None:
+    """`app.aboutToQuit` sinyaline `_shutdown`ı bağlar (tepsi, oturum kapatma, kapanış)."""
+    app.aboutToQuit.connect(lambda: _shutdown(ctx))  # type: ignore[attr-defined]
+
+
+def _shutdown(ctx: AppContext) -> None:
+    """Çıkışta kaynakları sırayla bırakır; birden çok çağrıda yalnızca ilki çalışır.
+
+    Duraklatılan medya sürdürülür, kısayollar bırakılır, süren dikte iptal edilir, mikrofon
+    akışı kapatılır ve arka plan işleri sınırlı bir süre beklenir (bekleyen kuyruk atılır)."""
+    if ctx.shut_down:
+        return
+    ctx.shut_down = True
     if ctx.media is not None and ctx.media_paused:
         # Kayıt sürerken çıkılırsa duraklatılan medya askıda kalmasın. pause() medya
         # havuzunda hâlâ sürüyor olabilir; önce onu beklemezsek resume() boşa gider ve
         # ardından biten pause() medyayı duraklatılmış bırakır.
         if ctx.media_pool is not None:
             ctx.media_pool.waitForDone(MEDIA_QUIT_WAIT_MS)
-        ctx.media.resume()
-    ctx.hotkey.unregister()
-    ctx.cancel_hotkey.unregister()
-    ctx.hotkey_translate.unregister()
-    ctx.hotkey_prompt.unregister()
-    if ctx.hotkey_paste_last is not None:
-        ctx.hotkey_paste_last.unregister()
-    ctx.tray.hide()
-    app = QApplication.instance()
-    if app is not None:
-        app.quit()
+        try:
+            ctx.media.resume()
+        except Exception:
+            log.exception("çıkışta medya sürdürülemedi")
+        ctx.media_paused = False  # iptalin tetiklediği _sync_media ikinci kez sürdürmesin
+    for hk in (
+        ctx.hotkey,
+        ctx.cancel_hotkey,
+        ctx.hotkey_translate,
+        ctx.hotkey_prompt,
+        ctx.hotkey_paste_last,
+    ):
+        if hk is not None:
+            hk.unregister()
+    ctx.controller.cancel()  # süren işin sonuçları yok sayılır (kuşak sayacı)
+    ctx.recorder.stop()  # kayıt yokken de güvenle çağrılabilir
+    for pool in (QThreadPool.globalInstance(), ctx.media_pool):
+        if pool is None:
+            continue
+        pool.clear()  # henüz başlamamış işler atılır
+        if not pool.waitForDone(SHUTDOWN_WAIT_MS):
+            log.warning("çıkışta arka plan işleri %d ms içinde bitmedi", SHUTDOWN_WAIT_MS)
 
 
 def _notify_config_issues(ctx: AppContext, issues: tuple[str, ...]) -> None:
@@ -995,6 +1030,7 @@ def main(argv: list[str] | None = None) -> int:
             f"Veri klasörü hazırlanamadı: {exc}\nYazma izinlerini kontrol edin.",
         )
         return 1
+    _install_shutdown(ctx, app)
     sanitized = _sanitized_hotkeys(settings, ctx.settings)
     if sanitized:  # bozuk kısayol(lar) düzeltildi, kalıcı hâle getir
         try:
