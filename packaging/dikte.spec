@@ -2,7 +2,7 @@
 import importlib.util
 import os
 
-from PyInstaller.utils.hooks import collect_all, collect_dynamic_libs
+from PyInstaller.utils.hooks import collect_all, collect_dynamic_libs, collect_submodules
 
 # SPECPATH: bu .spec dosyasının bulunduğu dizin. pyinstaller hangi dizinden
 # çalıştırılırsa çalıştırılsın yollar doğru çözülsün diye kullanılır.
@@ -23,15 +23,18 @@ for pkg in (
     datas += d
     binaries += b
     hiddenimports += h
-# Medya duraklatma (`media` extra'sı, yalnızca Windows): winsdk alt modüllerini dinamik
-# yükler, bu yüzden tümü toplanır. Kurulu değilse paket onsuz üretilir (özellik devre dışı).
-if importlib.util.find_spec("winsdk") is not None:
-    d, b, h = collect_all("winsdk")
-    datas += d
-    binaries += b
-    hiddenimports += h
+# Medya duraklatma (`media` extra'sı, yalnızca Windows): pywinrt (`winrt-*` paketleri).
+# `winrt` __init__.py'siz bir ad alanı paketidir ve pyinstaller-hooks-contrib'de kancası
+# yoktur; projeksiyonlar (ör. winrt.windows.foundation.collections) çalışma anında
+# dinamik içe aktarılır, statik analiz onları göremez. Bu yüzden tüm alt modüller
+# (collect_submodules ad alanı paketlerini de gezer) ve _winrt*.pyd yanındaki DLL'ler
+# (msvcp140.dll) açıkça toplanır. Kurulu değilse paket onsuz üretilir (özellik devre dışı).
+# (find_spec noktalı adda üst paket yoksa ModuleNotFoundError yükseltir; üst ad denetlenir.)
+if importlib.util.find_spec("winrt") is not None:
+    hiddenimports += collect_submodules("winrt")
+    binaries += collect_dynamic_libs("winrt")
 else:
-    print("UYARI: winsdk kurulu değil; kayıtta medyayı duraklatma pakette çalışmayacak.")
+    print("UYARI: pywinrt (winrt-*) kurulu değil; kayıtta medyayı duraklatma pakette çalışmayacak.")
 # collect_all paketlerin kendi test paketlerini de toplar (ör. google.genai.tests);
 # bunlar pytest'i pakete sürükler ve boyutu gereksiz büyütür.
 hiddenimports = [m for m in hiddenimports if ".tests" not in m and not m.endswith(".tests")]
