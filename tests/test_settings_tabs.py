@@ -673,6 +673,34 @@ def test_connection_test_keeps_job_reference_until_done(dlg, monkeypatch):
     assert dlg.llm._test_job is None and "✓" in dlg.llm_test_status.text()
 
 
+@pytest.mark.parametrize("outcome", ["result", "error"])
+def test_connection_test_finishing_after_settings_closed_does_not_crash(
+    qtbot, monkeypatch, outcome
+):
+    """Ayarlar test bitmeden kapanırsa (diyalog silinir) geç gelen sonuç silinmiş
+    widget'lara dokunup RuntimeError fırlatmamalı."""
+    from shiboken6 import Shiboken
+
+    import dikte.ui.settings.llm_tab as llm_tab_mod
+
+    class FakeProvider:
+        def complete(self, system, user):
+            return "OK"
+
+    monkeypatch.setattr(llm_tab_mod, "make_provider", lambda settings: FakeProvider())
+    callbacks = {}
+
+    def fake_run_in_pool(fn, on_result, on_error, pool=None):
+        callbacks.update(result=on_result, error=on_error)
+        return object()
+
+    monkeypatch.setattr(llm_tab_mod, "run_in_pool", fake_run_in_pool)
+    tab = llm_tab_mod.LlmTab(Settings())
+    tab.llm_test_btn.click()
+    Shiboken.delete(tab)
+    callbacks[outcome]("OK")  # RuntimeError fırlatmamalı
+
+
 def test_about_probes_run_off_the_gui_thread(qtbot):
     import threading
 
