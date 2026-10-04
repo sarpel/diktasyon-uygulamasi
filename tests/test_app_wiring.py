@@ -1204,6 +1204,43 @@ def test_quit_resumes_media_after_queued_pause(ctx, qtbot):
     assert calls == ["pause", "resume"]
 
 
+def test_qt_translator_translates_standard_buttons(qapp):
+    from PySide6.QtCore import QCoreApplication
+
+    translator = app_mod._install_qt_translator(qapp)
+    try:
+        assert translator is not None
+        assert QCoreApplication.translate("QPlatformTheme", "Cancel") == "İptal"
+    finally:
+        if translator is not None:
+            qapp.removeTranslator(translator)
+
+
+def test_qt_translator_falls_back_to_bundled_dir(qapp, tmp_path):
+    import shutil
+
+    from PySide6.QtCore import QLibraryInfo
+
+    source = QLibraryInfo.path(QLibraryInfo.LibraryPath.TranslationsPath)
+    bundled = tmp_path / "translations"
+    bundled.mkdir()
+    shutil.copy(f"{source}/{app_mod.QT_TRANSLATION}.qm", bundled)
+    translator = app_mod._install_qt_translator(
+        qapp, search_dirs=(str(tmp_path / "yok"), str(bundled))
+    )
+    try:
+        assert translator is not None
+    finally:
+        if translator is not None:
+            qapp.removeTranslator(translator)
+
+
+def test_missing_qt_translation_logs_warning(qapp, tmp_path, caplog):
+    with caplog.at_level(logging.WARNING, logger="dikte.app"):
+        assert app_mod._install_qt_translator(qapp, search_dirs=(str(tmp_path),)) is None
+    assert "çeviri" in caplog.text
+
+
 def test_settings_health_request_opens_app_owned_health_dialog(ctx, monkeypatch):
     """Ayarlar → Hakkında → "Durum kontrolü…" uygulamanın kendi durum penceresini açar:
     model_downloaded bağlıdır ve pencere ayarlar diyaloğu silinince yok olmaz."""

@@ -13,7 +13,15 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import cast
 
-from PySide6.QtCore import QCoreApplication, QMimeData, QObject, QThreadPool, QTimer
+from PySide6.QtCore import (
+    QCoreApplication,
+    QLibraryInfo,
+    QMimeData,
+    QObject,
+    QThreadPool,
+    QTimer,
+    QTranslator,
+)
 from PySide6.QtWidgets import QApplication, QDialog, QMessageBox, QSystemTrayIcon
 
 from dikte import APP_NAME, __version__, paths
@@ -85,6 +93,8 @@ _background_jobs: list = []
 MEDIA_QUIT_WAIT_MS = 2000
 # Çıkışta süren arka plan işleri (STT/LLM/durum kontrolü) için en fazla bekleme.
 SHUTDOWN_WAIT_MS = 3000
+# Qt'nin standart metinleri (QDialogButtonBox, QMessageBox, sağ tık menüsü) için çeviri.
+QT_TRANSLATION = "qtbase_tr"
 
 
 @dataclass
@@ -973,6 +983,36 @@ def _sanitized_hotkeys(before: Settings, after: Settings) -> tuple[str, ...]:
     return tuple(f for f in _HOTKEY_FIELDS if getattr(before, f) != getattr(after, f))
 
 
+def _qt_translation_dirs() -> tuple[str, ...]:
+    """Qt çevirilerinin aranacağı klasörler: Qt'nin kendi yolu, ardından PyInstaller
+    paketindeki `translations` klasörü (bkz. packaging/dikte.spec)."""
+    dirs = [QLibraryInfo.path(QLibraryInfo.LibraryPath.TranslationsPath)]
+    bundle = getattr(sys, "_MEIPASS", None)
+    if bundle:
+        dirs.append(str(Path(bundle) / "translations"))
+    return tuple(dirs)
+
+
+def _install_qt_translator(
+    app: QCoreApplication, *, search_dirs: tuple[str, ...] | None = None
+) -> QTranslator | None:
+    """Qt'nin standart düğme/diyalog metinlerini (Tamam/İptal/Evet/Hayır, sağ tık menüsü)
+    Türkçeleştirir. Çevirmen `app`'e bağlıdır (canlı kalır); bulunamazsa uyarı loglanır."""
+    dirs = search_dirs if search_dirs is not None else _qt_translation_dirs()
+    for directory in dirs:
+        translator = QTranslator(app)
+        if translator.load(QT_TRANSLATION, directory):
+            app.installTranslator(translator)
+            return translator
+        translator.deleteLater()
+    log.warning(
+        "Qt Türkçe çevirisi (%s.qm) bulunamadı (%s); standart düğmeler İngilizce görünebilir",
+        QT_TRANSLATION,
+        ", ".join(dirs),
+    )
+    return None
+
+
 def main(argv: list[str] | None = None) -> int:
     """CLI giriş noktası; çıkış kodunu döndürür.
 
@@ -1015,6 +1055,7 @@ def main(argv: list[str] | None = None) -> int:
     app = QApplication(sys.argv)
     app.setApplicationName(APP_NAME)
     app.setQuitOnLastWindowClosed(False)
+    qt_translator = _install_qt_translator(app)  # noqa: F841 - olay döngüsü boyunca canlı
 
     single = SingleInstance()
     if not single.try_acquire():

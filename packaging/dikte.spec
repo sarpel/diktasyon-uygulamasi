@@ -49,6 +49,15 @@ for pkg in ("nvidia.cublas", "nvidia.cudnn"):
     )
     binaries += libs
 
+# Qt standart düğme/diyalog çevirisi (Tamam/İptal/Evet/Hayır, sağ tık menüsü). Paket içinde
+# QLibraryInfo'nun çeviri yolu güvenilir değil; app._install_qt_translator bulamazsa
+# paketteki "translations" klasörüne bakar. qtbase_tr.qm'nin başka .qm bağımlılığı yoktur.
+from PySide6.QtCore import QLibraryInfo  # noqa: E402
+
+_qt_tr = os.path.join(QLibraryInfo.path(QLibraryInfo.LibraryPath.TranslationsPath), "qtbase_tr.qm")
+assert os.path.exists(_qt_tr), f"Qt Türkçe çevirisi bulunamadı: {_qt_tr}"
+datas.append((_qt_tr, "translations"))
+
 a = Analysis(
     [os.path.join(ROOT, "src", "dikte", "__main__.py")],
     pathex=[os.path.join(ROOT, "src")],
