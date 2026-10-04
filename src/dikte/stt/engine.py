@@ -333,7 +333,8 @@ class FasterWhisperEngine:
             "no_speech_threshold": s.no_speech_threshold,
             "log_prob_threshold": s.log_prob_threshold,
             "hallucination_silence_threshold": s.hallucination_silence_threshold_s or None,
-            "without_timestamps": True,  # kelime zamanları kullanılmıyor
+            # Zaman damgaları kullanılmıyor; eşik açıksa tekil yolda aşağıda açılır.
+            "without_timestamps": True,
             "initial_prompt": " ".join(
                 p for p in (s.initial_prompt, self._prompt_terms, previous_text[-200:]) if p
             )
@@ -384,6 +385,14 @@ class FasterWhisperEngine:
                 target = self._model
                 assert target is not None  # _run_locked yalnızca model yüklüyken çağrılır
                 kwargs["condition_on_previous_text"] = True
+                if kwargs.get("hallucination_silence_threshold") is not None:
+                    # faster-whisper eşiği yalnızca word_timestamps=True iken uygular (aksi hâlde
+                    # sessizce yok sayar). Anomali tespiti segment başına çalıştığı için zaman
+                    # damgalı segmentler de istenir; without_timestamps=True tüm 30 sn'lik
+                    # pencereyi tek segment yapar ve tek şüpheli kelime pencerenin tamamını
+                    # düşürebilirdi. Toplu boru hattı eşiği hiç desteklemez (orada açılmaz).
+                    kwargs["word_timestamps"] = True
+                    kwargs["without_timestamps"] = False
             seg_iter, info = target.transcribe(audio.astype(np.float32, copy=False), **kwargs)
             segments = tuple(
                 Segment(

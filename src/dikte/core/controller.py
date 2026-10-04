@@ -26,6 +26,8 @@ log = logging.getLogger(__name__)
 # Durdurma anında kayıtçının kestiği ama kuyruklu sinyali henüz gelmemiş parçalar için
 # azami bekleme; normalde milisaniyeler içinde gelir, bu yalnızca takılmaya karşı güvence.
 LATE_CHUNK_TIMEOUT_MS = 3000
+# Geç parça hiç gelmezse o bölümün sesi metne girmez; kullanıcı bunu bilmeli.
+LOST_CHUNK_WARNING = "Kaydın bir bölümü işlenemedi; metin eksik olabilir."
 RETRY_HINT = (
     " Ses kaydı saklandı; tepsideki “Başarısız kaydı yeniden dene” ile tekrar deneyebilirsiniz."
 )
@@ -91,6 +93,7 @@ class DictationController(QObject):
         self._source = "mic"  # "mic" | "file" | "retry": başarısızlıkta ses saklanır mı
         self._chunk_mode = False  # kayıt başında sabitlenir; kayıt ortası ayar değiştirmez
         self._chunk_seq = 0
+        self._rec_token: int | None = None  # süren kaydın kayıtçı akış belirteci
         self._chunk_texts: dict[int, str] = {}
         self._chunk_queue: deque[np.ndarray] = deque()
         self._chunk_running = False  # parçalar sırayla, birer birer çözümlenir
@@ -240,9 +243,7 @@ class DictationController(QObject):
         self._gen += 1  # eski çeviri/prompt gibi bekleyen işler bu oturuma yazılmasın
         self._active_profile = None
         self._source = "file"
-        self._session = Session(source_path=path)
-        self.session_updated.emit(self._session)
-        self._set_state(DictationState.TRANSCRIBING)
+        self._begin_session(Session(source_path=path), DictationState.TRANSCRIBING)
         lang = self._settings.stt.language
         self._spawn(
             lambda: self._stt.transcribe(self._audio_loader(path), lang),
@@ -253,8 +254,8 @@ class DictationController(QObject):
     @Slot()
     def retry_last_failed(self) -> bool:
         """Saklanmış başarısız kaydı yeniden çözümler (ardından normal LLM/teslim akışı).
-        STT boş olmayan metin üretince dosya silinir (`failed_audio_changed(False)`);
-        yeniden deneme de başarısız olursa dosya korunur. Başlatılamazsa `error`
+        Oturum sonuca ulaşınca (RESULT) dosya silinir (`failed_audio_changed(False)`);
+        yeniden deneme başarısız olur ya da iptal edilirse dosya korunur. Başlatılamazsa `error`
         yayınlanır ve False döner."""
         if self._state not in (DictationState.IDLE, DictationState.RESULT):
             self.error.emit("Önce süren işi bitirin.")
@@ -269,9 +270,7 @@ class DictationController(QObject):
         self._active_profile = None
         self._source = "retry"
         self._reset_chunks()
-        self._session = Session()
-        self.session_updated.emit(self._session)
-        self._set_state(DictationState.TRANSCRIBING)
+        self._begin_session(Session(), DictationState.TRANSCRIBING)
         lang = self._settings.stt.language
         self._spawn(
             lambda: self._stt.transcribe(load_wav(path), lang),
@@ -286,25 +285,46 @@ class DictationController(QObject):
 
     @Slot(str)
     def request_translation(self, text: str) -> None:
-        """Sonuç ekranından elle istenen çeviri; sonuç `session_updated` ile gelir."""
-        if not self._require_llm():
+        """Sonuç ekranından elle istenen çeviri; sonuç `session_updated` ile gelir.
+        Yalnızca RESULT'ta çalışır; yanıt geldiğinde oturum değişmişse sonuç atılır."""
+        if not self._result_request_allowed("request_translation"):
             return
-        self._spawn(
+        self._spawn_for_session(
             lambda: tasks.translate(self._llm, text),
-            lambda out: self._update_session(translation=out),
+            "translation",
             lambda e: self.error.emit(f"Çeviri başarısız: {e}"),
         )
 
     @Slot(str)
     def request_enhanced_prompt(self, text: str) -> None:
-        """Sonuç ekranından elle istenen prompt iyileştirme; sonuç `session_updated` ile gelir."""
-        if not self._require_llm():
+        """Sonuç ekranından elle istenen prompt iyileştirme; sonuç `session_updated` ile gelir.
+        Yalnızca RESULT'ta çalışır; yanıt geldiğinde oturum değişmişse sonuç atılır."""
+        if not self._result_request_allowed("request_enhanced_prompt"):
             return
-        self._spawn(
+        self._spawn_for_session(
             lambda: tasks.enhance_prompt(self._llm, text),
-            lambda out: self._update_session(enhanced_prompt=out),
+            "enhanced_prompt",
             lambda e: self.error.emit(f"Prompt oluşturma başarısız: {e}"),
         )
+
+    def _result_request_allowed(self, name: str) -> bool:
+        if self._state is not DictationState.RESULT:
+            log.debug("%s yok sayıldı (durum: %s)", name, self._state)
+            return False
+        return self._require_llm()
+
+    def _spawn_for_session(self, fn, field_name: str, on_error) -> None:
+        """İsteği başlatan oturumun kimliğini yakalar; sonuç geldiğinde hâlâ aynı oturumun
+        sonuç ekranındaysak alana yazar, değilse (yeni dikte, iptal) sonucu atar."""
+        session_id = self._session.id
+
+        def on_result(out) -> None:
+            if self._state is not DictationState.RESULT or self._session.id != session_id:
+                log.debug("başka oturuma ait %s sonucu yok sayıldı", field_name)
+                return
+            self._update_session(**{field_name: out})
+
+        self._spawn(fn, on_result, on_error)
 
     @Slot(str)
     def apply_edit(self, text: str) -> None:
@@ -352,24 +372,37 @@ class DictationController(QObject):
         self._session_audio = []
         self._failure = None
 
-    def _start_recording(self, mode: str = "correct", *, profile: AppProfile | None = None) -> None:
-        self._gen += 1  # eski çeviri/prompt gibi bekleyen işler bu oturuma yazılmasın
-        self._active_profile = profile
-        self._source = "mic"
-        effective_mode = profile.mode if profile and mode == "correct" else mode
-        self._session = Session(mode=effective_mode, profile=profile.name if profile else "")
+    def _begin_session(self, session: Session, state: DictationState) -> None:
+        """Yeni oturuma geçer: önce oturum ve durum değişir, `session_updated` EN SON
+        yayınlanır. RESULT durumundayken boş oturum yayınlanırsa geçmiş senkronu
+        (`app._sync_history_on_edit`) onu önceki sonucun yerine boş satır olarak yazardı."""
+        self._session = session
+        self._set_state(state)
         self.session_updated.emit(self._session)
-        self._reset_chunks()
+
+    def _start_recording(self, mode: str = "correct", *, profile: AppProfile | None = None) -> None:
         # Parçalama kipi bu kayıt boyunca sabittir (kayıt ortası update_settings değiştirmez).
         self._apply_chunking()
-        self._chunk_mode = self._settings.stt.live_chunk_s > 0
         self._recorder.start()
         if not self._recorder.is_recording:
             # AudioRecorder.start() mikrofon açılamazsa hatayı zaten error sinyaliyle
-            # bildirdi (_on_recorder_error tetiklendi); burada IDLE'a geçmeyip RECORDING
-            # göstermek, hiç ses yakalanmayan bir kaydı kullanıcıya "kayıtta" gösterirdi.
+            # bildirdi (_on_recorder_error tetiklendi). Önceki oturum/durum (ör. RESULT
+            # ekranındaki sonuç) olduğu gibi kalır; hiç ses yakalanmayan bir kayıt
+            # kullanıcıya "kayıtta" gösterilmez.
             return
-        self._set_state(DictationState.RECORDING)
+        self._gen += 1  # eski çeviri/prompt gibi bekleyen işler bu oturuma yazılmasın
+        self._active_profile = profile
+        self._source = "mic"
+        self._reset_chunks()
+        self._chunk_mode = self._settings.stt.live_chunk_s > 0
+        # Bu kaydın akış belirteci: iptal edilmiş eski kayıttan geç gelen parçalar ayıklanır.
+        token = getattr(self._recorder, "stream_token", None)
+        self._rec_token = token if isinstance(token, int) else None
+        effective_mode = profile.mode if profile and mode == "correct" else mode
+        self._begin_session(
+            Session(mode=effective_mode, profile=profile.name if profile else ""),
+            DictationState.RECORDING,
+        )
 
     def _stop_and_transcribe(self) -> None:
         audio: np.ndarray = self._recorder.stop()
@@ -401,7 +434,11 @@ class DictationController(QObject):
         self._release_tail_if_ready()
         self._maybe_finish_transcription()
 
-    def _on_chunk(self, audio: np.ndarray) -> None:
+    def _on_chunk(self, audio: np.ndarray, token: int | None = None) -> None:
+        if token is not None and self._rec_token is not None and token != self._rec_token:
+            # İptal edilmiş/önceki kaydın kuyrukta kalmış parçası: bu oturuma ait değil.
+            log.debug("eski kayda ait parça yok sayıldı (belirteç %s ≠ %s)", token, self._rec_token)
+            return
         if self._failure is not None and self._state is DictationState.TRANSCRIBING:
             # Hata sonrası geç gelen parça: çözümlenmez, yalnızca saklanacak sese sırayla eklenir.
             self._chunks_received += 1
@@ -440,6 +477,7 @@ class DictationController(QObject):
             self._chunks_expected - self._chunks_received,
             LATE_CHUNK_TIMEOUT_MS,
         )
+        self.warning.emit(LOST_CHUNK_WARNING)
         self._chunks_expected = self._chunks_received
         self._release_tail_if_ready()
         self._maybe_finish_transcription()
@@ -545,8 +583,6 @@ class DictationController(QObject):
             self._fail("Konuşma algılanamadı, ses boş görünüyor.", keep_audio=False)
             return
         self._session_audio = []
-        if self._source == "retry":
-            self._discard_failed_audio()
         if self._settings.voice_commands and is_undo_command(result.text):
             self.undo_requested.emit()
             self._set_state(DictationState.IDLE)
@@ -635,7 +671,12 @@ class DictationController(QObject):
 
     def _finish_result(self) -> None:
         """RESULT durumuna geçer, ardından metni teslim için yayınlar (sıra önemlidir:
-        geçmişe yazma ve pencere güncellemesi yapıştırmadan önce tamamlanmalı)."""
+        geçmişe yazma ve pencere güncellemesi yapıştırmadan önce tamamlanmalı).
+
+        Yeniden denenen kaydın dosyası ancak burada, oturum başarıyla bittiğinde silinir:
+        LLM/teslim sırasında iptal edilirse kayıt kaybolmaz."""
+        if self._source == "retry":
+            self._discard_failed_audio()
         self._set_state(DictationState.RESULT)
         self.result_ready.emit(self._session.output_text)
 
@@ -733,12 +774,33 @@ class DictationController(QObject):
                 log.debug("iptal edilmiş işin sonucu yok sayıldı")
 
         def guarded_error(message: str) -> None:
-            if gen == self._gen:
-                on_error(message)
-            else:
+            if gen != self._gen:
                 log.debug("iptal edilmiş işin hatası yok sayıldı: %s", message)
+                return
+            try:
+                on_error(message)
+            except Exception:
+                # Hata yolu da bozuldu: durum makinesi meşgul durumda takılı kalmasın.
+                log.exception("hata işlenirken beklenmeyen hata")
+                self._recover_from_crash()
 
+        # on_result'ın istisnası run_in_pool tarafından yakalanıp on_error'a (yani
+        # guarded_error'a) Türkçe mesajla iletilir; oturum normal hata yolundan düşer.
         self._run(fn, guarded_result, guarded_error)
+
+    def _recover_from_crash(self) -> None:
+        """Son çare: süren işi bırakır, mikrofonu kapatır ve kullanıcıyı bilgilendirip IDLE'a
+        döner. Yalnızca hata işleyicisinin kendisi istisna fırlattığında kullanılır."""
+        self._gen += 1
+        if self._state is DictationState.RECORDING:
+            self._recorder.stop()
+        self._reset_chunks()
+        self.error.emit(
+            "Beklenmeyen bir hata oluştu; dikte durduruldu. Yeniden deneyin, sorun sürerse "
+            "günlük dosyasını kontrol edin."
+        )
+        if self._state is not DictationState.RESULT:
+            self._set_state(DictationState.IDLE)
 
     def _run(self, fn, on_result, on_error) -> None:
         """run_in_pool + sinyal nesnesini sonucu teslim edilene kadar canlı tutma

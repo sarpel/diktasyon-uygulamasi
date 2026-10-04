@@ -2,7 +2,7 @@
 
 [![CI](https://github.com/sarpel/diktasyon-uygulamasi/actions/workflows/ci.yml/badge.svg)](https://github.com/sarpel/diktasyon-uygulamasi/actions/workflows/ci.yml)
 [![Lisans: MIT](https://img.shields.io/badge/lisans-MIT-blue.svg)](LICENSE)
-![Python 3.11–3.12](https://img.shields.io/badge/python-3.11%20%7C%203.12-blue.svg)
+![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-blue.svg)
 ![Platform](https://img.shields.io/badge/platform-Windows%2011%20%7C%20Linux-lightgrey.svg)
 
 **Türkçe odaklı, tamamen yerel çalışan masaüstü diktasyon uygulaması.**

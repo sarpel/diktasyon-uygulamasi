@@ -19,9 +19,41 @@ EXCLUDE_FORMAT = "ExcludeClipboardContentFromMonitorProcessing"
 HISTORY_FORMAT = "CanIncludeInClipboardHistory"
 CLOUD_FORMAT = "CanUploadToCloudClipboard"
 
-RESTORE_BASE_MS = 300
-RESTORE_MAX_MS = 1500
-_RESTORE_MS_PER_CHAR = 0.2
+# Teams/Office/uzak oturumlar panoyu Ctrl+V'den saniyeler sonra okuyabilir; erken geri
+# yükleme eski (belki bir parola olan) pano içeriğinin yapıştırılmasına yol açardı.
+RESTORE_BASE_MS = 2000
+RESTORE_MAX_MS = 5000
+_RESTORE_MS_PER_CHAR = 1.0
+
+# Panoyu yapıştırmadan çok sonra (ya da ağ üzerinden) okuyan uzak masaüstü / sanal makine
+# istemcileri (süreç adı, küçük harf, ".exe"siz). Bunlarda önceki pano geri yüklenmez.
+REMOTE_CLIENT_PROCESSES = frozenset(
+    {
+        "mstsc",  # Windows Uzak Masaüstü
+        "msrdc",  # Uzak Masaüstü istemcisi (Store/Windows App)
+        "vmconnect",  # Hyper-V
+        "virtualbox",
+        "virtualboxvm",
+        "vmware",
+        "vmware-vmx",
+        "vmplayer",
+        "vmware-view",
+        "remmina",
+        "xfreerdp",
+        "wlfreerdp",
+        "vncviewer",
+        "remote-viewer",
+        "virt-viewer",
+        "krdc",
+        "anydesk",
+        "teamviewer",
+        "rustdesk",
+        "wfica32",  # Citrix Workspace
+        "cdviewer",  # Citrix Desktop Viewer
+    }
+)
+# Terminaller yapıştırmayı geç ve parça parça okuyabilir (bracketed paste, ssh).
+_NO_RESTORE_PASTE_MODES = frozenset({"ctrl+shift+v"})
 
 _DWORD_ZERO = struct.pack("<I", 0)
 _DWORD_ONE = struct.pack("<I", 1)
@@ -70,7 +102,25 @@ def copy_text(text: str, *, exclude_history: bool, platform: str = sys.platform)
 def should_restore(current_text: str | None, pasted_text: str) -> bool:
     """Önceki pano yalnızca pano hâlâ bizim yapıştırdığımız metni tutuyorsa geri yüklenir;
     kullanıcı arada yeni bir şey kopyaladıysa (ya da pano metin değilse) dokunulmaz."""
-    return bool(pasted_text) and current_text == pasted_text
+    return bool(pasted_text) and same_text(current_text, pasted_text)
+
+
+def same_text(clipboard_text: str | None, expected: str) -> bool:
+    """Panodaki metin beklenenle aynı mı; Windows panosunun CRLF dönüşümü yok sayılır."""
+    if clipboard_text is None:
+        return False
+    return clipboard_text.replace("\r\n", "\n") == expected.replace("\r\n", "\n")
+
+
+def restore_allowed(paste_mode: str, process_name: str) -> bool:
+    """Yapıştırmadan sonra önceki panonun geri yüklenmesi güvenli mi.
+
+    Terminal yapıştırması (Ctrl+Shift+V) ve uzak masaüstü / sanal makine istemcileri panoyu
+    gecikmeli okuyabilir; orada geri yükleme eski içeriği yapıştırabileceği için yapılmaz."""
+    if paste_mode in _NO_RESTORE_PASTE_MODES:
+        return False
+    name = process_name.strip().lower().removesuffix(".exe")
+    return name not in REMOTE_CLIENT_PROCESSES
 
 
 def restore_delay_ms(text: str) -> int:

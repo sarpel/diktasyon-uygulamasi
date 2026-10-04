@@ -135,3 +135,59 @@ def test_length_finish_reason_raises_for_json_too():
     fake.completions.create = lambda **kw: _truncated_response('{"corrected_text": "ya')
     with pytest.raises(LlmError, match="yarıda kesildi"):
         make(fake).complete("s", "u", json_schema={"type": "object"})
+
+
+# ---- json_schema geri dönüşü yalnızca response_format reddinde
+
+
+class _RejectingCompletions(FakeCompletions):
+    """json_schema isteğinde verilen hatayı fırlatır, diğer isteklerde yanıt döndürür."""
+
+    def __init__(self, error):
+        super().__init__(reply='{"a": 1}')
+        self.error = error
+
+    def create(self, **kwargs):
+        if kwargs.get("response_format", {}).get("type") == "json_schema":
+            self.calls.append(kwargs)
+            raise self.error
+        return super().create(**kwargs)
+
+
+def _bad_request(message, body):
+    openai = pytest.importorskip("openai")
+    httpx = pytest.importorskip("httpx")
+    response = httpx.Response(400, request=httpx.Request("POST", "http://x/v1"))
+    return openai.BadRequestError(message, response=response, body=body)
+
+
+def _provider_raising(error):
+    fake = FakeOpenAI()
+    fake.completions = _RejectingCompletions(error)
+    fake.chat = SimpleNamespace(completions=fake.completions)
+    return fake, make(fake)
+
+
+@pytest.mark.parametrize(
+    ("message", "body"),
+    [
+        ("Error code: 400", {"message": "invalid value", "param": "response_format"}),
+        ("Error code: 400 - 'json_schema' is not supported by this model", None),
+        ("Error code: 400", {"error": {"message": "response_format.type unsupported"}}),
+    ],
+)
+def test_bad_request_about_response_format_falls_back(message, body):
+    fake, provider = _provider_raising(_bad_request(message, body))
+    assert provider.complete("s", "u", json_schema={"type": "object"}).startswith("{")
+    assert fake.calls[-1]["response_format"] == {"type": "json_object"}
+
+
+def test_unrelated_bad_request_is_not_retried_with_json_object():
+    error = _bad_request(
+        "Error code: 400 - context length exceeded",
+        {"message": "maximum context length exceeded", "param": "messages", "code": "ctx"},
+    )
+    fake, provider = _provider_raising(error)
+    with pytest.raises(LlmError, match="OpenAI-uyumlu"):
+        provider.complete("s", "u", json_schema={"type": "object"})
+    assert len(fake.calls) == 1

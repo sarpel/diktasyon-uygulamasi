@@ -14,7 +14,7 @@ metin panoya yazılır ve aktif pencereye yapıştırılır.
 
 ## Teknoloji (pyproject.toml'dan)
 
-Python 3.11–3.12 · PySide6 ≥ 6.7 · faster-whisper ≥ 1.1 · ctranslate2 ≥ 4.5 ·
+Python ≥ 3.11 (CI: 3.11–3.14) · PySide6 ≥ 6.7 · faster-whisper ≥ 1.1 · ctranslate2 ≥ 4.5 ·
 sounddevice · numpy · ollama ≥ 0.5 · pydantic ≥ 2.7
 İsteğe bağlı extra'lar: `cuda`, `anthropic`, `openai`, `gemini`, `media`, `dev`.
 
@@ -56,7 +56,7 @@ Giriş noktaları: `python -m dikte` (`src/dikte/__main__.py`) ve `dikte` konsol
 ## Sözleşmeler
 
 - **TDD zorunlu:** önce başarısız test, sonra en küçük uygulama, sonra commit.
-  Kapsam ≥ %80 (bugün %92, 879 test). Conventional Commits, Türkçe mesaj.
+  Kapsam ≥ %80 (bugün %92, 1043 test). Conventional Commits, Türkçe mesaj.
 - **Değişmezlik:** pydantic modelleri `frozen=True`; değişiklik yalnızca
   `model_copy(update=...)` ile. Yerinde mutasyon yok.
 - **Enjekte edilebilir dış dünya:** GPU, ağ ve SDK erişimleri `*_factory` / `*_probe`

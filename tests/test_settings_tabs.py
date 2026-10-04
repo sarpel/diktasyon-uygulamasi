@@ -673,6 +673,34 @@ def test_connection_test_keeps_job_reference_until_done(dlg, monkeypatch):
     assert dlg.llm._test_job is None and "✓" in dlg.llm_test_status.text()
 
 
+@pytest.mark.parametrize("outcome", ["result", "error"])
+def test_connection_test_finishing_after_settings_closed_does_not_crash(
+    qtbot, monkeypatch, outcome
+):
+    """Ayarlar test bitmeden kapanırsa (diyalog silinir) geç gelen sonuç silinmiş
+    widget'lara dokunup RuntimeError fırlatmamalı."""
+    from shiboken6 import Shiboken
+
+    import dikte.ui.settings.llm_tab as llm_tab_mod
+
+    class FakeProvider:
+        def complete(self, system, user):
+            return "OK"
+
+    monkeypatch.setattr(llm_tab_mod, "make_provider", lambda settings: FakeProvider())
+    callbacks = {}
+
+    def fake_run_in_pool(fn, on_result, on_error, pool=None):
+        callbacks.update(result=on_result, error=on_error)
+        return object()
+
+    monkeypatch.setattr(llm_tab_mod, "run_in_pool", fake_run_in_pool)
+    tab = llm_tab_mod.LlmTab(Settings())
+    tab.llm_test_btn.click()
+    Shiboken.delete(tab)
+    callbacks[outcome]("OK")  # RuntimeError fırlatmamalı
+
+
 def test_about_probes_run_off_the_gui_thread(qtbot):
     import threading
 
@@ -740,44 +768,17 @@ def test_ineffective_hallucination_silence_control_is_hidden_but_value_kept(qtbo
     assert d.result_settings().stt.hallucination_silence_threshold_s == 4.5
 
 
-def test_about_tab_health_dialog_offers_ollama_fixes(qtbot, monkeypatch):
-    """Hakkında'dan açılan durum kontrolü de 'Ollama'yı başlat'/'ollama pull' sunmalı."""
-    from dikte.ui.settings import about_tab as about_mod
+def test_about_tab_health_button_requests_app_health_dialog(qtbot):
+    """Durum penceresini sekme değil uygulama açar: indirilen model yüklenir ve pencere
+    ayarlar diyaloğu silinince (deleteLater) onunla birlikte yok olmaz."""
+    from dikte.ui.settings.about_tab import AboutTab
 
-    captured = {}
-
-    class FakeDialog:
-        def __init__(self, items, **kwargs):
-            captured.update(kwargs)
-
-        def exec(self):
-            return 0
-
-    monkeypatch.setattr(about_mod, "HealthDialog", FakeDialog)
-    settings = Settings()
-    tab = about_mod.AboutTab(settings, gpu_probe=lambda: "g", vram_probe=lambda: "v")
+    tab = AboutTab(Settings(), gpu_probe=lambda: "g", vram_probe=lambda: "v")
     qtbot.addWidget(tab)
-    tab._on_health_checked(())
-    assert captured["ollama_model"] == settings.llm.model
-    assert captured["ollama_host"] == settings.llm.ollama_host
-    assert callable(captured["health_probe"])
+    with qtbot.waitSignal(tab.health_requested, timeout=1000):
+        tab.health_btn.click()
 
 
-def test_about_tab_health_dialog_skips_ollama_for_other_providers(qtbot, monkeypatch):
-    from dikte.ui.settings import about_tab as about_mod
-
-    captured = {}
-
-    class FakeDialog:
-        def __init__(self, items, **kwargs):
-            captured.update(kwargs)
-
-        def exec(self):
-            return 0
-
-    monkeypatch.setattr(about_mod, "HealthDialog", FakeDialog)
-    settings = Settings(llm=Settings().llm.model_copy(update={"provider": "openai"}))
-    tab = about_mod.AboutTab(settings, gpu_probe=lambda: "g", vram_probe=lambda: "v")
-    qtbot.addWidget(tab)
-    tab._on_health_checked(())
-    assert captured["ollama_model"] is None
+def test_settings_dialog_forwards_health_request(dlg, qtbot):
+    with qtbot.waitSignal(dlg.health_requested, timeout=1000):
+        dlg.health_btn.click()

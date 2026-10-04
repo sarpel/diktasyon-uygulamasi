@@ -1,4 +1,10 @@
+import os
+import socket
+import stat
+import sys
 import uuid
+
+import pytest
 
 from dikte.platform.single_instance import (
     START_MESSAGE,
@@ -6,6 +12,14 @@ from dikte.platform.single_instance import (
     TOGGLE_MESSAGE,
     SingleInstance,
     send_command,
+)
+
+# Unix'e özgü yollar: dosya izinleri (0700), os.getuid ve soket dosyaları. Windows'ta
+# IPC adı kullanıcı adı özetiyle üretilir (ayrı testler); bu kod orada hiç çalışmaz.
+posix_only = pytest.mark.skipif(sys.platform == "win32", reason="POSIX izinleri ve uid")
+# SO_PEERCRED yalnızca Linux'ta var; diğer Unix'lerde soket dosyasının sahibine bakılır.
+peercred_only = pytest.mark.skipif(
+    not hasattr(socket, "SO_PEERCRED"), reason="SO_PEERCRED yalnızca Linux'ta"
 )
 
 
@@ -78,23 +92,211 @@ def test_default_name_differs_per_user():
     assert a.startswith("dikte-single-instance-")
 
 
+@posix_only
 def test_default_name_on_linux_uses_private_runtime_dir(tmp_path):
     from dikte.platform.single_instance import default_server_name
 
+    tmp_path.chmod(0o700)
     name = default_server_name(
         platform="linux", env={"XDG_RUNTIME_DIR": str(tmp_path)}, user_probe=lambda: "ayse"
     )
     assert name == str(tmp_path / "dikte-single-instance")
 
 
-def test_default_name_on_linux_without_runtime_dir_falls_back_to_user_hash(tmp_path):
+def _uid():
+    return os.getuid()
+
+
+@posix_only
+def test_default_name_on_linux_without_runtime_dir_uses_private_tmp_dir(tmp_path):
+    """Eskiden ad /tmp altında kullanıcı adının özetiydi: tahmin edilebilir, başka bir
+    kullanıcı önceden kapabilirdi. Artık kullanıcıya özel 0700 bir dizin kullanılır."""
     from dikte.platform.single_instance import default_server_name
 
     missing = str(tmp_path / "yok")
+    tmp = tmp_path / "tmp"
+    tmp.mkdir()
     name = default_server_name(
-        platform="linux", env={"XDG_RUNTIME_DIR": missing}, user_probe=lambda: "ayse"
+        platform="linux",
+        env={"XDG_RUNTIME_DIR": missing},
+        uid_probe=_uid,
+        tempdir=str(tmp),
+        home=tmp_path / "ev",
     )
-    assert name.startswith("dikte-single-instance-") and "/" not in name
+    private = tmp / f"dikte-{_uid()}"
+    assert name == str(private / "dikte-single-instance")
+    assert stat.S_IMODE(private.stat().st_mode) == 0o700
+
+
+@posix_only
+def test_default_name_ignores_world_readable_runtime_dir(tmp_path):
+    from dikte.platform.single_instance import default_server_name
+
+    runtime = tmp_path / "run"
+    runtime.mkdir()
+    runtime.chmod(0o755)
+    tmp = tmp_path / "tmp"
+    tmp.mkdir()
+    name = default_server_name(
+        platform="linux",
+        env={"XDG_RUNTIME_DIR": str(runtime)},
+        uid_probe=_uid,
+        tempdir=str(tmp),
+        home=tmp_path / "ev",
+    )
+    assert not name.startswith(str(runtime))
+
+
+@posix_only
+def test_default_name_refuses_squatted_tmp_dir_and_uses_home(tmp_path, caplog):
+    """Başka bir kullanıcı /tmp/dikte-<uid> dizinini önceden oluşturduysa (sahibi biz
+    değiliz) kullanılmaz; ev dizinindeki özel dizine geçilir."""
+    from dikte.platform import single_instance as si
+
+    tmp = tmp_path / "tmp"
+    tmp.mkdir()
+    squatted = tmp / "dikte-4242"
+    squatted.mkdir(mode=0o700)
+    home = tmp_path / "ev"
+    owners = {str(squatted): 9999}  # dizin başka kullanıcıya ait görünsün
+
+    name = si.default_server_name(
+        platform="linux",
+        env={},
+        uid_probe=lambda: 4242,
+        tempdir=str(tmp),
+        home=home,
+        owner_probe=lambda p: owners.get(str(p), 4242),
+    )
+    assert name == str(home / ".cache" / "dikte" / "dikte-single-instance")
+    assert "kullanılmıyor" in caplog.text
+
+
+@peercred_only
+def test_unix_peer_uid_reads_so_peercred():
+    from dikte.platform.single_instance import unix_peer_uid
+
+    a, b = socket.socketpair()
+    try:
+        assert unix_peer_uid(a.fileno(), "") == os.getuid()
+    finally:
+        a.close()
+        b.close()
+
+
+@peercred_only
+def test_unix_peer_verifier_rejects_other_user():
+    from dikte.platform.single_instance import unix_peer_is_current_user
+
+    a, b = socket.socketpair()
+    try:
+        assert unix_peer_is_current_user(a.fileno(), "", uid_probe=os.getuid) is True
+        assert unix_peer_is_current_user(a.fileno(), "", uid_probe=lambda: 99999) is False
+    finally:
+        a.close()
+        b.close()
+
+
+class FakeWinApi:
+    def __init__(self, server_pid: int | None = 1234, sids=None, current="S-1-5-21-1"):
+        self.server_pid_value = server_pid
+        self.sids = {1234: "S-1-5-21-1"} if sids is None else sids
+        self.current = current
+
+    def server_pid(self, handle):
+        return self.server_pid_value
+
+    def process_user_sid(self, pid):
+        return self.sids.get(pid)
+
+    def current_user_sid(self):
+        return self.current
+
+
+def test_windows_peer_same_user_is_trusted():
+    from dikte.platform.single_instance import windows_peer_is_current_user
+
+    assert windows_peer_is_current_user(77, api=FakeWinApi()) is True
+
+
+def test_windows_peer_other_user_is_untrusted():
+    from dikte.platform.single_instance import windows_peer_is_current_user
+
+    api = FakeWinApi(sids={1234: "S-1-5-21-2"})
+    assert windows_peer_is_current_user(77, api=api) is False
+
+
+def test_windows_peer_unverifiable_is_none():
+    from dikte.platform.single_instance import windows_peer_is_current_user
+
+    assert windows_peer_is_current_user(77, api=FakeWinApi(server_pid=None)) is None
+    assert windows_peer_is_current_user(77, api=FakeWinApi(sids={})) is None
+
+
+def test_send_command_refuses_unverified_server(qtbot, caplog):
+    name = f"dikte-test-{uuid.uuid4().hex[:8]}"
+    inst = SingleInstance(name)
+    assert inst.try_acquire() is True
+    toggles = []
+    inst.toggle_requested.connect(toggles.append)
+    assert send_command(name, TOGGLE_MESSAGE, peer_verifier=lambda d, n: False) is False
+    assert send_command(name, TOGGLE_MESSAGE, peer_verifier=lambda d, n: None) is False
+    qtbot.wait(50)
+    assert toggles == []
+    assert "doğrulan" in caplog.text
+
+
+def test_squatted_name_does_not_make_dikte_exit(qtbot):
+    """Başka bir kullanıcının sunucusu adı tutuyorsa Dikte kapanmamalı (eskiden "zaten
+    çalışıyor" sanıp çıkıyordu); IPC'siz sürer ve kullanıcıya Türkçe uyarı verilir."""
+    from dikte.platform.single_instance import IpcStatus
+
+    name = f"dikte-test-{uuid.uuid4().hex[:8]}"
+    squatter = SingleInstance(name)
+    assert squatter.try_acquire() is True
+    shown = []
+    squatter.activated.connect(lambda: shown.append(True))
+
+    me = SingleInstance(name, peer_verifier=lambda d, n: False)
+    assert me.try_acquire() is True
+    assert me.status is IpcStatus.UNTRUSTED
+    assert me.warning_message and "başka bir kullanıcı" in me.warning_message
+    qtbot.wait(50)
+    assert shown == []
+
+
+def test_listen_failure_is_reported_with_turkish_warning(qtbot, monkeypatch):
+    """Dinleme başlatılamazsa uygulama IPC'siz sürer ve kullanıcı uyarılır. Hata her
+    platformda aynı biçimde üretilir (Windows'ta pipe adı dizine bağlı değildir)."""
+    from PySide6.QtNetwork import QLocalServer
+
+    from dikte.platform.single_instance import IpcStatus
+
+    monkeypatch.setattr(QLocalServer, "listen", lambda self, name: False)
+    inst = SingleInstance(f"dikte-test-{uuid.uuid4().hex[:8]}")
+    assert inst.try_acquire() is True  # kilit kurulamasa da uygulama çalışır
+    assert inst.status is IpcStatus.UNAVAILABLE
+    assert inst.warning_message and "komut kanalı" in inst.warning_message
+
+
+def test_successful_acquire_has_no_warning(qtbot):
+    from dikte.platform.single_instance import IpcStatus
+
+    inst = SingleInstance(f"dikte-test-{uuid.uuid4().hex[:8]}")
+    assert inst.try_acquire() is True
+    assert inst.status is IpcStatus.LISTENING
+    assert inst.warning_message is None
+
+
+def test_second_instance_status_already_running(qtbot):
+    from dikte.platform.single_instance import IpcStatus
+
+    name = f"dikte-test-{uuid.uuid4().hex[:8]}"
+    first = SingleInstance(name)
+    assert first.try_acquire() is True
+    second = SingleInstance(name)
+    assert second.try_acquire() is False
+    assert second.status is IpcStatus.ALREADY_RUNNING
 
 
 def test_default_name_survives_user_probe_failure():

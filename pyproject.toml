@@ -18,9 +18,11 @@ classifiers = [
   "Operating System :: POSIX :: Linux",
   "Programming Language :: Python :: 3.11",
   "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
+  "Programming Language :: Python :: 3.14",
   "Topic :: Multimedia :: Sound/Audio :: Speech",
 ]
-requires-python = ">=3.11,<3.13"
+requires-python = ">=3.11"
 dependencies = [
   "PySide6>=6.7",
   "sounddevice>=0.5",
@@ -36,8 +38,14 @@ cuda = ["nvidia-cublas-cu12", "nvidia-cudnn-cu12>=9"]
 anthropic = ["anthropic>=1.0"]  # 0.x ANTHROPIC_AUTH_TOKEN'ı Bearer olarak sızdırabilir
 openai = ["openai>=2"]
 gemini = ["google-genai>=1.30"]
-# Windows'ta kayıt sırasında medyayı duraklatma (WinRT oturum yöneticisi); Linux playerctl kullanır.
-media = ["winsdk>=1.0.0b10; sys_platform == 'win32'"]
+# Windows'ta kayıt sırasında medyayı duraklatma (WinRT oturum yöneticisi, pywinrt); Linux
+# playerctl kullanır. Foundation `await` için, Foundation.Collections oturum listesi için gerekli.
+media = [
+  "winrt-runtime>=3.0; sys_platform == 'win32'",
+  "winrt-Windows.Media.Control>=3.0; sys_platform == 'win32'",
+  "winrt-Windows.Foundation>=3.0; sys_platform == 'win32'",
+  "winrt-Windows.Foundation.Collections>=3.0; sys_platform == 'win32'",
+]
 dev = [
   "pytest>=8",
   "pytest-qt>=4.4",

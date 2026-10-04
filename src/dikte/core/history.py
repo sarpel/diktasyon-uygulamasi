@@ -10,6 +10,7 @@ from dataclasses import asdict, dataclass, fields
 from datetime import datetime, timedelta
 from pathlib import Path
 
+from dikte.core.fileio import write_private_atomic
 from dikte.core.state import Session
 from dikte.llm.tasks import Change
 
@@ -47,6 +48,14 @@ def _from_json(line: str) -> Session | None:
     except (ValueError, TypeError, KeyError, AttributeError) as exc:
         log.warning("geçmiş satırı okunamadı: %s", exc)
         return None
+
+
+def _is_empty(s: Session) -> bool:
+    """Hiç metin taşımayan (ör. yeni başlamış) oturum: geçmişe yazılacak bir şey yok."""
+    if any(t.strip() for t in (s.raw_text, s.corrected_text, s.translation, s.enhanced_prompt)):
+        return False
+    log.debug("boş oturum geçmişe yazılmadı: %s", s.id)
+    return True
 
 
 def _naive(dt: datetime) -> datetime:
@@ -92,14 +101,21 @@ class History:
         return self._visible(self._read().sessions)
 
     def append(self, session: Session) -> None:
-        if self._limit <= 0:
+        """Oturumu sona ekler. Aynı `id` zaten varsa satır yerinde değiştirilir (yinelenen
+        kimlik oluşmaz); hiç metin içermeyen oturum yazılmaz."""
+        if self._limit <= 0 or _is_empty(session):
             return
-        kept = self.load()[-(self._limit - 1) :] if self._limit > 1 else ()
+        existing = self.load()
+        if any(s.id == session.id for s in existing):
+            self._write(tuple(session if s.id == session.id else s for s in existing))
+            return
+        kept = existing[-(self._limit - 1) :] if self._limit > 1 else ()
         self._write((*kept, session))
 
     def update(self, session: Session) -> None:
-        """Aynı `id`'ye sahip satır varsa yerinde değiştirir, yoksa `append` gibi ekler."""
-        if self._limit <= 0:
+        """Aynı `id`'ye sahip satır varsa yerinde değiştirir, yoksa `append` gibi ekler.
+        Hiç metin içermeyen oturum yok sayılır (var olan satır boşaltılmaz)."""
+        if self._limit <= 0 or _is_empty(session):
             return
         existing = self.load()
         if any(s.id == session.id for s in existing):
@@ -216,14 +232,10 @@ class History:
         """Geçmişi tek seferde ve atomik olarak yazar (yarım dosya kalmaz)."""
         self._backup_bad_lines()
         content = "".join(_to_json(s) + "\n" for s in sessions)
-        tmp = self._path.with_suffix(".tmp")
         try:
-            tmp.write_text(content, encoding="utf-8")
-            if sys.platform != "win32":
-                # Dikte edilen metnin kendisi burada; çok kullanıcılı bir Linux sisteminde
-                # başkaları okumasın.
-                tmp.chmod(0o600)
-            tmp.replace(self._path)
+            # Dikte edilen metnin kendisi burada: dosya baştan 0600 açılır (çok kullanıcılı
+            # bir sistemde başkaları okumasın) ve fsync ile diske indirilip yerine konur.
+            write_private_atomic(self._path, content.encode("utf-8"))
         except OSError as exc:
             log.exception("geçmiş yazılamadı: %s", self._path)
             raise HistoryError(

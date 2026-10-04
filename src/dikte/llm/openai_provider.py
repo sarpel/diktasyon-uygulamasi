@@ -43,6 +43,27 @@ def _schema_unsupported_errors() -> tuple[type[BaseException], ...]:
     return (BadRequestError, *_BUILTIN_SCHEMA_ERRORS)
 
 
+# Sunucu 400 hatasının yanıt biçimiyle ilgili olduğunu gösteren ipuçları (küçük harf).
+_SCHEMA_ERROR_HINTS = ("response_format", "response format", "json_schema", "json schema")
+
+
+def _is_schema_rejection(exc: BaseException) -> bool:
+    """Hata json_schema yanıt biçiminin reddi mi? Yerleşik (istemci tarafı) hatalar her
+    zaman öyle sayılır; sunucu hatalarında param/code/mesaj/gövde ipuçlarına bakılır.
+    Bağlam uzunluğu, geçersiz model gibi başka 400 hataları geri dönüşü tetiklememeli."""
+    if isinstance(exc, _BUILTIN_SCHEMA_ERRORS):
+        return True
+    fields = (
+        getattr(exc, "param", None),
+        getattr(exc, "code", None),
+        getattr(exc, "message", None),
+        getattr(exc, "body", None),
+        str(exc),
+    )
+    text = " ".join(str(field) for field in fields if field).lower()
+    return any(hint in text for hint in _SCHEMA_ERROR_HINTS)
+
+
 class OpenAiCompatProvider:
     """OpenAI Chat Completions uyumlu uç nokta (OpenAI, LM Studio, özel sunucu).
 
@@ -98,6 +119,8 @@ class OpenAiCompatProvider:
         try:
             return self._text(self._create(messages, temperature, response_format))
         except _schema_unsupported_errors() as exc:
+            if not _is_schema_rejection(exc):
+                raise
             log.info("sunucu json_schema desteklemiyor (%s); json_object ile deneniyor", exc)
         fallback = [dict(m) for m in messages]
         fallback[0]["content"] += (

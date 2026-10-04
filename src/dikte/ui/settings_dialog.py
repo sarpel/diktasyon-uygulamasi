@@ -7,6 +7,7 @@ from collections.abc import Iterable
 from functools import reduce
 from typing import Any
 
+from PySide6.QtCore import Signal
 from PySide6.QtGui import QPalette
 from PySide6.QtWidgets import (
     QDialog,
@@ -141,7 +142,10 @@ class SettingsDialog(QDialog):
 
     Tamam'da sekmeler sırayla doğrulanır; ilk hata alttaki etikette gösterilir ve o sekmeye
     geçilir. Sekme widget'larına `_PROXIED` tablosu üzerinden doğrudan erişilebilir
-    (ör. `dialog.hotkey_edit`). Diyalog kapanırken mikrofon testi durdurulur."""
+    (ör. `dialog.hotkey_edit`). Diyalog kapanırken mikrofon testi durdurulur.
+    `health_requested`: Hakkında → "Durum kontrolü…"; durum penceresini uygulama açar."""
+
+    health_requested = Signal()
 
     def __init__(self, settings: Settings, devices: Iterable[Any] | None = None, parent=None):
         super().__init__(parent)
@@ -158,6 +162,7 @@ class SettingsDialog(QDialog):
         self.llm.advanced_tab = self.advanced
         self.profiles = ProfilesTab(settings)
         self.about = AboutTab(settings)
+        self.about.health_requested.connect(self.health_requested)
         self._tabs_in_order = (
             self.general,
             self.audio,

@@ -334,13 +334,33 @@ def test_transcribe_passes_vad_and_hallucination_kwargs():
         "speech_pad_ms": 300,
     }
     assert kw["no_speech_threshold"] == 0.6 and kw["log_prob_threshold"] == -1.0
-    assert kw["hallucination_silence_threshold"] == 2.0 and kw["without_timestamps"] is True
+    assert kw["hallucination_silence_threshold"] == 2.0
+
+
+def test_hallucination_threshold_enables_word_timestamps():
+    """faster-whisper `hallucination_silence_threshold`ı yalnızca word_timestamps=True iken
+    uygular; segment bazlı anomali tespiti için zaman damgalı segmentler de gerekir."""
+    eng, created = make_engine()
+    eng.transcribe(np.ones(16000, dtype=np.float32) * 0.1)
+    kw = created["model"].calls[0]
+    assert kw["hallucination_silence_threshold"] == 2.0
+    assert kw["word_timestamps"] is True and kw["without_timestamps"] is False
 
 
 def test_zero_hallucination_threshold_becomes_none():
     eng, created = make_engine(SttSettings(hallucination_silence_threshold_s=0))
     eng.transcribe(np.ones(16000, dtype=np.float32) * 0.1)
-    assert created["model"].calls[0]["hallucination_silence_threshold"] is None
+    kw = created["model"].calls[0]
+    assert kw["hallucination_silence_threshold"] is None
+    assert kw.get("word_timestamps", False) is False and kw["without_timestamps"] is True
+
+
+def test_batched_path_does_not_pay_for_word_timestamps():
+    """Toplu boru hattı eşiği zaten yok sayar; kelime hizalaması boşuna hesaplanmasın."""
+    eng, created = make_engine(SttSettings(batch_threshold_s=5.0))
+    eng.transcribe(long_audio(10))
+    kw = created["pipeline"].calls[0]
+    assert kw.get("word_timestamps", False) is False and kw["without_timestamps"] is True
 
 
 class HallucinatingModel(FakeModel):

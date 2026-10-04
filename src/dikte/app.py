@@ -8,12 +8,21 @@ from __future__ import annotations
 import argparse
 import logging
 import sys
+import time
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import cast
 
-from PySide6.QtCore import QCoreApplication, QMimeData, QObject, QThreadPool, QTimer
+from PySide6.QtCore import (
+    QCoreApplication,
+    QLibraryInfo,
+    QMimeData,
+    QObject,
+    QThreadPool,
+    QTimer,
+    QTranslator,
+)
 from PySide6.QtWidgets import QApplication, QDialog, QMessageBox, QSystemTrayIcon
 
 from dikte import APP_NAME, __version__, paths
@@ -47,16 +56,28 @@ from dikte.platform.clipboard import (
     build_mime,
     copy_text,
     new_mime_data,
+    restore_allowed,
     restore_delay_ms,
+    same_text,
     should_restore,
 )
-from dikte.platform.foreground import foreground_process_name
+from dikte.platform.foreground import (
+    FOREGROUND_UNKNOWN_MESSAGE,
+    foreground_process_name,
+    probe_foreground_process,
+)
 from dikte.platform.gpu_info import LOW_VRAM_MB, query_vram
 from dikte.platform.hold_detect import HoldDetector
 from dikte.platform.hotkey import HOTKEY_ID, GlobalHotkey
 from dikte.platform.hotkey_parse import HotkeyParseError, parse_hotkey
 from dikte.platform.media import MediaPauser
-from dikte.platform.paste import foreground_window_id, paste_active_window, type_unicode_text
+from dikte.platform.paste import (
+    KeyCombo,
+    TypeOutcome,
+    foreground_window_id,
+    paste_active_window,
+    type_text,
+)
 from dikte.platform.single_instance import (
     DEFAULT_NAME,
     START_MESSAGE,
@@ -78,11 +99,19 @@ from dikte.ui.tray import TrayIcon
 log = logging.getLogger(__name__)
 # Windows dışında global kısayol yoktur; masaüstü ortamı bu komuta bir tuş bağlar.
 CLI_TOGGLE_HINT = "dikte --toggle"
-# Arka plan işlerinin (durum kontrolü, VRAM sorgusu, medya) run_in_pool sinyal nesneleri:
-# iş bitene kadar canlı tutulmalı (bkz. _keep_job).
-_background_jobs: list = []
 # Çıkışta kuyruktaki medya pause() çağrısı için en fazla bekleme (MediaPauser zaman aşımı ~1,5 sn).
 MEDIA_QUIT_WAIT_MS = 2000
+# Çıkışta süren arka plan işleri (STT/LLM/durum kontrolü) için en fazla bekleme.
+SHUTDOWN_WAIT_MS = 3000
+# Qt'nin standart metinleri (QDialogButtonBox, QMessageBox, sağ tık menüsü) için çeviri.
+QT_TRANSLATION = "qtbase_tr"
+# Pano yazımı doğrulanamazsa yeniden denemeden önce bekleme (başka süreç panoyu tutuyor).
+CLIPBOARD_RETRY_S = 0.1
+CLIPBOARD_WRITE_FAILED = (
+    "Metin panoya yazılamadı (pano başka bir uygulama tarafından kullanılıyor olabilir); "
+    "yapıştırma yapılmadı. Metni Dikte penceresinden kopyalayabilirsiniz."
+)
+TYPING_FAILED = "Metnin bir kısmı yazılamadı; tamamı panoda."
 
 
 @dataclass
@@ -114,6 +143,11 @@ class AppContext:
     # (resume, kendi pause'undan önce çalışamaz).
     media_pool: QThreadPool | None = None
     hotkey_paste_last: GlobalHotkey | None = None  # isteğe bağlı: son sonucu yeniden yapıştırır
+    shut_down: bool = False  # _shutdown bir kez çalışır (tepsi + aboutToQuit)
+    reload_pending: bool = False  # süren iş bitince model yeniden yüklenecek
+    foreground_unknown_warned: bool = False  # Wayland'de "etkin uygulama bilinmiyor" bir kez
+    # run_in_pool sinyal nesneleri iş bitene kadar canlı tutulur (bkz. _run_background).
+    background_jobs: set = field(default_factory=set)
 
 
 class _NullLlm:
@@ -221,11 +255,7 @@ def _make_history(settings: Settings) -> History:
 
 def _wire(ctx: AppContext) -> None:
     c = ctx.controller
-    ctx.window.bind(
-        c,
-        close_after_copy=ctx.settings.close_after_copy,
-        raise_on_result=ctx.settings.raise_window_on_result,
-    )
+    ctx.window.bind(c, close_after_copy=ctx.settings.close_after_copy)
     ctx.window.set_clipboard_exclude_history(ctx.settings.clipboard_exclude_history)
     c.state_changed.connect(ctx.overlay.on_state)
     c.buckets_changed.connect(ctx.overlay.on_buckets)
@@ -255,16 +285,17 @@ def _wire(ctx: AppContext) -> None:
     ctx.cancel_hotkey.activated.connect(c.cancel)
     c.state_changed.connect(lambda s: _sync_cancel_hotkey(ctx, s))
     c.state_changed.connect(lambda s: _sync_media(ctx, s))
+    c.state_changed.connect(lambda s: _reload_if_pending(ctx, s))
     ctx.overlay.moved.connect(lambda x, y: _save_overlay_position(ctx, x, y))
     ctx.tray.paste_last_requested.connect(lambda: _paste_last(ctx))
-    c.warning.connect(ctx.overlay.show_warning)
+    c.warning.connect(lambda text: _on_controller_warning(ctx, text))
     c.failed_audio_changed.connect(ctx.tray.set_retry_available)
     ctx.tray.set_retry_available(c.has_failed_audio)
     ctx.tray.retry_failed_requested.connect(c.retry_last_failed)
     c.undo_requested.connect(lambda: _undo_last_paste(ctx))
     if ctx.hotkey_paste_last is not None:
         ctx.hotkey_paste_last.activated.connect(lambda: _paste_last(ctx))
-    c.result_ready.connect(lambda text: _on_result_ready(ctx, text))
+    c.result_ready.connect(lambda text: _on_dictation_result(ctx, text))
     ctx.window.history_panel.delete_requested.connect(lambda sid: _delete_session(ctx, sid))
     ctx.window.history_panel.clear_requested.connect(lambda: _clear_history(ctx))
     ctx.window.history_panel.export_requested.connect(lambda path: _export_history(ctx, path))
@@ -465,13 +496,13 @@ def _refresh_status_info(ctx: AppContext) -> None:
 
 def _warn_if_low_vram(ctx: AppContext) -> None:
     """`nvidia-smi` 3 sn'ye kadar sürebilir; GUI iş parçacığını bloke etmemek için arka planda."""
-    job = run_in_pool(
+    _run_background(
+        ctx,
         query_vram,
         lambda info: _show_low_vram_warning(ctx, info),
         lambda e: log.warning("VRAM sorgusu başarısız: %s", e),
         QThreadPool.globalInstance(),
     )
-    _keep_job(job)
 
 
 def _show_low_vram_warning(ctx: AppContext, info) -> None:
@@ -521,16 +552,44 @@ def _clone_mime(src: QMimeData) -> QMimeData:
     return clone
 
 
-def _on_result_ready(ctx: AppContext, text: str, *, force_paste: bool = False) -> None:
+def _on_dictation_result(ctx: AppContext, text: str) -> None:
+    """Denetleyicinin `result_ready`ı: sonucu teslim eder, ardından (ayar açıksa) pencereyi
+    öne getirir — yapıştırma gönderildiyse hedef uygulama onu işleyene kadar bekleyerek."""
+    _on_result_ready(ctx, text, on_done=lambda pasted: _raise_after_result(ctx, text, pasted))
+
+
+def _raise_after_result(ctx: AppContext, text: str, pasted: bool) -> None:
+    """SendInput Ctrl+V'yi eşzamansız kuyruğa koyar: pencere hemen öne gelirse yapıştırma
+    Dikte'nin kendi editörüne düşer (metin ikilenir, düzenleme olarak kaydedilir)."""
+    if not ctx.settings.raise_window_on_result:
+        return
+    delay = restore_delay_ms(text) if pasted else 0
+    QTimer.singleShot(delay, ctx.window.activate_result)
+
+
+def _on_result_ready(
+    ctx: AppContext,
+    text: str,
+    *,
+    force_paste: bool = False,
+    on_done: Callable[[bool], None] | None = None,
+) -> None:
     """Sonucu panoya yazar ve (ayar açıksa) ön plandaki uygulamaya yapıştırır.
 
     `restore_clipboard` açıksa ve yapıştırma gerçekten gönderildiyse, panodaki eski
     metin kısa bir gecikmeyle geri yazılır (yapıştırma hedef uygulamaya ulaşsın diye).
     `force_paste=True` (yalnızca "Yeniden yapıştır" eylemi): dosyadan çözümlenen bir
     oturumda bile kullanıcı açıkça yapıştırmayı istedi, otomatik-teslim kısıtlaması
-    (aşağıdaki source_path kontrolü) burada atlanır.
+    (aşağıdaki source_path kontrolü) burada atlanır. `on_done(yapıştırıldı_mı)` teslim
+    bitince bir kez çağrılır ("yaz" modunda yazma arka planda bittiğinde).
+
+    Pano yazılamazsa yapıştırma yapılmaz (önceki içerik yapıştırılırdı). Önceki pano
+    terminal/uzak masaüstü hedeflerinde hiç, diğerlerinde ancak pano hâlâ bizim metnimizi
+    tutuyorsa geri yüklenir.
     """
+    finish = on_done or (lambda _pasted: None)
     if not text or not ctx.settings.auto_copy:
+        finish(False)
         return
     # ctx.active_profile yalnızca en son global kısayolu izler; tepsi/pencere düğmesi/IPC
     # ile başlatılan bir dikte hiç ondan geçmez, o zaman yanlış (eski) profil uygulanırdı.
@@ -538,32 +597,111 @@ def _on_result_ready(ctx: AppContext, text: str, *, force_paste: bool = False) -
     profile = ctx.controller.active_profile
     if profile and profile.trailing:
         text += profile.trailing
-    clipboard = QApplication.clipboard()
+    clipboard = _system_clipboard()
     # Yalnızca clipboard.text() değil tüm QMimeData (resim/dosya de dahil) korunur; aksi
     # hâlde panoda bir resim varken dikte sonrası geri yükleme onu sessizce kaybederdi.
     # mimeData() clipboard'a ait olduğundan, clipboard değişmeden önce kopyalanmalı.
     previous_mime = _clone_mime(clipboard.mimeData()) if ctx.settings.restore_clipboard else None
-    clipboard.setMimeData(build_mime(text, exclude_history=ctx.settings.clipboard_exclude_history))
-    if ctx.controller.session.source_path and not force_paste:
-        return  # dosyadan çözümlenen sonuç otomatik olarak yalnızca panoya kopyalanır
-    if not ctx.settings.auto_paste or ctx.window.isActiveWindow():
+    if not _write_clipboard(clipboard, text, ctx.settings.clipboard_exclude_history):
+        log.error("sonuç panoya yazılamadı; yapıştırma yapılmadı")
+        ctx.tray.notify(APP_NAME, CLIPBOARD_WRITE_FAILED, critical=True)
+        finish(False)
         return
-    own_ids = {int(ctx.window.winId()), int(ctx.overlay.winId())}
-    foreground = foreground_window_id()
-    if foreground is not None and foreground in own_ids:
+    paste_mode = _paste_mode_for(ctx, profile, force_paste=force_paste)
+    if paste_mode is None:
+        finish(False)
         return
-    paste_mode = profile.paste if profile else "ctrl+v"
+
+    def _delivered(pasted: bool) -> None:
+        if pasted and previous_mime is not None and previous_mime.formats():
+            _schedule_clipboard_restore(clipboard, previous_mime, text, paste_mode)
+        finish(pasted)
+
     if paste_mode == "type":
-        pasted = type_unicode_text(text)
-    else:
-        pasted = paste_active_window(own_ids, combo=paste_mode)
+        # Uzun metinde yazma alt süreci onlarca saniye sürebilir; GUI donmasın.
+        _run_background(
+            ctx,
+            lambda: type_text(text),
+            lambda outcome: _on_typed(ctx, outcome, _delivered),
+            lambda message: _on_typing_error(ctx, message, _delivered),
+        )
+        return
+    # "type" yukarıda ayrıldı; kalan profil değerleri birer tuş bileşimidir.
+    pasted = paste_active_window(_own_window_ids(ctx), combo=cast("KeyCombo", paste_mode))
     if not pasted:
         log.info("yapıştırma atlandı; metin panoda")
-        return
-    if ctx.settings.restore_clipboard and previous_mime is not None and previous_mime.formats():
-        QTimer.singleShot(
-            restore_delay_ms(text), lambda: _restore_clipboard(clipboard, previous_mime, text)
+    _delivered(pasted)
+
+
+def _system_clipboard():
+    """Sistem panosu (testlerde sahtesiyle değiştirilir)."""
+    return QApplication.clipboard()
+
+
+def _own_window_ids(ctx: AppContext) -> set[int]:
+    return {int(ctx.window.winId()), int(ctx.overlay.winId())}
+
+
+def _paste_mode_for(
+    ctx: AppContext, profile: AppProfile | None, *, force_paste: bool
+) -> str | None:
+    """Yapıştırma yapılacaksa tuş bileşimi ya da "type"; yapılmayacaksa None."""
+    if ctx.controller.session.source_path and not force_paste:
+        return None  # dosyadan çözümlenen sonuç otomatik olarak yalnızca panoya kopyalanır
+    if not ctx.settings.auto_paste or ctx.window.isActiveWindow():
+        return None
+    foreground = foreground_window_id()
+    if foreground is not None and foreground in _own_window_ids(ctx):
+        return None
+    return profile.paste if profile else "ctrl+v"
+
+
+def _write_clipboard(clipboard, text: str, exclude_history: bool) -> bool:
+    """Metni panoya yazar ve gerçekten yazıldığını doğrular; bir kez yeniden dener.
+
+    Windows'ta başka bir süreç panoyu açık tutarken QClipboard.setMimeData sessizce
+    başarısız olabilir; doğrulanmadan Ctrl+V gönderilirse önceki içerik yapıştırılırdı."""
+    for attempt in range(2):
+        if attempt:
+            time.sleep(CLIPBOARD_RETRY_S)
+        clipboard.setMimeData(build_mime(text, exclude_history=exclude_history))
+        if same_text(clipboard.text(), text):
+            return True
+        log.warning("pano yazımı doğrulanamadı (deneme %d)", attempt + 1)
+    return False
+
+
+def _on_typed(ctx: AppContext, outcome: object, delivered: Callable[[bool], None]) -> None:
+    """Yazma sonucunu bildirir; yalnızca TYPED başarıdır (pano ancak o zaman geri yüklenir)."""
+    ok = outcome is TypeOutcome.TYPED
+    if not ok:
+        log.error("metin yazılamadı (%s); metin panoda", getattr(outcome, "value", outcome))
+        message = outcome.user_message if isinstance(outcome, TypeOutcome) else TYPING_FAILED
+        ctx.tray.notify(APP_NAME, message)
+    delivered(ok)
+
+
+def _on_typing_error(ctx: AppContext, message: str, delivered: Callable[[bool], None]) -> None:
+    # Ayrıntı (yığın izi) run_in_pool tarafından log.exception ile yazıldı.
+    log.error("metin yazılırken hata: %s", message)
+    ctx.tray.notify(APP_NAME, TYPING_FAILED)
+    delivered(False)
+
+
+def _schedule_clipboard_restore(
+    clipboard, previous_mime: QMimeData, text: str, paste_mode: str
+) -> None:
+    process = foreground_process_name()
+    if not restore_allowed(paste_mode, process):
+        log.info(
+            "pano geri yüklenmedi: hedef (%s, %s) panoyu geç okuyabilir",
+            paste_mode,
+            process or "bilinmiyor",
         )
+        return
+    QTimer.singleShot(
+        restore_delay_ms(text), lambda: _restore_clipboard(clipboard, previous_mime, text)
+    )
 
 
 def _restore_clipboard(clipboard, previous_mime: QMimeData, pasted_text: str) -> None:
@@ -588,13 +726,13 @@ def _sync_media(ctx: AppContext, state: DictationState) -> None:
         ctx.media_pool.setMaxThreadCount(1)
     ctx.media_paused = recording
     action = ctx.media.pause if recording else ctx.media.resume
-    job = run_in_pool(
+    _run_background(
+        ctx,
         action,
         lambda _r: None,
         lambda e: log.warning("medya denetimi başarısız: %s", e),
         ctx.media_pool,
     )
-    _keep_job(job)
 
 
 def _sync_cancel_hotkey(ctx: AppContext, state: DictationState) -> None:
@@ -618,7 +756,8 @@ def _check_health_async(ctx: AppContext, on_done: Callable[[tuple[HealthItem, ..
     LLM kontrolü ağ isteği yapar ve en kötü durumda uzun sürebilir; senkron çağrı GUI iş
     parçacığını (ve orada dönen IPC sunucusunu — bkz. single_instance.py) bloke ederdi.
     Hata olursa yalnızca günlüğe yazılır, `on_done` çağrılmaz."""
-    job = run_in_pool(
+    _run_background(
+        ctx,
         lambda: check_health(
             ctx.settings,
             cuda_probe=default_cuda_probe,
@@ -629,23 +768,36 @@ def _check_health_async(ctx: AppContext, on_done: Callable[[tuple[HealthItem, ..
         lambda e: log.error("durum kontrolü başarısız: %s", e),
         QThreadPool.globalInstance(),
     )
-    _keep_job(job)
 
 
-def _keep_job(job) -> None:
-    """run_in_pool sinyallerini iş bitene kadar canlı tutar; biten işler listeden düşer."""
-    _background_jobs.append(job)
-    for signal_name in ("result", "error"):
-        signal = getattr(job, signal_name, None)
-        if signal is not None:
-            signal.connect(
-                lambda *_a, job=job: job in _background_jobs and _background_jobs.remove(job)
-            )
+def _run_background(
+    ctx: AppContext,
+    fn: Callable[[], object],
+    on_result: Callable[[object], None],
+    on_error: Callable[[str], None],
+    pool: QThreadPool | None = None,
+) -> None:
+    """`run_in_pool` ile çalıştırır; sinyal nesnesi iş bitene kadar `ctx.background_jobs`ta
+    tutulur. Bırakma `on_finished` ile yapılır: iş başlamadan bağlandığı için hızlı biten
+    işlerde de kaçmaz (geri çağrı GUI iş parçacığında, eklemeden sonra çalışır)."""
+    job = None
+
+    def _forget() -> None:
+        ctx.background_jobs.discard(job)
+
+    job = run_in_pool(fn, on_result, on_error, pool, on_finished=_forget)
+    ctx.background_jobs.add(job)
 
 
-def _show_health_dialog(ctx: AppContext, items: tuple[HealthItem, ...] | None = None) -> None:
+def _show_health_dialog(
+    ctx: AppContext, items: tuple[HealthItem, ...] | None = None, *, modal: bool = False
+) -> None:
+    """Durum penceresini ana pencereye bağlı açar; `items` yoksa önce arka planda denetler.
+
+    `modal=True`: kalıcı (modal) Ayarlar diyaloğu açıkken istenince; aksi hâlde o diyalog
+    bu pencereye girdiyi engellerdi. Pencere ana pencereye aittir, Ayarlar silinince yaşar."""
     if items is None:
-        _check_health_async(ctx, lambda result: _show_health_dialog(ctx, result))
+        _check_health_async(ctx, lambda result: _show_health_dialog(ctx, result, modal=modal))
         return
     if ctx.health_dialog is not None:
         # Tekrarlayan model yükleme hataları (ör. her başarısız dikte denemesi) her
@@ -670,7 +822,7 @@ def _show_health_dialog(ctx: AppContext, items: tuple[HealthItem, ...] | None = 
     dialog.destroyed.connect(lambda *_a: _forget_health_dialog(ctx, dialog))
     dialog.model_downloaded.connect(lambda: _on_model_downloaded(ctx))
     ctx.health_dialog = dialog
-    dialog.setModal(False)
+    dialog.setModal(modal)
     dialog.show()
 
 
@@ -712,9 +864,35 @@ def _hotkey_spec(ctx: AppContext, mode: str) -> str:
 def _resolve_profile(ctx: AppContext) -> AppProfile | None:
     """Ön plandaki uygulamaya uyan profili bulur ve `ctx.active_profile`'a yazar."""
     # Profil tanımlı değilse ön plan sürecini hiç sorgulama (win32 API'sini gereksiz çağırmaz).
-    exe = foreground_process_name() if ctx.settings.profiles else ""
+    exe = probe_foreground_process() if ctx.settings.profiles else ""
+    if exe is None:
+        # Wayland: etkin pencere güvenilir biçimde bilinemez; yanlış profili uygulamak yerine
+        # varsayılanı kullan ve kullanıcıyı (oturum başına bir kez) bilgilendir.
+        if not ctx.foreground_unknown_warned:
+            ctx.foreground_unknown_warned = True
+            ctx.tray.notify(APP_NAME, FOREGROUND_UNKNOWN_MESSAGE)
+        exe = ""
     ctx.active_profile = match_profile(ctx.settings.profiles, exe)
     return ctx.active_profile
+
+
+def _on_controller_warning(ctx: AppContext, text: str) -> None:
+    """Kayıt sürerken uyarı overlay'de gösterilir. Kayıt dışında (ör. sonuçtan hemen önce gelen
+    "kaydın bir bölümü işlenemedi") overlay RESULT'ta hemen gizlendiği için tepsi bildirimi
+    kullanılır; aksi hâlde kullanıcı uyarıyı hiç görmezdi."""
+    if ctx.controller.state is DictationState.RECORDING:
+        ctx.overlay.show_warning(text)
+    else:
+        ctx.tray.notify(APP_NAME, text)
+
+
+def _notify_ipc_status(ctx: AppContext, single) -> None:
+    """Komut kanalı (IPC) açılamadıysa ya da doğrulanamayan bir süreç adı tuttuysa uyarır;
+    uygulama yine çalışır ama `dikte --toggle` gibi komutlar ulaşmaz."""
+    message = getattr(single, "warning_message", None)
+    if message:
+        log.warning("IPC durumu: %s", getattr(single, "status", "?"))
+        ctx.tray.notify(APP_NAME, message, critical=True)
 
 
 def _on_ipc_toggle(ctx: AppContext, mode: str) -> None:
@@ -766,10 +944,12 @@ def _apply_paste_last_hotkey(ctx: AppContext) -> None:
     hk = ctx.hotkey_paste_last
     if hk is None:
         return
-    hk.unregister()
     spec = ctx.settings.hotkey_paste_last
     if not spec or sys.platform != "win32":
+        hk.unregister()
         return
+    # Önceden unregister() yok: register() eskisinin yerine geçer ve başarısızlıkta onu
+    # geri kaydeder; önce bırakılsaydı geri yüklenecek bir kısayol kalmazdı.
     if not hk.register(spec):
         ctx.tray.notify(
             APP_NAME,
@@ -779,17 +959,23 @@ def _apply_paste_last_hotkey(ctx: AppContext) -> None:
 
 
 def _apply_mode_hotkeys(ctx: AppContext) -> None:
-    """Çeviri/prompt kısayolları isteğe bağlıdır; boşsa kapalı kalır, kaydedilemezse
-    yalnızca günlüğe düşer (ana kısayol gibi kritik değildir, tepsiyi meşgul etmez)."""
+    """Çeviri/prompt kısayolları isteğe bağlıdır; boşsa kapalı kalır. Kaydedilemezse
+    önceki kısayol korunur (GlobalHotkey.register geri yükler) ve kullanıcı bilgilendirilir."""
     mode_labels = {"translate": "", "prompt": ""}
+    titles = {"translate": "Çeviri", "prompt": "Prompt"}
     for hk, spec, name in _mode_hotkeys(ctx):
-        hk.unregister()
         if not spec or sys.platform != "win32":
+            hk.unregister()
             continue
-        if hk.register(spec):
-            mode_labels[name] = hk.label
-        else:
+        # Önceden unregister() yok: register() başarısızlıkta önceki kısayolu geri kaydeder.
+        if not hk.register(spec):
             log.warning("%s kısayolu kaydedilemedi: %s", name, spec)
+            ctx.tray.notify(
+                APP_NAME,
+                f"{titles[name]} kısayolu kaydedilemedi: {spec}. "
+                "Başka bir uygulama kullanıyor olabilir; Ayarlar'dan değiştirin.",
+            )
+        mode_labels[name] = hk.label  # başarısızlıkta geri yüklenen eski kısayol (ya da boş)
     ctx.tray.set_mode_labels(mode_labels["translate"], mode_labels["prompt"])
 
 
@@ -815,6 +1001,9 @@ def _run_toggle(mode: str = "correct") -> int:
 
 def _open_settings(ctx: AppContext) -> None:
     dlg = SettingsDialog(ctx.settings, list_input_devices(), ctx.window)
+    # Durum penceresi Ayarlar'ın değil uygulamanın: indirilen model yüklenir, Ayarlar
+    # kapanıp silinince süren indirme silinmiş bir nesneye yazmaz.
+    dlg.health_requested.connect(lambda: _show_health_dialog(ctx, modal=True))
     try:
         if dlg.exec() != QDialog.DialogCode.Accepted:
             return
@@ -837,7 +1026,6 @@ def _open_settings(ctx: AppContext) -> None:
     ctx.window.set_llm_enabled(new.llm.enabled)
     ctx.window.close_after_copy = new.close_after_copy
     ctx.window.set_clipboard_exclude_history(new.clipboard_exclude_history)
-    ctx.window.raise_on_result = new.raise_window_on_result
     ctx.sounds.set_enabled(new.sounds_enabled)
     ctx.overlay.set_position(new.overlay_position, new.overlay_xy)
     ctx.history = _make_history(new)
@@ -864,15 +1052,16 @@ def _reload_model(ctx: AppContext) -> None:
 
 
 def _warm_up_when_idle(ctx: AppContext) -> None:
-    """Süren iş bitince (motor modeli zaten düşürdü) yeni modeli bir kez yükler."""
+    """Süren iş bitince (motor modeli zaten düşürdü) yeni modeli bir kez yükler; art arda
+    istekler tek bir yüklemede birleşir (bkz. `_reload_if_pending`)."""
+    ctx.reload_pending = True
 
-    def _on_state(state: DictationState) -> None:
-        if state in BUSY_STATES:
-            return
-        ctx.controller.state_changed.disconnect(_on_state)
-        _reload_model(ctx)
 
-    ctx.controller.state_changed.connect(_on_state)
+def _reload_if_pending(ctx: AppContext, state: DictationState) -> None:
+    if not ctx.reload_pending or state in BUSY_STATES:
+        return
+    ctx.reload_pending = False
+    _reload_model(ctx)
 
 
 def _apply_autostart(ctx: AppContext, enabled: bool) -> None:
@@ -883,23 +1072,56 @@ def _apply_autostart(ctx: AppContext, enabled: bool) -> None:
 
 
 def _quit(ctx: AppContext) -> None:
+    """Tepsiden "Çıkış": temizlik `aboutToQuit`e bağlı `_shutdown`ta yapılır (bkz.
+    `_install_shutdown`) ki oturum kapatma/Windows kapanışı da aynı yoldan geçsin."""
+    ctx.tray.hide()
+    app = QApplication.instance()
+    if app is not None:
+        app.quit()
+
+
+def _install_shutdown(ctx: AppContext, app: QObject) -> None:
+    """`app.aboutToQuit` sinyaline `_shutdown`ı bağlar (tepsi, oturum kapatma, kapanış)."""
+    app.aboutToQuit.connect(lambda: _shutdown(ctx))  # type: ignore[attr-defined]
+
+
+def _shutdown(ctx: AppContext) -> None:
+    """Çıkışta kaynakları sırayla bırakır; birden çok çağrıda yalnızca ilki çalışır.
+
+    Duraklatılan medya sürdürülür, kısayollar bırakılır, süren dikte iptal edilir, mikrofon
+    akışı kapatılır ve arka plan işleri sınırlı bir süre beklenir (bekleyen kuyruk atılır)."""
+    if ctx.shut_down:
+        return
+    ctx.shut_down = True
     if ctx.media is not None and ctx.media_paused:
         # Kayıt sürerken çıkılırsa duraklatılan medya askıda kalmasın. pause() medya
         # havuzunda hâlâ sürüyor olabilir; önce onu beklemezsek resume() boşa gider ve
         # ardından biten pause() medyayı duraklatılmış bırakır.
         if ctx.media_pool is not None:
             ctx.media_pool.waitForDone(MEDIA_QUIT_WAIT_MS)
-        ctx.media.resume()
-    ctx.hotkey.unregister()
-    ctx.cancel_hotkey.unregister()
-    ctx.hotkey_translate.unregister()
-    ctx.hotkey_prompt.unregister()
-    if ctx.hotkey_paste_last is not None:
-        ctx.hotkey_paste_last.unregister()
-    ctx.tray.hide()
-    app = QApplication.instance()
-    if app is not None:
-        app.quit()
+        try:
+            ctx.media.resume()
+        except Exception:
+            log.exception("çıkışta medya sürdürülemedi")
+        ctx.media_paused = False  # iptalin tetiklediği _sync_media ikinci kez sürdürmesin
+    for hk in (
+        ctx.hotkey,
+        ctx.cancel_hotkey,
+        ctx.hotkey_translate,
+        ctx.hotkey_prompt,
+        ctx.hotkey_paste_last,
+    ):
+        if hk is not None:
+            hk.unregister()
+    ctx.reload_pending = False  # iptalin yaydığı IDLE çıkışta model yüklemesin
+    ctx.controller.cancel()  # süren işin sonuçları yok sayılır (kuşak sayacı)
+    ctx.recorder.stop()  # kayıt yokken de güvenle çağrılabilir
+    for pool in (QThreadPool.globalInstance(), ctx.media_pool):
+        if pool is None:
+            continue
+        pool.clear()  # henüz başlamamış işler atılır
+        if not pool.waitForDone(SHUTDOWN_WAIT_MS):
+            log.warning("çıkışta arka plan işleri %d ms içinde bitmedi", SHUTDOWN_WAIT_MS)
 
 
 def _notify_config_issues(ctx: AppContext, issues: tuple[str, ...]) -> None:
@@ -927,6 +1149,36 @@ _HOTKEY_FIELDS = ("hotkey", "hotkey_translate", "hotkey_prompt", "hotkey_paste_l
 def _sanitized_hotkeys(before: Settings, after: Settings) -> tuple[str, ...]:
     """`build_app`'in geçersiz bulup değiştirdiği kısayol alanlarının adları."""
     return tuple(f for f in _HOTKEY_FIELDS if getattr(before, f) != getattr(after, f))
+
+
+def _qt_translation_dirs() -> tuple[str, ...]:
+    """Qt çevirilerinin aranacağı klasörler: Qt'nin kendi yolu, ardından PyInstaller
+    paketindeki `translations` klasörü (bkz. packaging/dikte.spec)."""
+    dirs = [QLibraryInfo.path(QLibraryInfo.LibraryPath.TranslationsPath)]
+    bundle = getattr(sys, "_MEIPASS", None)
+    if bundle:
+        dirs.append(str(Path(bundle) / "translations"))
+    return tuple(dirs)
+
+
+def _install_qt_translator(
+    app: QCoreApplication, *, search_dirs: tuple[str, ...] | None = None
+) -> QTranslator | None:
+    """Qt'nin standart düğme/diyalog metinlerini (Tamam/İptal/Evet/Hayır, sağ tık menüsü)
+    Türkçeleştirir. Çevirmen `app`'e bağlıdır (canlı kalır); bulunamazsa uyarı loglanır."""
+    dirs = search_dirs if search_dirs is not None else _qt_translation_dirs()
+    for directory in dirs:
+        translator = QTranslator(app)
+        if translator.load(QT_TRANSLATION, directory):
+            app.installTranslator(translator)
+            return translator
+        translator.deleteLater()
+    log.warning(
+        "Qt Türkçe çevirisi (%s.qm) bulunamadı (%s); standart düğmeler İngilizce görünebilir",
+        QT_TRANSLATION,
+        ", ".join(dirs),
+    )
+    return None
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -971,6 +1223,7 @@ def main(argv: list[str] | None = None) -> int:
     app = QApplication(sys.argv)
     app.setApplicationName(APP_NAME)
     app.setQuitOnLastWindowClosed(False)
+    qt_translator = _install_qt_translator(app)  # noqa: F841 - olay döngüsü boyunca canlı
 
     single = SingleInstance()
     if not single.try_acquire():
@@ -995,6 +1248,7 @@ def main(argv: list[str] | None = None) -> int:
             f"Veri klasörü hazırlanamadı: {exc}\nYazma izinlerini kontrol edin.",
         )
         return 1
+    _install_shutdown(ctx, app)
     sanitized = _sanitized_hotkeys(settings, ctx.settings)
     if sanitized:  # bozuk kısayol(lar) düzeltildi, kalıcı hâle getir
         try:
@@ -1006,6 +1260,7 @@ def main(argv: list[str] | None = None) -> int:
     single.start_requested.connect(lambda mode: _on_ipc_start(ctx, mode))
     single.stop_requested.connect(ctx.controller.stop_recording)
     ctx.tray.show()
+    _notify_ipc_status(ctx, single)
     if "hotkey" in sanitized:
         ctx.tray.notify(
             APP_NAME,

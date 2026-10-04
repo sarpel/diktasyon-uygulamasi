@@ -92,6 +92,12 @@ class FakeLlm:
         return "Hello world."
 
 
+def _reach_result(c, qtbot):
+    c.toggle()
+    c.toggle()
+    qtbot.waitUntil(lambda: c.state is DictationState.RESULT, timeout=3000)
+
+
 @pytest.fixture
 def ctl(qtbot):
     rec, stt, llm = FakeRecorder(), FakeStt(), FakeLlm()
@@ -174,6 +180,7 @@ def test_empty_transcript_goes_back_to_idle_with_error(qtbot):
 
 def test_request_translation_updates_session(ctl, qtbot):
     c, *_ = ctl
+    _reach_result(c, qtbot)
     with qtbot.waitSignal(
         c.session_updated, timeout=5000, check_params_cb=lambda s: s.translation != ""
     ):
@@ -183,6 +190,7 @@ def test_request_translation_updates_session(ctl, qtbot):
 
 def test_request_enhanced_prompt_updates_session(ctl, qtbot):
     c, *_ = ctl
+    _reach_result(c, qtbot)
     with qtbot.waitSignal(
         c.session_updated, timeout=5000, check_params_cb=lambda s: s.enhanced_prompt != ""
     ):
@@ -217,6 +225,7 @@ def test_llm_disabled_rejects_translation(qtbot):
     c = DictationController(
         settings, recorder=FakeRecorder(), stt=FakeStt(), llm=llm, pool=QThreadPool()
     )
+    _reach_result(c, qtbot)
     errors = []
     c.error.connect(errors.append)
     c.request_translation("merhaba")
@@ -303,6 +312,7 @@ def test_set_llm_replaces_provider(qtbot):
     c = DictationController(
         Settings(), recorder=FakeRecorder(), stt=FakeStt(), llm=FakeLlm(), pool=QThreadPool()
     )
+    _reach_result(c, qtbot)
     new = FakeLlm()
     c.set_llm(new)
     c.request_translation("merhaba")
@@ -799,6 +809,8 @@ def test_many_in_flight_jobs_all_deliver_callbacks(qtbot):
     pool = QThreadPool()
     pool.setMaxThreadCount(32)
     c = DictationController(Settings(), recorder=FakeRecorder(), stt=FakeStt(), llm=llm, pool=pool)
+    _reach_result(c, qtbot)
+    llm.calls.clear()
     delivered = []
     c.session_updated.connect(lambda s: delivered.append(s.translation))
     for i in range(24):
@@ -845,11 +857,15 @@ def test_missing_late_chunk_does_not_hang_forever(qtbot, monkeypatch):
     c = DictationController(
         _live_chunk_settings(), recorder=rec, stt=stt, llm=FakeLlm(), pool=QThreadPool()
     )
+    warnings = []
+    c.warning.connect(warnings.append)
     c.toggle()
     rec.chunks_emitted = 1  # parça kesildi ama hiç teslim edilmeyecek
     c.toggle()
     qtbot.waitUntil(lambda: c.state is DictationState.RESULT, timeout=3000)
     assert c.session.raw_text == "Kuyruk."
+    # Ses parçası kayboldu: kullanıcı metnin eksik olabileceğini bilmeli.
+    assert warnings == ["Kaydın bir bölümü işlenemedi; metin eksik olabilir."]
 
 
 def test_late_chunk_after_cancel_is_ignored(qtbot):
@@ -1250,3 +1266,202 @@ def test_undo_phrase_is_plain_text_when_voice_commands_off(qtbot):
     c.toggle()
     qtbot.waitUntil(lambda: c.state is DictationState.RESULT, timeout=5000)
     assert c.session.corrected_text == "Geri al."
+
+
+# ---- yeni oturum yayını ve geçmiş senkronu (boş satır/yinelenen kimlik regresyonu)
+
+
+def test_new_session_is_not_emitted_while_still_in_result(ctl, qtbot):
+    """Yeni (boş) oturum RESULT'tayken yayınlanırsa app geçmişe boş satır yazıyordu."""
+    c, *_ = ctl
+    _reach_result(c, qtbot)
+    seen = []
+    c.session_updated.connect(lambda s: seen.append((c.state, s.raw_text)))
+    c.start_recording()
+    assert seen and seen[0][0] is not DictationState.RESULT
+
+
+def test_transcribe_file_does_not_emit_new_session_in_result(qtbot):
+    c = DictationController(
+        Settings(),
+        recorder=FakeRecorder(),
+        stt=FakeStt(),
+        llm=FakeLlm(),
+        pool=QThreadPool(),
+        audio_loader=lambda path: np.zeros(16000, dtype=np.float32),
+    )
+    _reach_result(c, qtbot)
+    seen = []
+    c.session_updated.connect(lambda s: seen.append(c.state))
+    c.transcribe_file("/tmp/x.wav")
+    assert seen and seen[0] is not DictationState.RESULT
+    qtbot.waitUntil(lambda: c.state is DictationState.RESULT, timeout=3000)
+
+
+def test_retry_does_not_emit_new_session_in_result(qtbot, tmp_path):
+    stt = FailingStt()
+    c = _failing_ctl(tmp_path, stt)
+    c.toggle()
+    c.toggle()
+    qtbot.waitUntil(lambda: c.state is DictationState.IDLE, timeout=3000)
+    stt.transcribe = lambda audio, language=None, **kw: (  # type: ignore[method-assign]
+        TranscriptResult("merhaba dünya", "tr", 1.0, ())
+    )
+    _reach_result(c, qtbot)
+    seen = []
+    c.session_updated.connect(lambda s: seen.append(c.state))
+    assert c.retry_last_failed()
+    assert seen and seen[0] is not DictationState.RESULT
+    qtbot.waitUntil(lambda: c.state is DictationState.RESULT, timeout=3000)
+
+
+def test_failed_start_from_result_keeps_previous_session(ctl, qtbot):
+    c, rec, *_ = ctl
+    _reach_result(c, qtbot)
+    before = c.session
+    seen = []
+    c.session_updated.connect(seen.append)
+    rec._fail_to_start = True
+    c.start_recording()
+    assert c.state is DictationState.RESULT
+    assert c.session is before and seen == []
+
+
+def test_retry_keeps_file_until_result_is_finished(qtbot, tmp_path):
+    """Dosya STT metin döndürür döndürmez siliniyordu; LLM sırasında iptal edilirse
+    kayıt kayboluyordu."""
+    stt = FailingStt()
+    c = _failing_ctl(tmp_path, stt)
+    c.toggle()
+    c.toggle()
+    qtbot.waitUntil(lambda: c.state is DictationState.IDLE, timeout=3000)
+    stt.transcribe = lambda audio, language=None, **kw: (  # type: ignore[method-assign]
+        TranscriptResult("merhaba dünya", "tr", 1.0, ())
+    )
+    llm = BlockingLlm()
+    c.set_llm(llm)
+    assert c.retry_last_failed()
+    qtbot.waitUntil(lambda: c.state is DictationState.CORRECTING, timeout=3000)
+    assert c.has_failed_audio
+    c.cancel()
+    llm.release()
+    qtbot.wait(100)
+    assert c.has_failed_audio
+    llm2 = FakeLlm()
+    c.set_llm(llm2)
+    assert c.retry_last_failed()
+    qtbot.waitUntil(lambda: c.state is DictationState.RESULT, timeout=3000)
+    assert not c.has_failed_audio
+
+
+def test_translation_request_ignored_outside_result(ctl, qtbot):
+    c, _rec, _stt, llm = ctl
+    c.request_translation("metin")
+    c.request_enhanced_prompt("metin")
+    c.toggle()  # RECORDING
+    c.request_translation("metin")
+    qtbot.wait(100)
+    assert llm.calls == [] and c.session.translation == ""
+
+
+def test_translation_result_dropped_when_session_changed(ctl, qtbot):
+    c, *_ = ctl
+    _reach_result(c, qtbot)
+    llm = BlockingLlm()
+    c.set_llm(llm)
+    c.request_translation("eski metin")
+    c._session = c._session.with_(id="baska-oturum")  # kuşak değişmeden oturum değişti
+    llm.release()
+    qtbot.wait(300)
+    assert c.session.translation == ""
+
+
+# ---- parça akış belirteci (iptal edilen kaydın geç parçası)
+
+
+class TokenRecorder(FakeRecorder):
+    """Gerçek kayıtçı gibi parçaları akış belirteciyle yayınlar."""
+
+    chunk_ready = Signal(object, int)
+
+    def __init__(self):
+        super().__init__()
+        self.stream_token = 0
+
+    def start(self):
+        self.stream_token += 1
+        super().start()
+
+
+def test_stale_chunk_from_cancelled_recording_is_ignored(qtbot):
+    rec = TokenRecorder()
+    stt = SequentialStt(["Yeni.", "Kuyruk."])
+    c = DictationController(
+        _live_chunk_settings(), recorder=rec, stt=stt, llm=FakeLlm(), pool=QThreadPool()
+    )
+    partials = []
+    c.partial_text.connect(partials.append)
+    c.toggle()
+    old_token = rec.stream_token
+    c.cancel()
+    c.toggle()  # yeni kayıt
+    rec.chunk_ready.emit(np.ones(1600, dtype=np.float32), old_token)  # geç teslim edilen eski parça
+    qtbot.wait(100)
+    assert stt.calls == [] and partials == []
+    rec.chunk_ready.emit(np.ones(1600, dtype=np.float32), rec.stream_token)
+    qtbot.waitUntil(lambda: partials == ["Yeni."], timeout=3000)
+    c.toggle()
+    qtbot.waitUntil(lambda: c.state is DictationState.RESULT, timeout=3000)
+    assert c.session.raw_text == "Yeni. Kuyruk."
+
+
+# ---- GUI iş parçacığı geri çağrılarında istisna (takılı kalan durum regresyonu)
+
+
+def test_exception_in_result_callback_fails_session_and_returns_idle(ctl, qtbot):
+    c, *_ = ctl
+    errors = []
+    c.error.connect(errors.append)
+
+    def broken(_result):
+        raise ValueError("beklenmedik veri")
+
+    c._on_transcribed = broken  # type: ignore[method-assign]
+    c.toggle()
+    c.toggle()
+    qtbot.waitUntil(lambda: c.state is DictationState.IDLE, timeout=3000)
+    assert errors and "beklenmedik veri" in errors[-1]
+    c.toggle()  # yeniden kullanılabilir
+    assert c.state is DictationState.RECORDING
+
+
+def test_exception_in_correction_callback_still_reaches_result(ctl, qtbot):
+    c, *_ = ctl
+    errors = []
+    c.error.connect(errors.append)
+
+    def broken(_result):
+        raise ValueError("düzeltme bozuk")
+
+    c._on_corrected = broken  # type: ignore[method-assign]
+    _reach_result(c, qtbot)
+    assert c.session.corrected_text == "merhaba dünya"  # ham metin gösterilir
+    assert errors and "düzeltme bozuk" in errors[-1]
+
+
+def test_exception_in_error_callback_recovers_to_idle(qtbot):
+    c = DictationController(
+        Settings(), recorder=FakeRecorder(), stt=FailingStt(), llm=FakeLlm(), pool=QThreadPool()
+    )
+    errors = []
+    c.error.connect(errors.append)
+
+    def broken(_msg):
+        raise RuntimeError("hata yolu da bozuk")
+
+    c._on_stt_error = broken  # type: ignore[method-assign]
+    c._on_chunk_error = broken  # type: ignore[method-assign]
+    c.toggle()
+    c.toggle()
+    qtbot.waitUntil(lambda: c.state is DictationState.IDLE, timeout=3000)
+    assert errors and "Beklenmeyen bir hata" in errors[-1]

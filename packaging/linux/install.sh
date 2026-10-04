@@ -15,7 +15,7 @@ fi
 # yorumlayıcısını kullanır. Bu yüzden pyproject'in istediği sürüm açıkça seçilir.
 PYTHON="${DIKTE_PYTHON:-}"
 if [ -z "$PYTHON" ]; then
-  for candidate in python3.12 python3.11; do
+  for candidate in python3.14 python3.13 python3.12 python3.11; do
     if command -v "$candidate" >/dev/null 2>&1; then
       PYTHON="$candidate"
       break
@@ -23,7 +23,7 @@ if [ -z "$PYTHON" ]; then
   done
 fi
 if [ -z "$PYTHON" ]; then
-  echo "Python 3.11 veya 3.12 bulunamadı (pyproject: >=3.11,<3.13)." >&2
+  echo "Python 3.11 veya daha yenisi bulunamadı (pyproject: >=3.11)." >&2
   echo "Kurulum: sudo apt install python3.12-venv  — ya da DIKTE_PYTHON=/yol/python ile belirtin." >&2
   exit 1
 fi

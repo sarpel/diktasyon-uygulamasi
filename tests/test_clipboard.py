@@ -1,10 +1,14 @@
 import struct
 
+import pytest
+
 from dikte.platform.clipboard import (
     CLOUD_FORMAT,
     EXCLUDE_FORMAT,
     HISTORY_FORMAT,
+    RESTORE_MAX_MS,
     build_mime,
+    restore_allowed,
     restore_delay_ms,
     should_restore,
     windows_mime,
@@ -42,10 +46,34 @@ def test_should_restore_only_when_clipboard_still_holds_our_text():
     assert should_restore("", "") is False
 
 
-def test_restore_delay_scales_and_is_capped():
-    assert restore_delay_ms("") == 300
-    assert 300 < restore_delay_ms("a" * 1000) < 1500
-    assert restore_delay_ms("a" * 100_000) == 1500
+def test_should_restore_ignores_windows_line_endings():
+    assert should_restore("satır 1\r\nsatır 2", "satır 1\nsatır 2") is True
+
+
+def test_restore_delay_is_long_enough_for_slow_targets_and_capped():
+    """Teams/Office/RDP panoyu Ctrl+V'den saniyeler sonra okuyabilir; erken geri yükleme
+    eski (belki gizli) pano içeriğini yapıştırırdı."""
+    assert restore_delay_ms("") >= 1500
+    assert restore_delay_ms("") < restore_delay_ms("a" * 1000) < restore_delay_ms("a" * 100_000)
+    assert restore_delay_ms("a" * 100_000) == RESTORE_MAX_MS
+
+
+@pytest.mark.parametrize(
+    "process", ["mstsc", "MSTSC.EXE", "vmconnect", "VirtualBoxVM", "vmware", "remmina"]
+)
+def test_restore_not_allowed_for_remote_desktop_and_vm_clients(process):
+    assert restore_allowed("ctrl+v", process) is False
+
+
+def test_restore_not_allowed_for_terminal_paste():
+    """Terminaller (Ctrl+Shift+V) yapıştırmayı geç ve parça parça okuyabilir."""
+    assert restore_allowed("ctrl+shift+v", "windowsterminal") is False
+
+
+def test_restore_allowed_for_ordinary_targets():
+    assert restore_allowed("ctrl+v", "notepad") is True
+    assert restore_allowed("ctrl+v", "") is True
+    assert restore_allowed("type", "code") is True
 
 
 def test_copy_text_marks_windows_clipboard_as_excluded(qapp):

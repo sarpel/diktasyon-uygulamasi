@@ -9,8 +9,16 @@ from dikte.config import LlmSettings, Settings
 from dikte.core.state import DictationState, Session
 from dikte.llm.provider import LlmError
 from dikte.logging_setup import setup_logging
+from dikte.platform.paste import TypeOutcome
 from dikte.ui.icons import copy_icon, make_tray_icon
 from dikte.ui.toast import Toast
+
+
+class _FakeSignal:
+    """Sahte ayarlar diyaloglarının `health_requested` sinyali (bağlanır, hiç yayılmaz)."""
+
+    def connect(self, *_a, **_k):
+        return None
 
 
 @pytest.fixture
@@ -119,6 +127,8 @@ def test_open_settings_applies_new_settings(ctx, monkeypatch, tmp_path):
     monkeypatch.setattr(app_mod.QMessageBox, "information", staticmethod(lambda *a, **k: None))
 
     class FakeDialog:
+        health_requested = _FakeSignal()
+
         def __init__(self, settings, devices, parent=None):
             self._settings = settings
 
@@ -150,6 +160,8 @@ def test_open_settings_model_change_triggers_reload(ctx, monkeypatch):
     monkeypatch.setattr(ctx.controller, "warm_up", lambda: warmed.append(True))
 
     class FakeDialog:
+        health_requested = _FakeSignal()
+
         def __init__(self, settings, devices, parent=None):
             self._settings = settings
 
@@ -171,6 +183,8 @@ def test_open_settings_cancelled_changes_nothing(ctx, monkeypatch):
     monkeypatch.setattr(app_mod, "list_input_devices", lambda: ())
 
     class Cancelled:
+        health_requested = _FakeSignal()
+
         def __init__(self, *a, **k):
             pass
 
@@ -182,12 +196,98 @@ def test_open_settings_cancelled_changes_nothing(ctx, monkeypatch):
     assert ctx.settings.hotkey == "ctrl+alt+space"
 
 
-def test_quit_hides_tray_and_unregisters_hotkey(ctx):
+def test_quit_hides_tray_and_asks_app_to_quit(ctx, monkeypatch):
+    """Temizlik aboutToQuit'e bağlı _shutdown'dadır; _quit yalnızca tepsiyi gizleyip çıkar."""
+    from types import SimpleNamespace
+
     ctx.tray.show()
-    unregistered = []
-    ctx.hotkey.unregister = lambda: unregistered.append(True)
+    quits = []
+    fake_app = SimpleNamespace(quit=lambda: quits.append(True))
+    monkeypatch.setattr(app_mod, "QApplication", SimpleNamespace(instance=lambda: fake_app))
     app_mod._quit(ctx)
-    assert unregistered == [True] and not ctx.tray.isVisible()
+    assert quits == [True] and not ctx.tray.isVisible()
+
+
+def _record_shutdown_calls(ctx, monkeypatch):
+    calls = []
+    hotkeys = (
+        ctx.hotkey,
+        ctx.cancel_hotkey,
+        ctx.hotkey_translate,
+        ctx.hotkey_prompt,
+        ctx.hotkey_paste_last,
+    )
+    for hk in hotkeys:
+        monkeypatch.setattr(hk, "unregister", lambda: calls.append("unregister"))
+    monkeypatch.setattr(ctx.controller, "cancel", lambda: calls.append("cancel"))
+    monkeypatch.setattr(ctx.recorder, "stop", lambda: calls.append("stop"))
+    return calls
+
+
+def test_shutdown_unregisters_hotkeys_cancels_and_stops_recorder(ctx, monkeypatch):
+    calls = _record_shutdown_calls(ctx, monkeypatch)
+    app_mod._shutdown(ctx)
+    assert calls.count("unregister") == 5
+    assert calls.count("cancel") == 1 and calls.count("stop") == 1
+
+
+def test_shutdown_does_not_start_pending_model_reload(ctx, monkeypatch):
+    """İptalin yaydığı IDLE, bekleyen model yeniden yüklemesini çıkışta başlatmamalı."""
+    monkeypatch.setattr(ctx.recorder, "stop", lambda: None)
+    warmed = []
+    monkeypatch.setattr(ctx.controller, "warm_up", lambda: warmed.append(True))
+    ctx.controller.toggle()  # kayıt sürüyor
+    app_mod._warm_up_when_idle(ctx)
+    app_mod._shutdown(ctx)
+    assert warmed == []
+
+
+def test_shutdown_is_idempotent(ctx, monkeypatch):
+    calls = _record_shutdown_calls(ctx, monkeypatch)
+    app_mod._shutdown(ctx)
+    app_mod._shutdown(ctx)
+    assert calls.count("cancel") == 1 and calls.count("unregister") == 5
+
+
+def test_shutdown_waits_for_running_background_jobs(ctx, monkeypatch):
+    import time
+
+    from dikte.core.workers import run_in_pool
+
+    _record_shutdown_calls(ctx, monkeypatch)
+    finished = []
+    jobs = [
+        run_in_pool(
+            lambda: (time.sleep(0.2), finished.append("global")),
+            lambda _r: None,
+            lambda _e: None,
+        )
+    ]
+    ctx.media_pool = app_mod.QThreadPool()
+    jobs.append(
+        run_in_pool(
+            lambda: (time.sleep(0.2), finished.append("media")),
+            lambda _r: None,
+            lambda _e: None,
+            ctx.media_pool,
+        )
+    )
+    app_mod._shutdown(ctx)
+    assert sorted(finished) == ["global", "media"]
+
+
+def test_shutdown_runs_when_application_is_about_to_quit(ctx, monkeypatch):
+    """Oturum kapatma/Windows kapanışı _quit'ten geçmez; temizlik aboutToQuit'e bağlı."""
+    from PySide6.QtCore import QObject, Signal
+
+    class FakeApp(QObject):
+        aboutToQuit = Signal()  # noqa: N815 - Qt sinyal adı
+
+    calls = _record_shutdown_calls(ctx, monkeypatch)
+    fake_app = FakeApp()
+    app_mod._install_shutdown(ctx, fake_app)
+    fake_app.aboutToQuit.emit()
+    assert "cancel" in calls and ctx.shut_down
 
 
 def test_run_toggle_returns_error_when_not_running(monkeypatch):
@@ -249,7 +349,7 @@ def test_hotkey_resolves_matching_profile_and_overrides_mode(ctx, monkeypatch):
 
     profile = AppProfile(name="Kod", match="code", mode="translate")
     ctx.settings = ctx.settings.model_copy(update={"push_to_talk": False, "profiles": (profile,)})
-    monkeypatch.setattr(app_mod, "foreground_process_name", lambda: "Code.exe")
+    monkeypatch.setattr(app_mod, "probe_foreground_process", lambda: "code")
     app_mod._on_hotkey(ctx)
     assert ctx.active_profile is profile
     assert ctx.controller.session.mode == "translate"
@@ -257,7 +357,7 @@ def test_hotkey_resolves_matching_profile_and_overrides_mode(ctx, monkeypatch):
 
 def test_hotkey_no_matching_profile_leaves_active_profile_none(ctx, monkeypatch):
     ctx.settings = ctx.settings.model_copy(update={"push_to_talk": False})
-    monkeypatch.setattr(app_mod, "foreground_process_name", lambda: "explorer.exe")
+    monkeypatch.setattr(app_mod, "probe_foreground_process", lambda: "explorer")
     app_mod._on_hotkey(ctx)
     assert ctx.active_profile is None
 
@@ -278,6 +378,40 @@ def test_apply_hotkey_notifies_on_windows_failure(ctx, monkeypatch):
     ctx.tray.notify = lambda *a, **k: notifications.append(a)
     app_mod._apply_hotkey(ctx)
     assert len(notifications) == 1
+
+
+@pytest.mark.parametrize(
+    ("field", "attr"),
+    [
+        ("hotkey_translate", "hotkey_translate"),
+        ("hotkey_prompt", "hotkey_prompt"),
+        ("hotkey_paste_last", "hotkey_paste_last"),
+    ],
+)
+def test_optional_hotkey_failure_keeps_previous_binding_and_notifies(ctx, monkeypatch, field, attr):
+    """register() başarısızlıkta önceki kısayolu geri kaydeder; öncesinde unregister()
+    çağrılırsa geri yüklenecek bir şey kalmaz ve kullanıcı kısayolsuz kalır."""
+    monkeypatch.setattr(app_mod.sys, "platform", "win32")
+    monkeypatch.setattr(ctx.hotkey, "register", lambda _spec, **kw: True)
+    ctx.settings = ctx.settings.model_copy(update={field: "ctrl+alt+k"})
+    calls = []
+    hk = getattr(ctx, attr)
+    monkeypatch.setattr(hk, "unregister", lambda: calls.append("unregister"))
+    monkeypatch.setattr(hk, "register", lambda spec, **kw: calls.append("register") or False)
+    notes = []
+    monkeypatch.setattr(ctx.tray, "notify", lambda *a, **k: notes.append(a[1]))
+    app_mod._apply_hotkey(ctx)
+    assert calls == ["register"]
+    assert any("ctrl+alt+k" in n and "kaydedilemedi" in n for n in notes)
+
+
+def test_empty_optional_hotkey_is_unregistered(ctx, monkeypatch):
+    monkeypatch.setattr(app_mod.sys, "platform", "win32")
+    monkeypatch.setattr(ctx.hotkey, "register", lambda _spec, **kw: True)
+    calls = []
+    monkeypatch.setattr(ctx.hotkey_translate, "unregister", lambda: calls.append("unregister"))
+    app_mod._apply_hotkey(ctx)
+    assert calls == ["unregister"]
 
 
 def test_downgrade_notice_is_shown_once_ready(ctx):
@@ -312,6 +446,8 @@ def test_open_settings_rebuilds_llm_without_restart(ctx, monkeypatch):
     )
 
     class FakeDialog:
+        health_requested = _FakeSignal()
+
         def __init__(self, settings, devices, parent=None):
             self._settings = settings
 
@@ -421,10 +557,20 @@ def test_result_ready_respects_auto_copy_off(ctx, monkeypatch):
     assert QApplication.clipboard().text() == "eski"
 
 
+def _record_timers(monkeypatch):
+    from types import SimpleNamespace
+
+    scheduled = []
+    monkeypatch.setattr(
+        app_mod, "QTimer", SimpleNamespace(singleShot=lambda ms, fn: scheduled.append((ms, fn)))
+    )
+    return scheduled
+
+
 def test_paste_still_happens_when_raise_on_result_activates_window(ctx, qtbot, monkeypatch):
-    """result_ready, RESULT durumuna geçiş penceresini aktive etmeden önce işlenmeli
-    (aktivasyon artık ertelenmiş); aksi halde yapıştırma hedefi kaybolur."""
-    ctx.window.raise_on_result = True
+    """result_ready, RESULT durumuna geçiş penceresini aktive etmeden önce işlenmeli;
+    aksi halde yapıştırma hedefi kaybolur."""
+    ctx.settings = ctx.settings.model_copy(update={"raise_window_on_result": True})
     pasted = []
     monkeypatch.setattr(app_mod, "paste_active_window", lambda ids, **k: pasted.append(ids) or True)
     ctx.controller.state_changed.emit(DictationState.RESULT)
@@ -432,7 +578,41 @@ def test_paste_still_happens_when_raise_on_result_activates_window(ctx, qtbot, m
     assert len(pasted) == 1
 
 
-def test_restore_clipboard_after_paste(ctx, monkeypatch, qtbot):
+def test_raise_on_result_waits_until_sent_paste_lands(ctx, monkeypatch):
+    """SendInput Ctrl+V'yi eşzamansız kuyruğa koyar; pencere hemen öne gelirse yapıştırma
+    Dikte'nin kendi editörüne düşer (metin ikilenir ve geçmişe kaydedilir)."""
+    ctx.settings = ctx.settings.model_copy(update={"raise_window_on_result": True})
+    monkeypatch.setattr(app_mod, "paste_active_window", lambda ids, **k: True)
+    scheduled = _record_timers(monkeypatch)
+    ctx.controller.result_ready.emit("Merhaba.")
+    assert scheduled == [(app_mod.restore_delay_ms("Merhaba."), ctx.window.activate_result)]
+
+
+def test_raise_on_result_is_immediate_when_nothing_was_pasted(ctx, monkeypatch):
+    ctx.settings = ctx.settings.model_copy(
+        update={"raise_window_on_result": True, "auto_paste": False}
+    )
+    scheduled = _record_timers(monkeypatch)
+    ctx.controller.result_ready.emit("Merhaba.")
+    assert scheduled == [(0, ctx.window.activate_result)]
+
+
+def test_window_not_raised_when_setting_off(ctx, monkeypatch):
+    monkeypatch.setattr(app_mod, "paste_active_window", lambda ids, **k: True)
+    scheduled = _record_timers(monkeypatch)
+    ctx.controller.result_ready.emit("Merhaba.")
+    assert scheduled == []
+
+
+@pytest.fixture
+def fast_restore(monkeypatch):
+    """Gerçek geri yükleme gecikmesi saniyelerdir; testlerde kısaltılır. Ön plan süreci
+    sıradan bir uygulamadır (uzak masaüstü/VM değil)."""
+    monkeypatch.setattr(app_mod, "restore_delay_ms", lambda _text: 50)
+    monkeypatch.setattr(app_mod, "foreground_process_name", lambda: "notepad")
+
+
+def test_restore_clipboard_after_paste(ctx, monkeypatch, qtbot, fast_restore):
     from PySide6.QtWidgets import QApplication
 
     ctx.settings = ctx.settings.model_copy(update={"restore_clipboard": True})
@@ -443,7 +623,7 @@ def test_restore_clipboard_after_paste(ctx, monkeypatch, qtbot):
     qtbot.waitUntil(lambda: QApplication.clipboard().text() == "eski", timeout=2000)
 
 
-def test_restore_clipboard_preserves_image_not_just_text(ctx, monkeypatch, qtbot):
+def test_restore_clipboard_preserves_image_not_just_text(ctx, monkeypatch, qtbot, fast_restore):
     """F: restore_clipboard yalnızca metni koruyordu; panodaki bir resim dikte sonrası
     geri yükleme sırasında sessizce kayboluyordu."""
     from PySide6.QtGui import QImage
@@ -461,15 +641,89 @@ def test_restore_clipboard_preserves_image_not_just_text(ctx, monkeypatch, qtbot
     assert restored.size() == image.size()
 
 
-def test_clipboard_not_restored_when_paste_skipped(ctx, monkeypatch, qtbot):
+def test_clipboard_not_restored_when_paste_skipped(ctx, monkeypatch, qtbot, fast_restore):
     from PySide6.QtWidgets import QApplication
 
     ctx.settings = ctx.settings.model_copy(update={"restore_clipboard": True})
     QApplication.clipboard().setText("eski")
     monkeypatch.setattr(app_mod, "paste_active_window", lambda ids, **k: False)
     app_mod._on_result_ready(ctx, "yeni")
-    qtbot.wait(400)
+    qtbot.wait(200)
     assert QApplication.clipboard().text() == "yeni"
+
+
+@pytest.mark.parametrize(
+    ("paste_mode", "process"),
+    [("ctrl+shift+v", "windowsterminal"), ("ctrl+v", "mstsc"), ("ctrl+v", "remmina")],
+)
+def test_clipboard_not_restored_for_terminals_and_remote_clients(
+    ctx, monkeypatch, qtbot, paste_mode, process
+):
+    """Terminaller ve uzak masaüstü/VM istemcileri panoyu geç okur; eski (belki gizli)
+    içerik geri yüklenip yapıştırılmasın diye bu hedeflerde geri yükleme yapılmaz."""
+    from PySide6.QtWidgets import QApplication
+
+    from dikte.config import AppProfile
+
+    monkeypatch.setattr(app_mod, "restore_delay_ms", lambda _text: 50)
+    monkeypatch.setattr(app_mod, "foreground_process_name", lambda: process)
+    ctx.controller._active_profile = AppProfile(name="Hedef", match="x", paste=paste_mode)
+    ctx.settings = ctx.settings.model_copy(update={"restore_clipboard": True})
+    QApplication.clipboard().setText("eski parola")
+    monkeypatch.setattr(app_mod, "paste_active_window", lambda ids, **k: True)
+    app_mod._on_result_ready(ctx, "yeni")
+    qtbot.wait(200)
+    assert QApplication.clipboard().text() == "yeni"
+
+
+class _StubbornClipboard:
+    """Başka bir süreç panoyu açık tuttuğunda olduğu gibi yazmayı sessizce yok sayar."""
+
+    def __init__(self, failures: int):
+        self.failures = failures
+        self.current = "eski gizli"
+        self.writes = 0
+
+    def mimeData(self):
+        from dikte.platform.clipboard import new_mime_data
+
+        mime = new_mime_data()
+        mime.setText(self.current)
+        return mime
+
+    def setMimeData(self, mime):
+        self.writes += 1
+        if self.failures:
+            self.failures -= 1
+            return
+        self.current = mime.text()
+
+    def text(self):
+        return self.current
+
+
+def test_clipboard_write_failure_skips_paste_and_notifies(ctx, monkeypatch):
+    """Pano yazılamadıysa Ctrl+V önceki (belki gizli) içeriği yapıştırırdı."""
+    board = _StubbornClipboard(failures=2)
+    monkeypatch.setattr(app_mod, "_system_clipboard", lambda: board)
+    monkeypatch.setattr(app_mod, "CLIPBOARD_RETRY_S", 0)
+    pasted = []
+    monkeypatch.setattr(app_mod, "paste_active_window", lambda ids, **k: pasted.append(1) or True)
+    notes = []
+    monkeypatch.setattr(ctx.tray, "notify", lambda *a, **k: notes.append(a[1]))
+    app_mod._on_result_ready(ctx, "yeni")
+    assert board.writes == 2 and pasted == []
+    assert notes and "panoya yazılamadı" in notes[0]
+
+
+def test_clipboard_write_is_retried_once(ctx, monkeypatch):
+    board = _StubbornClipboard(failures=1)
+    monkeypatch.setattr(app_mod, "_system_clipboard", lambda: board)
+    monkeypatch.setattr(app_mod, "CLIPBOARD_RETRY_S", 0)
+    pasted = []
+    monkeypatch.setattr(app_mod, "paste_active_window", lambda ids, **k: pasted.append(1) or True)
+    app_mod._on_result_ready(ctx, "yeni")
+    assert board.writes == 2 and board.current == "yeni" and pasted == [1]
 
 
 def test_result_ready_uses_profile_paste_combo(ctx, monkeypatch):
@@ -484,17 +738,84 @@ def test_result_ready_uses_profile_paste_combo(ctx, monkeypatch):
     assert combos == ["ctrl+shift+v"]
 
 
-def test_result_ready_uses_type_when_profile_paste_is_type(ctx, monkeypatch):
+def test_result_ready_uses_type_when_profile_paste_is_type(ctx, monkeypatch, qtbot):
     from dikte.config import AppProfile
 
     ctx.controller._active_profile = AppProfile(name="Kod", match="code", paste="type")
     typed = []
     pasted = []
-    monkeypatch.setattr(app_mod, "type_unicode_text", lambda text: typed.append(text) or True)
+    monkeypatch.setattr(app_mod, "type_text", lambda text: typed.append(text) or TypeOutcome.TYPED)
     monkeypatch.setattr(app_mod, "paste_active_window", lambda *a, **k: pasted.append(1) or True)
     app_mod._on_result_ready(ctx, "Merhaba.")
-    assert typed == ["Merhaba."]
+    qtbot.waitUntil(lambda: typed == ["Merhaba."], timeout=2000)
     assert pasted == []
+
+
+def test_typing_runs_off_the_gui_thread(ctx, monkeypatch, qtbot):
+    """Uzun metinde yazma alt süreci onlarca saniye sürebilir; GUI donmamalı."""
+    import threading
+
+    from dikte.config import AppProfile
+
+    ctx.controller._active_profile = AppProfile(name="Kod", match="code", paste="type")
+    threads = []
+    monkeypatch.setattr(
+        app_mod,
+        "type_text",
+        lambda text: threads.append(threading.current_thread()) or TypeOutcome.FAILED,
+    )
+    done = []
+    app_mod._on_result_ready(ctx, "Merhaba.", on_done=done.append)
+    qtbot.waitUntil(lambda: done == [False], timeout=2000)
+    assert threads and threads[0] is not threading.main_thread()
+
+
+@pytest.mark.parametrize(
+    ("outcome", "message"),
+    [
+        (TypeOutcome.FAILED, TypeOutcome.FAILED.user_message),
+        (TypeOutcome.PARTIAL, TypeOutcome.PARTIAL.user_message),
+        (TypeOutcome.UNVERIFIED, TypeOutcome.UNVERIFIED.user_message),
+        ("raise", "Metnin bir kısmı yazılamadı; tamamı panoda."),
+    ],
+)
+def test_typing_failure_notifies_text_is_on_clipboard(ctx, monkeypatch, qtbot, outcome, message):
+    """Yazma sonucu TYPED değilse sonuca özgü Türkçe mesaj gösterilir, metin panoda kalır."""
+    from PySide6.QtWidgets import QApplication
+
+    from dikte.config import AppProfile
+
+    def fake_type(text):
+        if outcome == "raise":
+            raise TimeoutError("yazma zaman aşımı")
+        return outcome
+
+    ctx.controller._active_profile = AppProfile(name="Kod", match="code", paste="type")
+    monkeypatch.setattr(app_mod, "type_text", fake_type)
+    notes = []
+    monkeypatch.setattr(ctx.tray, "notify", lambda *a, **k: notes.append(a[1]))
+    done = []
+    app_mod._on_result_ready(ctx, "Uzun metin.", on_done=done.append)
+    qtbot.waitUntil(lambda: done == [False], timeout=2000)
+    assert notes == [message]
+    assert QApplication.clipboard().text() == "Uzun metin."
+
+
+def test_typing_success_reports_pasted_and_restores_clipboard(
+    ctx, monkeypatch, qtbot, fast_restore
+):
+    from PySide6.QtWidgets import QApplication
+
+    from dikte.config import AppProfile
+
+    ctx.controller._active_profile = AppProfile(name="Kod", match="code", paste="type")
+    ctx.settings = ctx.settings.model_copy(update={"restore_clipboard": True})
+    QApplication.clipboard().setText("eski")
+    monkeypatch.setattr(app_mod, "type_text", lambda text: TypeOutcome.TYPED)
+    done = []
+    app_mod._on_result_ready(ctx, "yeni", on_done=done.append)
+    qtbot.waitUntil(lambda: done == [True], timeout=2000)
+    qtbot.waitUntil(lambda: QApplication.clipboard().text() == "eski", timeout=2000)
 
 
 def test_result_ready_appends_profile_trailing(ctx, monkeypatch):
@@ -779,7 +1100,7 @@ def test_ipc_toggle_applies_matching_profile(ctx, monkeypatch):
 
     profile = AppProfile(name="Terminal", match="gnome-terminal-server", mode="prompt")
     ctx.settings = ctx.settings.model_copy(update={"profiles": (profile,)})
-    monkeypatch.setattr(app_mod, "foreground_process_name", lambda: "gnome-terminal-server")
+    monkeypatch.setattr(app_mod, "probe_foreground_process", lambda: "gnome-terminal-server")
     app_mod._on_ipc_toggle(ctx, "correct")
     assert ctx.controller.state is DictationState.RECORDING
     assert ctx.controller.active_profile is profile
@@ -791,7 +1112,7 @@ def test_ipc_start_applies_matching_profile(ctx, monkeypatch):
 
     profile = AppProfile(name="Kod", match="code", mode="translate")
     ctx.settings = ctx.settings.model_copy(update={"profiles": (profile,)})
-    monkeypatch.setattr(app_mod, "foreground_process_name", lambda: "code")
+    monkeypatch.setattr(app_mod, "probe_foreground_process", lambda: "code")
     app_mod._on_ipc_start(ctx, "correct")
     assert ctx.controller.session.mode == "translate"
 
@@ -826,6 +1147,8 @@ def test_model_change_while_busy_reloads_when_idle(ctx, monkeypatch):
     )
 
     class FakeDialog:
+        health_requested = _FakeSignal()
+
         def __init__(self, settings, devices, parent=None):
             self._settings = settings
 
@@ -845,6 +1168,27 @@ def test_model_change_while_busy_reloads_when_idle(ctx, monkeypatch):
     ctx.controller.state_changed.emit(DictationState.RESULT)
     ctx.controller.state_changed.emit(DictationState.IDLE)
     assert warmed == [True]
+
+
+def test_repeated_warm_up_requests_reload_once(ctx, monkeypatch):
+    warmed = []
+    monkeypatch.setattr(ctx.controller, "warm_up", lambda: warmed.append(True))
+    app_mod._warm_up_when_idle(ctx)
+    app_mod._warm_up_when_idle(ctx)  # ör. model indirildi + ayarlarda model değişti
+    ctx.controller.state_changed.emit(DictationState.CORRECTING)
+    assert warmed == []
+    ctx.controller.state_changed.emit(DictationState.RESULT)
+    ctx.controller.state_changed.emit(DictationState.IDLE)
+    assert warmed == [True]
+
+
+def test_background_jobs_are_released_when_finished(ctx, qtbot):
+    results = []
+    app_mod._run_background(ctx, lambda: 42, results.append, lambda _e: None)
+    app_mod._run_background(ctx, lambda: 1 / 0, lambda _r: None, results.append)
+    qtbot.waitUntil(lambda: len(results) == 2, timeout=2000)
+    qtbot.waitUntil(lambda: not ctx.background_jobs, timeout=2000)
+    assert not hasattr(app_mod, "_background_jobs")
 
 
 def test_config_issues_are_reported(ctx, monkeypatch):
@@ -872,7 +1216,9 @@ def test_sanitized_hotkeys_include_paste_last():
     assert app_mod._sanitized_hotkeys(before, before) == ()
 
 
-def test_restore_clipboard_skipped_when_user_copied_meanwhile(ctx, monkeypatch, qtbot):
+def test_restore_clipboard_skipped_when_user_copied_meanwhile(
+    ctx, monkeypatch, qtbot, fast_restore
+):
     from PySide6.QtWidgets import QApplication
 
     ctx.settings = ctx.settings.model_copy(update={"restore_clipboard": True})
@@ -1003,7 +1349,11 @@ def test_invalid_paste_last_hotkey_is_disabled():
     assert s.hotkey_paste_last == ""
 
 
-def test_controller_warning_reaches_overlay(ctx):
+def test_controller_warning_reaches_overlay(ctx, monkeypatch):
+    """Mikrofon uyarıları kayıt sürerken gelir ve overlay'de gösterilir."""
+    monkeypatch.setattr(
+        type(ctx.controller), "state", property(lambda self: DictationState.RECORDING)
+    )
     ctx.controller.warning.emit("Mikrofondan ses gelmiyor.")
     assert "Mikrofondan ses gelmiyor." in ctx.overlay._warning.text()
 
@@ -1046,6 +1396,8 @@ def test_lowering_history_limit_to_zero_deletes_file(ctx, monkeypatch, tmp_path)
     assert (tmp_path / "history.jsonl").exists()
 
     class FakeDialog:
+        health_requested = _FakeSignal()
+
         def __init__(self, settings, devices, parent=None):
             self._settings = settings
 
@@ -1105,6 +1457,144 @@ def test_quit_resumes_media_after_queued_pause(ctx, qtbot):
     ctx.media = SlowMedia()
     ctx.controller.state_changed.emit(DictationState.RECORDING)
     threading.Timer(0.2, gate.set).start()
-    app_mod._quit(ctx)
+    app_mod._shutdown(ctx)
     qtbot.waitUntil(lambda: len(calls) == 2, timeout=3000)
     assert calls == ["pause", "resume"]
+
+
+def test_qt_translator_translates_standard_buttons(qapp):
+    from PySide6.QtCore import QCoreApplication
+
+    translator = app_mod._install_qt_translator(qapp)
+    try:
+        assert translator is not None
+        assert QCoreApplication.translate("QPlatformTheme", "Cancel") == "İptal"
+    finally:
+        if translator is not None:
+            qapp.removeTranslator(translator)
+
+
+def test_qt_translator_falls_back_to_bundled_dir(qapp, tmp_path):
+    import shutil
+
+    from PySide6.QtCore import QLibraryInfo
+
+    source = QLibraryInfo.path(QLibraryInfo.LibraryPath.TranslationsPath)
+    bundled = tmp_path / "translations"
+    bundled.mkdir()
+    shutil.copy(f"{source}/{app_mod.QT_TRANSLATION}.qm", bundled)
+    translator = app_mod._install_qt_translator(
+        qapp, search_dirs=(str(tmp_path / "yok"), str(bundled))
+    )
+    try:
+        assert translator is not None
+    finally:
+        if translator is not None:
+            qapp.removeTranslator(translator)
+
+
+def test_missing_qt_translation_logs_warning(qapp, tmp_path, caplog):
+    with caplog.at_level(logging.WARNING, logger="dikte.app"):
+        assert app_mod._install_qt_translator(qapp, search_dirs=(str(tmp_path),)) is None
+    assert "çeviri" in caplog.text
+
+
+def test_settings_health_request_opens_app_owned_health_dialog(ctx, monkeypatch):
+    """Ayarlar → Hakkında → "Durum kontrolü…" uygulamanın kendi durum penceresini açar:
+    model_downloaded bağlıdır ve pencere ayarlar diyaloğu silinince yok olmaz."""
+    from PySide6.QtCore import QObject, Signal
+
+    monkeypatch.setattr(app_mod, "list_input_devices", lambda: ())
+    opened = []
+    monkeypatch.setattr(app_mod, "_show_health_dialog", lambda c, *a, **k: opened.append(k))
+
+    class FakeDialog(QObject):
+        health_requested = Signal()
+
+        def __init__(self, settings, devices, parent=None):
+            super().__init__()
+
+        def exec(self):
+            self.health_requested.emit()
+            return 0
+
+    monkeypatch.setattr(app_mod, "SettingsDialog", FakeDialog)
+    app_mod._open_settings(ctx)
+    assert opened == [{"modal": True}]
+
+
+def test_modal_health_dialog_is_parented_to_main_window_and_reloads_model(ctx, monkeypatch):
+    warmed = []
+    monkeypatch.setattr(ctx.controller, "warm_up", lambda: warmed.append(True))
+    app_mod._show_health_dialog(ctx, (), modal=True)
+    dialog = ctx.health_dialog
+    assert dialog is not None
+    assert dialog.parent() is ctx.window and dialog.isModal()
+    dialog.model_downloaded.emit()
+    assert warmed == [True]
+    dialog.close()
+
+
+def test_unknown_foreground_uses_default_profile_and_warns_once(ctx, monkeypatch):
+    """Wayland'de etkin uygulama bilinmez; profil uygulanmaz ve kullanıcı bir kez uyarılır."""
+    from dikte.config import AppProfile
+    from dikte.platform.foreground import FOREGROUND_UNKNOWN_MESSAGE
+
+    profile = AppProfile(name="Kod", match="code", mode="translate")
+    ctx.settings = ctx.settings.model_copy(update={"profiles": (profile,)})
+    monkeypatch.setattr(app_mod, "probe_foreground_process", lambda: None)
+    notes = []
+    monkeypatch.setattr(ctx.tray, "notify", lambda *a, **k: notes.append(a[1]))
+    assert app_mod._resolve_profile(ctx) is None
+    assert app_mod._resolve_profile(ctx) is None
+    assert notes == [FOREGROUND_UNKNOWN_MESSAGE]
+
+
+def test_ipc_warning_is_shown_in_tray(ctx, monkeypatch):
+    """Komut kanalı açılamaz ya da doğrulanamazsa kullanıcı tepsiden uyarılır."""
+    notes = []
+    monkeypatch.setattr(ctx.tray, "notify", lambda *a, **k: notes.append((a[1], k)))
+
+    class FakeSingle:
+        warning_message = "Komut kanalı açılamadı."
+
+    app_mod._notify_ipc_status(ctx, FakeSingle())
+    assert notes == [("Komut kanalı açılamadı.", {"critical": True})]
+
+
+def test_ipc_without_warning_is_silent(ctx, monkeypatch):
+    notes = []
+    monkeypatch.setattr(ctx.tray, "notify", lambda *a, **k: notes.append(a))
+
+    class FakeSingle:
+        warning_message = None
+
+    app_mod._notify_ipc_status(ctx, FakeSingle())
+    assert notes == []
+
+
+def test_controller_warning_outside_recording_goes_to_tray(ctx, monkeypatch):
+    """Sonuçtan hemen önce gelen uyarı (ör. kayıp parça) overlay RESULT'ta gizlendiği için
+    görünmezdi; kayıt dışındaki uyarılar tepsi bildirimiyle gösterilir."""
+    from dikte.core.controller import LOST_CHUNK_WARNING
+
+    notes = []
+    shown = []
+    monkeypatch.setattr(ctx.tray, "notify", lambda *a, **k: notes.append(a[1]))
+    monkeypatch.setattr(ctx.overlay, "show_warning", lambda text, *a: shown.append(text))
+    ctx.controller.warning.emit(LOST_CHUNK_WARNING)
+    assert notes == [LOST_CHUNK_WARNING]
+    assert shown == []
+
+
+def test_controller_warning_while_recording_stays_on_overlay(ctx, monkeypatch):
+    notes = []
+    shown = []
+    monkeypatch.setattr(ctx.tray, "notify", lambda *a, **k: notes.append(a[1]))
+    monkeypatch.setattr(ctx.overlay, "show_warning", lambda text, *a: shown.append(text))
+    monkeypatch.setattr(
+        type(ctx.controller), "state", property(lambda self: DictationState.RECORDING)
+    )
+    ctx.controller.warning.emit("Mikrofon sesi çok düşük.")
+    assert shown == ["Mikrofon sesi çok düşük."]
+    assert notes == []

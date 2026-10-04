@@ -35,6 +35,37 @@ Bu projedeki önemli değişiklikler bu dosyada tutulur. Biçim
 - Linux'ta CUDA kütüphaneleri başlatıcı olmadan da açılışta önceden yüklenir.
 - Sözlük kuralları tek geçişte uygulanır (bir düzeltme başka bir kuralı yeniden tetiklemez).
 - `anthropic` SDK alt sınırı `>=1.0`.
+- Python üst sürüm sınırı kaldırıldı (`>=3.11`); CI Linux ve Windows'ta 3.11–3.14'ü zorunlu
+  test eder, 3.15 için PR'ı engellemeyen bir erken uyarı işi vardır (3.15, PySide6/ctranslate2/
+  onnxruntime o sürüm için paket yayımlayınca çalışır). macOS desteklenmez (CUDA yok).
+- Windows'ta medya duraklatma artık terk edilmiş `winsdk` yerine pywinrt (`winrt-*`) paketlerini
+  kullanır; desteklenen tüm Python sürümlerinde çalışır.
+- LLM düzeltme sağlamlık kontrolü sıkılaştı: 4 kelimeden kısa diktelerde en fazla 2 kelime
+  eklenebilir; ham metnin içerik kelimelerinin en az %40'ı düzeltmede korunmalıdır (dolgu ve sayı
+  sözcükleri sayılmaz). Kelime sayısı alt sınırı dolgular çıkarılarak hesaplanır. Çeviri ve prompt
+  iyileştirmede boş ya da aşırı uzun yanıtlar reddedilir.
+- "Eski pano içeriğini geri yükle": bekleme 2–5 sn'ye çıktı; `Ctrl+Shift+V` profillerinde ve uzak
+  masaüstü/sanal makine pencerelerinde (mstsc, Hyper-V, VirtualBox, VMware, Remmina…) geri yükleme
+  yapılmaz.
+- Wayland'de önce `wtype` kullanılır; sanal klavye desteklemeyen ortamlarda (GNOME) yapıştırma
+  "yapılamadı" sayılır ve metin panoda kalır. Wayland'de etkin uygulama bilinemediği için profiller
+  uygulanmaz ve bu bir kez bildirilir.
+- Qt'nin standart düğme ve menüleri Türkçe (Tamam/İptal/Evet/Hayır).
+- Ayarlar → Hakkında → "Durum kontrolü…" uygulamanın durum penceresini açar; oradan indirilen
+  model hemen yüklenir ve Ayarlar kapansa da indirme sürer.
+- "Sonuçta pencereyi öne getir" otomatik yapıştırmayla birlikteyse pencere, yapıştırma hedefe
+  ulaştıktan sonra öne gelir.
+- `audio.sample_rate` yalnızca 16000 kabul eder; başka bir değer yalnızca bu alanı varsayılana döndürür.
+- "Halüsinasyon sessizlik eşiği" artık gerçekten uygulanır (toplu çözümlemede faster-whisper
+  desteklemediği için orada etkisizdir).
+- `history.jsonl`, `config.json` ve saklanan kayıtlar baştan yalnızca kullanıcıya okunur (0600)
+  oluşturulur ve yerine konmadan önce diske yazılır (fsync).
+- Linux'ta IPC soketi kullanıcıya özel 0700 bir dizinde açılır; tek örnek sunucusunun sahibi
+  doğrulanır (Windows'ta da). Doğrulanamayan bir süreç adı tutuyorsa Dikte kapanmaz, uyarıyla sürer.
+- Linux'ta "tuş tuş yaz" metni komut satırı yerine stdin ile `xdotool`/`wtype`'a verir; dikte
+  metni süreç listesinde görünmez.
+- OpenAI uyumlu sağlayıcılarda `json_object` ile yeniden deneme yalnızca yanıt biçimi
+  reddedildiğinde yapılır.
 
 ### Düzeltildi
 
@@ -59,6 +90,30 @@ Bu projedeki önemli değişiklikler bu dosyada tutulur. Biçim
 - Kısayol değiştirilemediğinde eski kısayolun kaybolması; otomatik başlatma yollarındaki tırnaklama.
 - Çıkışta medyanın, kuyruktaki duraklatma komutundan önce sürdürülmesi.
 - USB mikrofon çıkarıldığında kaydın sessizce sürmesi.
+- Sonuç ekranındayken yeni dikte başlatınca geçmişe boş satır yazılması ve aynı oturumun iki kez
+  kaydedilmesi; mikrofon açılamazsa önceki sonucun kaybolması.
+- Yeniden denemede saklanan sesin LLM düzeltmesi bitmeden silinmesi.
+- Yeni dikte sürerken eski metnin çevirisinin/prompt'unun yeni oturuma yazılması; Çeviri/Prompt
+  düğmelerinin dikte sürerken, geçmiş görüntülenirken ve Ayarlar kaydedilince yanlışlıkla etkin olması.
+- İptal edilen kaydın geç gelen ses parçasının yeni dikteye karışması; işlenemeyen parçanın
+  sessizce atlanması (artık "Kaydın bir bölümü işlenemedi" uyarısı gösterilir).
+- Beklenmeyen bir iç hatada dikte "çözümleniyor/düzeltiliyor" durumunda kilitli kalması.
+- Uygulama kapanırken (Çıkış, oturum kapatma, Windows kapanışı) süren kayıt ve GPU işleri
+  durdurulmadığı için çökme/donma riski.
+- Otomatik yapıştırma ve "pencereyi öne getir" birlikte açıkken metnin Dikte'nin kendi editörüne
+  yapışması.
+- Panoya yazılamadığında (başka uygulama panoyu kilitlediyse) yine de `Ctrl+V` gönderilip önceki
+  pano içeriğinin yapıştırılması.
+- Windows'ta bas-konuş kısayolunun Ctrl/Alt/Shift/Win tuşları hâlâ basılıyken yapıştırmanın başka
+  bir kısayola (ör. `Ctrl+Alt+V`) dönüşmesi.
+- Wayland'de `xdotool` başarılı dönüp metin hedefe ulaşmadığı hâlde "yapıştırıldı" sayılması.
+- "Tuş tuş yaz" modunda uzun metnin arayüzü dondurması; yarıda kesilen yazmanın bildirilmemesi.
+- Profilde eşleşme `.exe` ile yazıldığında (ör. `KeePass.exe`) profilin hiç uygulanmaması.
+- Bir medya oynatıcısı yanıt vermediğinde duraklatılan diğerlerinin sürdürülmemesi.
+- Çeviri/prompt kısayolu kaydedilemediğinde önceki kısayolun kaybolması ve bildirim olmaması.
+- Model yeniden yüklemesinin birikip birden çok kez çalışması; biten arka plan işlerinin bellekte kalması.
+- Ayarlar kapandıktan sonra biten bağlantı testinin hata vermesi.
+- Sonuç penceresindeki kaydedilmemiş düzenlemenin yeni sonuç ya da geçmiş kaydı açılınca kaybolması.
 
 ## [0.2.0] - 2026-09-16
 

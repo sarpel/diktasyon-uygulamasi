@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
-import sys
+import io
 import wave
 from pathlib import Path
 
 import numpy as np
+
+from dikte.core.fileio import write_private_atomic
 
 SAMPLE_RATE = 16000
 
@@ -17,15 +19,15 @@ def save_wav(path: Path, audio: np.ndarray, sample_rate: int = SAMPLE_RATE) -> N
     pcm = (np.clip(np.asarray(audio, dtype=np.float32).reshape(-1), -1.0, 1.0) * 32767).astype(
         "<i2"
     )
-    tmp = path.with_suffix(".tmp")
-    with wave.open(str(tmp), "wb") as w:
+    buf = io.BytesIO()
+    with wave.open(buf, "wb") as w:
         w.setnchannels(1)
         w.setsampwidth(2)
         w.setframerate(sample_rate)
         w.writeframes(pcm.tobytes())
-    if sys.platform != "win32":
-        tmp.chmod(0o600)  # dikte edilen konuşmanın kendisi; başka kullanıcılar okumasın
-    tmp.replace(path)
+    # Dikte edilen konuşmanın kendisi: baştan 0600 açılır (başka kullanıcılar okumasın),
+    # fsync'lenip atomik olarak yerine konur.
+    write_private_atomic(path, buf.getvalue())
 
 
 def load_wav(path: Path) -> np.ndarray:

@@ -18,6 +18,7 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
     QWidget,
 )
+from shiboken6 import Shiboken
 
 from dikte.config import LlmSettings, Settings
 from dikte.core.workers import run_in_pool
@@ -355,12 +356,23 @@ class LlmTab(QWidget):
             return
         self._test_job = run_in_pool(
             lambda: provider.complete("Yanıt: OK", "OK"),
-            lambda text: self._test_done("✓ Bağlantı kuruldu"),
-            lambda exc: self._test_done(f"✗ {exc}"),
+            self._on_test_succeeded,
+            self._on_test_failed,
             QThreadPool.globalInstance(),
         )
 
+    def _on_test_succeeded(self, _text: object) -> None:
+        self._test_done("✓ Bağlantı kuruldu")
+
+    def _on_test_failed(self, message: str) -> None:
+        self._test_done(f"✗ {message}")
+
     def _test_done(self, message: str) -> None:
+        # Ayarlar test bitmeden kapandıysa sekme (C++ tarafı) silinmiştir; geç gelen
+        # sonuç silinmiş widget'lara dokunup RuntimeError fırlatmasın.
+        if not Shiboken.isValid(self):
+            log.info("bağlantı testi sonucu ayarlar kapandıktan sonra geldi: %s", message)
+            return
         self._test_job = None
         self.llm_test_btn.setEnabled(True)
         self.llm_test_status.setText(message)

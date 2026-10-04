@@ -66,8 +66,12 @@ class ResultWindow(QMainWindow):
         self._ignored_session_id: str | None = None  # geçmiş görüntülenirken geç gelen sonuç
         self._displayed_session_id: str | None = None  # düzenleme sinyaline eklenen oturum kimliği
         self._viewing_history = False  # geçmişten bir oturum gösteriliyor (canlı değil)
+        # Denetleyici RESULT'ta mı (bağlanmamışsa ya da durumu bilinmiyorsa serbest).
+        self._result_state = True
+        # on_session çağrı sayacı: bekleyen düzenleme boşaltılınca iç içe gelen güncellemeyi
+        # fark etmek için (bkz. _flush_pending_edit).
+        self._session_updates = 0
         self.close_after_copy = False
-        self.raise_on_result = False
         self._last_shown_text = ""
         self._pending_suggestion: tuple[str, str] | None = None
         self._edit_timer = QTimer(self)
@@ -192,7 +196,22 @@ class ResultWindow(QMainWindow):
     def set_llm_enabled(self, enabled: bool) -> None:
         """LLM kapalıyken çeviri / prompt düğmeleri kullanılamaz."""
         self._llm_enabled = enabled
-        hint = "" if enabled else "LLM kapalı; Ayarlar'dan açabilirsiniz."
+        self._sync_llm_buttons()
+
+    def _sync_llm_buttons(self) -> None:
+        """Çeviri / prompt düğmeleri yalnızca LLM açık, canlı oturum gösteriliyor, bekleyen
+        istek yok ve denetleyici RESULT'tayken kullanılabilir. Geçmişten bir oturum ya da
+        süren yeni bir dikte sırasında istek her zaman canlı oturuma gider ve sonucu ekrandaki
+        metinle ilgisi olmayan bir oturumu ezerdi (bkz. on_session/_ignored_session_id)."""
+        if not self._llm_enabled:
+            hint = "LLM kapalı; Ayarlar'dan açabilirsiniz."
+        elif self._viewing_history:
+            hint = "Geçmişten bir oturum görüntülenirken kullanılamaz."
+        elif not self._result_state:
+            hint = "Dikte sürerken kullanılamaz."
+        else:
+            hint = ""
+        enabled = not hint and self._pending is None
         for btn in (self.translate_btn, self.enhance_btn):
             btn.setEnabled(enabled)
             btn.setToolTip(hint)
@@ -206,16 +225,16 @@ class ResultWindow(QMainWindow):
             pane.exclude_history = exclude
         self.history_panel.exclude_history = exclude
 
-    def bind(
-        self, controller, close_after_copy: bool = False, raise_on_result: bool = False
-    ) -> None:
+    def bind(self, controller, close_after_copy: bool = False) -> None:
         """Denetleyicinin `session_updated`, `state_changed` ve `error` sinyallerine bağlanır.
 
-        `close_after_copy`: kopyalayınca pencere gizlenir; `raise_on_result`: sonuç gelince
-        pencere öne getirilip düzeltilmiş metne odaklanılır."""
+        `close_after_copy`: kopyalayınca pencere gizlenir. Sonuçta pencereyi öne getirme
+        kararı uygulamadadır (yapıştırma gönderildiyse beklenir; bkz. `activate_result`)."""
         self._controller = controller
         self.close_after_copy = close_after_copy
-        self.raise_on_result = raise_on_result
+        state = getattr(controller, "state", None)
+        if isinstance(state, DictationState):
+            self._result_state = state is DictationState.RESULT
         self.set_llm_enabled(getattr(controller, "llm_enabled", True))
         controller.session_updated.connect(self.on_session)
         controller.state_changed.connect(self.on_state)
@@ -226,9 +245,14 @@ class ResultWindow(QMainWindow):
         if s.id == self._ignored_session_id:
             # Geçmişten bir oturum görüntüleniyor; iptal edilen isteğin geç sonucu yok sayılır.
             return
+        if self._flush_pending_edit():
+            # Kaydedilen düzenleme denetleyiciden yeni bir oturum olarak (iç içe) geldi ve
+            # zaten gösterildi; elimizdeki `s` düzenlemeden önceki eski metni taşır.
+            return
+        self._session_updates += 1
         self._displayed_session_id = s.id
         self._viewing_history = False
-        self.set_llm_enabled(self._llm_enabled)
+        self._sync_llm_buttons()
         self.raw_pane.set_text(s.raw_text)
         self.corrected_pane.set_text(s.corrected_text)
         self._last_shown_text = s.corrected_text
@@ -256,11 +280,9 @@ class ResultWindow(QMainWindow):
             state not in (DictationState.TRANSCRIBING, DictationState.CORRECTING)
         )
         self.cancel_action.setEnabled(state in BUSY_STATES)
-        if state is DictationState.RESULT:
-            if self.raise_on_result:
-                # 0 ms'ye erteleme: result_ready önce işlenir, yapıştırma hedefi korunur.
-                QTimer.singleShot(0, self._activate_result)
-        elif state is DictationState.RECORDING:
+        self._result_state = state is DictationState.RESULT
+        self._sync_llm_buttons()
+        if state is DictationState.RECORDING:
             self.output_pane.set_text("")
             self.output_pane.setVisible(False)
             self._finish_pending()
@@ -271,14 +293,17 @@ class ResultWindow(QMainWindow):
             self.output_pane.set_text("")
             self.output_pane.setVisible(False)
 
-    def _activate_result(self) -> None:
+    def activate_result(self) -> None:
+        """Pencereyi öne getirir ve düzeltilmiş metne odaklanır (sonuç gelince, ayar açıksa)."""
         self.showNormal()
         self.raise_()
         self.activateWindow()
         self.corrected_pane.editor.setFocus()
 
     def load_session(self, s: Session) -> None:
-        """Geçmişten seçilen oturumu pencereye yükler; bekleyen LLM isteği iptal edilir."""
+        """Geçmişten seçilen oturumu pencereye yükler; bekleyen LLM isteği iptal edilir.
+        Gösterilen metindeki henüz kaydedilmemiş düzenleme önce kaydedilir."""
+        self._flush_pending_edit()
         self._pending = None
         live = getattr(self._controller, "session", None)
         self._ignored_session_id = getattr(live, "id", None)
@@ -295,13 +320,7 @@ class ResultWindow(QMainWindow):
         self.output_pane.setVisible(bool(self.output_pane.text()))
         self.corrected_pane.set_highlights(s.changes)
         self._show_session_stats(s)
-        # Geçmişten bir oturum görüntülenirken bu iki düğme kapalı: istek her zaman canlı
-        # oturuma gider ve sonucu bu pencereye yazar — ekranda görünen geçmiş metniyle
-        # ilgisi olmayan bir sonuç canlı oturumu ezerdi (bkz. on_session/_ignored_session_id).
-        hint = "Geçmişten bir oturum görüntülenirken kullanılamaz."
-        for btn in (self.translate_btn, self.enhance_btn):
-            btn.setEnabled(False)
-            btn.setToolTip(hint)
+        self._sync_llm_buttons()  # geçmiş görüntülenirken çeviri/prompt kapalı
 
     # ---- butonlar
     def _on_translate(self) -> None:
@@ -320,6 +339,16 @@ class ResultWindow(QMainWindow):
 
     def _on_corrected_text_changed(self) -> None:
         self._edit_timer.start()  # her tuş vuruşunda yeniden başlar (debounce)
+
+    def _flush_pending_edit(self) -> bool:
+        """Debounce süresi dolmamış bir düzenleme varsa hemen yayar (metin değişmeden önce
+        kaybolmasın). Bu yayım iç içe bir `on_session` güncellemesine yol açtıysa True."""
+        if not self._edit_timer.isActive():
+            return False
+        self._edit_timer.stop()
+        before = self._session_updates
+        self._emit_text_edited()
+        return self._session_updates != before
 
     def _emit_text_edited(self) -> None:
         text = self.corrected_pane.text()
@@ -379,15 +408,13 @@ class ResultWindow(QMainWindow):
         self.output_pane.set_text("")
         self.output_pane.setVisible(True)
         self.output_pane.set_busy(True)
-        self.translate_btn.setEnabled(False)
-        self.enhance_btn.setEnabled(False)
+        self._sync_llm_buttons()
         self.statusBar().showMessage("LLM çalışıyor…")
 
     def _finish_pending(self) -> None:
         self._pending = None
         self.output_pane.set_busy(False)
-        self.translate_btn.setEnabled(self._llm_enabled)
-        self.enhance_btn.setEnabled(self._llm_enabled)
+        self._sync_llm_buttons()
         self.statusBar().clearMessage()
 
     # ---- iç

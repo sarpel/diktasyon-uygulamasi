@@ -5,6 +5,7 @@ iş parçacığına ulaşır."""
 
 from __future__ import annotations
 
+import functools
 import logging
 import sys
 import threading
@@ -107,7 +108,9 @@ class AudioRecorder(QObject):
     buckets_changed = Signal(object)
     limit_reached = Signal()
     silence_reached = Signal()
-    chunk_ready = Signal(object)
+    # (ses, akış belirteci): denetleyici, iptal edilmiş eski bir kayda ait geç teslim edilen
+    # parçayı `stream_token` ile karşılaştırıp yok sayar.
+    chunk_ready = Signal(object, int)
     error = Signal(str)
     warning = Signal(str)  # kaydı durdurmayan uyarılar (cihaz bulunamadı, ölü mikrofon)
 
@@ -149,6 +152,11 @@ class AudioRecorder(QObject):
         return self._stream is not None
 
     @property
+    def stream_token(self) -> int:
+        """Son `start()` ile açılan akışın belirteci; `chunk_ready` parçaları bunu taşır."""
+        return self._stream_token
+
+    @property
     def chunks_emitted(self) -> int:
         """Süren (ya da son `stop()` ile biten) kayıtta yayınlanan `chunk_ready` sayısı.
         Denetleyici, durdurma sonrası kuyrukta gecikip gelen parçaları beklemek için okur."""
@@ -173,7 +181,7 @@ class AudioRecorder(QObject):
     def _open_stream(self, device: int | None, wasapi: bool, token: int):
         extra = {"wasapi_auto_convert": True} if wasapi else {}
         return self._factory(
-            callback=self._on_audio,
+            callback=functools.partial(self._on_audio, token=token),
             samplerate=self._active_settings.sample_rate,
             channels=1,
             dtype="float32",
@@ -287,7 +295,7 @@ class AudioRecorder(QObject):
             log.warning("mikrofondan %.1f sn boyunca hiç sinyal gelmedi", warn_s)
             self.warning.emit(DEAD_MIC_MESSAGE)
 
-    def _on_audio(self, indata, frames, time_info, status) -> None:
+    def _on_audio(self, indata, frames, time_info, status, *, token: int = 0) -> None:
         if status:
             # input overflow zararsızdır (bir blok kaybı); cihaz kaybı finished_callback'le gelir.
             log.warning("audio status: %s", status)
@@ -322,7 +330,7 @@ class AudioRecorder(QObject):
         # sırasını belirler; tersi olursa son parça durdurma sonrası atılırdı.
         if chunk_to_emit is not None:
             self._chunks_emitted += 1  # yalnızca bu iş parçacığı yazar; stop() sonra okur
-            self.chunk_ready.emit(chunk_to_emit)
+            self.chunk_ready.emit(chunk_to_emit, token)
         if first_hit:
             self.limit_reached.emit()
         if frame is None:

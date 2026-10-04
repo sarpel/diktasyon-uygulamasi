@@ -41,10 +41,28 @@ def run_in_pool(
     fn'in fırlattığı her `Exception` günlüğe yazılır ve `on_error(str(exc))` olarak gelir.
     Dönen _Signals nesnesi, job bitene kadar referansı canlı tutmak için saklanmalıdır.
     `on_finished`, sonuç ya da hata geri çağrısından SONRA (aynı thread'de) çağrılır; iş
-    başlamadan bağlandığı için hızlı biten işlerde de kaçırılmaz."""
+    başlamadan bağlandığı için hızlı biten işlerde de kaçırılmaz.
+
+    Geri çağrılar da korunur: `on_result` istisna fırlatırsa günlüğe yazılır ve
+    `on_error` Türkçe bir mesajla çağrılır (çağıran durum makinesi takılı kalmasın);
+    `on_error`'ın kendi istisnası yalnızca günlüğe yazılır."""
     signals = _Signals()
-    signals.result.connect(on_result)
-    signals.error.connect(on_error)
+
+    def deliver_error(message: str) -> None:
+        try:
+            on_error(message)
+        except Exception:
+            log.exception("hata geri çağrısı da hata verdi")
+
+    def deliver_result(result: object) -> None:
+        try:
+            on_result(result)
+        except Exception as exc:
+            log.exception("sonuç geri çağrısı hata verdi")
+            deliver_error(f"Sonuç işlenirken beklenmeyen bir hata oluştu: {exc}")
+
+    signals.result.connect(deliver_result)
+    signals.error.connect(deliver_error)
     if on_finished is not None:
         signals.result.connect(lambda _r: on_finished())
         signals.error.connect(lambda _e: on_finished())
