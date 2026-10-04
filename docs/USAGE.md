@@ -55,8 +55,7 @@ penceresi açılır: her öğe için ✓/✗, bir ipucu ve gerekiyorsa tek tıkl
 Başlat/durdur/hata sesleri Ayarlar → Genel'den kapatılabilir. Aynı yerden, kayıt sırasında
 çalan medyanın (YouTube, Spotify…) duraklatılması açılabilir: yalnızca o an çalan oynatıcılar
 duraklatılır ve kayıt bitince sürdürülür (Linux'ta `playerctl` gerekir; Windows kurulum paketinde
-hazırdır, kaynaktan kurulumda `.[media]` extra'sı ve Python ≤ 3.12 gerekir; Python 3.13+
-üzerinde Windows'ta bu özellik devre dışıdır).
+hazırdır, kaynaktan kurulumda `.[media]` extra'sı gerekir).
 
 Kayıt başladıktan sonra birkaç saniye mikrofondan hiç ses gelmezse overlay'de uyarı çıkar.
 Kayıtlı mikrofon takılı değilse varsayılan mikrofon kullanılır ve bu bildirilir. Overlay'i

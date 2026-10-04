@@ -19,12 +19,12 @@ sorunların çözümünü anlatır. Günlük kullanım için bkz. [USAGE.md](USA
 
 | Bileşen | Gereksinim |
 |---|---|
-| İşletim sistemi | Windows 11 (birincil) veya masaüstü ortamlı bir Linux dağıtımı (X11 veya Wayland) |
+| İşletim sistemi | Windows 11 (birincil) veya masaüstü ortamlı bir Linux dağıtımı (X11 veya Wayland). macOS desteklenmez: NVIDIA/CUDA GPU yoktur |
 | GPU | **NVIDIA, CUDA destekli.** CPU'da çalışmaz (bilinçli ürün kararı). Hedef donanım: RTX 3060 Ti 8 GB |
 | GPU sürücüsü | CUDA 12 uyumlu NVIDIA sürücüsü (≥ 525). Ayrı CUDA Toolkit kurulumu **gerekmez** |
 | VRAM | Whisper `large-v3-turbo` ≈ 1,6 GB; yerel LLM (4B, q4) ≈ 3,5–4,5 GB. LLM'siz kullanımda 4 GB yeterli |
 | Disk | Uygulama birkaç GB (CUDA kütüphaneleri dâhil) + Whisper modeli ≈ 1,6 GB + (isteğe bağlı) Ollama modeli ≈ 4 GB |
-| Python (yalnızca kaynaktan kurulumda) | 3.11 veya daha yenisi (3.11–3.14 test edilir) |
+| Python (yalnızca kaynaktan kurulumda) | 3.11 veya daha yenisi; 3.11–3.14 test edilir. Python 3.15, PySide6/ctranslate2/onnxruntime o sürüm için paket yayımlayınca kendiliğinden çalışır (CI bunu ayrıca izler) |
 | Mikrofon | Sistemin tanıdığı herhangi bir giriş cihazı |
 
 `float16` hassasiyeti için Compute Capability ≥ 7.0 (RTX 20xx ve üzeri) gerekir. Daha eski
