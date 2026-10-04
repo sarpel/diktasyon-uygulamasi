@@ -9,7 +9,7 @@ import argparse
 import logging
 import sys
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import cast
 
@@ -86,9 +86,6 @@ from dikte.ui.tray import TrayIcon
 log = logging.getLogger(__name__)
 # Windows dışında global kısayol yoktur; masaüstü ortamı bu komuta bir tuş bağlar.
 CLI_TOGGLE_HINT = "dikte --toggle"
-# Arka plan işlerinin (durum kontrolü, VRAM sorgusu, medya) run_in_pool sinyal nesneleri:
-# iş bitene kadar canlı tutulmalı (bkz. _keep_job).
-_background_jobs: list = []
 # Çıkışta kuyruktaki medya pause() çağrısı için en fazla bekleme (MediaPauser zaman aşımı ~1,5 sn).
 MEDIA_QUIT_WAIT_MS = 2000
 # Çıkışta süren arka plan işleri (STT/LLM/durum kontrolü) için en fazla bekleme.
@@ -127,6 +124,9 @@ class AppContext:
     media_pool: QThreadPool | None = None
     hotkey_paste_last: GlobalHotkey | None = None  # isteğe bağlı: son sonucu yeniden yapıştırır
     shut_down: bool = False  # _shutdown bir kez çalışır (tepsi + aboutToQuit)
+    reload_pending: bool = False  # süren iş bitince model yeniden yüklenecek
+    # run_in_pool sinyal nesneleri iş bitene kadar canlı tutulur (bkz. _run_background).
+    background_jobs: set = field(default_factory=set)
 
 
 class _NullLlm:
@@ -264,6 +264,7 @@ def _wire(ctx: AppContext) -> None:
     ctx.cancel_hotkey.activated.connect(c.cancel)
     c.state_changed.connect(lambda s: _sync_cancel_hotkey(ctx, s))
     c.state_changed.connect(lambda s: _sync_media(ctx, s))
+    c.state_changed.connect(lambda s: _reload_if_pending(ctx, s))
     ctx.overlay.moved.connect(lambda x, y: _save_overlay_position(ctx, x, y))
     ctx.tray.paste_last_requested.connect(lambda: _paste_last(ctx))
     c.warning.connect(ctx.overlay.show_warning)
@@ -474,13 +475,13 @@ def _refresh_status_info(ctx: AppContext) -> None:
 
 def _warn_if_low_vram(ctx: AppContext) -> None:
     """`nvidia-smi` 3 sn'ye kadar sürebilir; GUI iş parçacığını bloke etmemek için arka planda."""
-    job = run_in_pool(
+    _run_background(
+        ctx,
         query_vram,
         lambda info: _show_low_vram_warning(ctx, info),
         lambda e: log.warning("VRAM sorgusu başarısız: %s", e),
         QThreadPool.globalInstance(),
     )
-    _keep_job(job)
 
 
 def _show_low_vram_warning(ctx: AppContext, info) -> None:
@@ -627,13 +628,13 @@ def _sync_media(ctx: AppContext, state: DictationState) -> None:
         ctx.media_pool.setMaxThreadCount(1)
     ctx.media_paused = recording
     action = ctx.media.pause if recording else ctx.media.resume
-    job = run_in_pool(
+    _run_background(
+        ctx,
         action,
         lambda _r: None,
         lambda e: log.warning("medya denetimi başarısız: %s", e),
         ctx.media_pool,
     )
-    _keep_job(job)
 
 
 def _sync_cancel_hotkey(ctx: AppContext, state: DictationState) -> None:
@@ -657,7 +658,8 @@ def _check_health_async(ctx: AppContext, on_done: Callable[[tuple[HealthItem, ..
     LLM kontrolü ağ isteği yapar ve en kötü durumda uzun sürebilir; senkron çağrı GUI iş
     parçacığını (ve orada dönen IPC sunucusunu — bkz. single_instance.py) bloke ederdi.
     Hata olursa yalnızca günlüğe yazılır, `on_done` çağrılmaz."""
-    job = run_in_pool(
+    _run_background(
+        ctx,
         lambda: check_health(
             ctx.settings,
             cuda_probe=default_cuda_probe,
@@ -668,18 +670,25 @@ def _check_health_async(ctx: AppContext, on_done: Callable[[tuple[HealthItem, ..
         lambda e: log.error("durum kontrolü başarısız: %s", e),
         QThreadPool.globalInstance(),
     )
-    _keep_job(job)
 
 
-def _keep_job(job) -> None:
-    """run_in_pool sinyallerini iş bitene kadar canlı tutar; biten işler listeden düşer."""
-    _background_jobs.append(job)
-    for signal_name in ("result", "error"):
-        signal = getattr(job, signal_name, None)
-        if signal is not None:
-            signal.connect(
-                lambda *_a, job=job: job in _background_jobs and _background_jobs.remove(job)
-            )
+def _run_background(
+    ctx: AppContext,
+    fn: Callable[[], object],
+    on_result: Callable[[object], None],
+    on_error: Callable[[str], None],
+    pool: QThreadPool | None = None,
+) -> None:
+    """`run_in_pool` ile çalıştırır; sinyal nesnesi iş bitene kadar `ctx.background_jobs`ta
+    tutulur. Bırakma `on_finished` ile yapılır: iş başlamadan bağlandığı için hızlı biten
+    işlerde de kaçmaz (geri çağrı GUI iş parçacığında, eklemeden sonra çalışır)."""
+    job = None
+
+    def _forget() -> None:
+        ctx.background_jobs.discard(job)
+
+    job = run_in_pool(fn, on_result, on_error, pool, on_finished=_forget)
+    ctx.background_jobs.add(job)
 
 
 def _show_health_dialog(
@@ -811,10 +820,12 @@ def _apply_paste_last_hotkey(ctx: AppContext) -> None:
     hk = ctx.hotkey_paste_last
     if hk is None:
         return
-    hk.unregister()
     spec = ctx.settings.hotkey_paste_last
     if not spec or sys.platform != "win32":
+        hk.unregister()
         return
+    # Önceden unregister() yok: register() eskisinin yerine geçer ve başarısızlıkta onu
+    # geri kaydeder; önce bırakılsaydı geri yüklenecek bir kısayol kalmazdı.
     if not hk.register(spec):
         ctx.tray.notify(
             APP_NAME,
@@ -824,17 +835,23 @@ def _apply_paste_last_hotkey(ctx: AppContext) -> None:
 
 
 def _apply_mode_hotkeys(ctx: AppContext) -> None:
-    """Çeviri/prompt kısayolları isteğe bağlıdır; boşsa kapalı kalır, kaydedilemezse
-    yalnızca günlüğe düşer (ana kısayol gibi kritik değildir, tepsiyi meşgul etmez)."""
+    """Çeviri/prompt kısayolları isteğe bağlıdır; boşsa kapalı kalır. Kaydedilemezse
+    önceki kısayol korunur (GlobalHotkey.register geri yükler) ve kullanıcı bilgilendirilir."""
     mode_labels = {"translate": "", "prompt": ""}
+    titles = {"translate": "Çeviri", "prompt": "Prompt"}
     for hk, spec, name in _mode_hotkeys(ctx):
-        hk.unregister()
         if not spec or sys.platform != "win32":
+            hk.unregister()
             continue
-        if hk.register(spec):
-            mode_labels[name] = hk.label
-        else:
+        # Önceden unregister() yok: register() başarısızlıkta önceki kısayolu geri kaydeder.
+        if not hk.register(spec):
             log.warning("%s kısayolu kaydedilemedi: %s", name, spec)
+            ctx.tray.notify(
+                APP_NAME,
+                f"{titles[name]} kısayolu kaydedilemedi: {spec}. "
+                "Başka bir uygulama kullanıyor olabilir; Ayarlar'dan değiştirin.",
+            )
+        mode_labels[name] = hk.label  # başarısızlıkta geri yüklenen eski kısayol (ya da boş)
     ctx.tray.set_mode_labels(mode_labels["translate"], mode_labels["prompt"])
 
 
@@ -911,15 +928,16 @@ def _reload_model(ctx: AppContext) -> None:
 
 
 def _warm_up_when_idle(ctx: AppContext) -> None:
-    """Süren iş bitince (motor modeli zaten düşürdü) yeni modeli bir kez yükler."""
+    """Süren iş bitince (motor modeli zaten düşürdü) yeni modeli bir kez yükler; art arda
+    istekler tek bir yüklemede birleşir (bkz. `_reload_if_pending`)."""
+    ctx.reload_pending = True
 
-    def _on_state(state: DictationState) -> None:
-        if state in BUSY_STATES:
-            return
-        ctx.controller.state_changed.disconnect(_on_state)
-        _reload_model(ctx)
 
-    ctx.controller.state_changed.connect(_on_state)
+def _reload_if_pending(ctx: AppContext, state: DictationState) -> None:
+    if not ctx.reload_pending or state in BUSY_STATES:
+        return
+    ctx.reload_pending = False
+    _reload_model(ctx)
 
 
 def _apply_autostart(ctx: AppContext, enabled: bool) -> None:

@@ -368,6 +368,42 @@ def test_apply_hotkey_notifies_on_windows_failure(ctx, monkeypatch):
     assert len(notifications) == 1
 
 
+@pytest.mark.parametrize(
+    ("field", "attr"),
+    [
+        ("hotkey_translate", "hotkey_translate"),
+        ("hotkey_prompt", "hotkey_prompt"),
+        ("hotkey_paste_last", "hotkey_paste_last"),
+    ],
+)
+def test_optional_hotkey_failure_keeps_previous_binding_and_notifies(
+    ctx, monkeypatch, field, attr
+):
+    """register() başarısızlıkta önceki kısayolu geri kaydeder; öncesinde unregister()
+    çağrılırsa geri yüklenecek bir şey kalmaz ve kullanıcı kısayolsuz kalır."""
+    monkeypatch.setattr(app_mod.sys, "platform", "win32")
+    monkeypatch.setattr(ctx.hotkey, "register", lambda _spec, **kw: True)
+    ctx.settings = ctx.settings.model_copy(update={field: "ctrl+alt+k"})
+    calls = []
+    hk = getattr(ctx, attr)
+    monkeypatch.setattr(hk, "unregister", lambda: calls.append("unregister"))
+    monkeypatch.setattr(hk, "register", lambda spec, **kw: calls.append("register") or False)
+    notes = []
+    monkeypatch.setattr(ctx.tray, "notify", lambda *a, **k: notes.append(a[1]))
+    app_mod._apply_hotkey(ctx)
+    assert calls == ["register"]
+    assert any("ctrl+alt+k" in n and "kaydedilemedi" in n for n in notes)
+
+
+def test_empty_optional_hotkey_is_unregistered(ctx, monkeypatch):
+    monkeypatch.setattr(app_mod.sys, "platform", "win32")
+    monkeypatch.setattr(ctx.hotkey, "register", lambda _spec, **kw: True)
+    calls = []
+    monkeypatch.setattr(ctx.hotkey_translate, "unregister", lambda: calls.append("unregister"))
+    app_mod._apply_hotkey(ctx)
+    assert calls == ["unregister"]
+
+
 def test_downgrade_notice_is_shown_once_ready(ctx):
     notifications = []
     ctx.tray.notify = lambda *a, **k: notifications.append(a[1])
@@ -973,6 +1009,27 @@ def test_model_change_while_busy_reloads_when_idle(ctx, monkeypatch):
     ctx.controller.state_changed.emit(DictationState.RESULT)
     ctx.controller.state_changed.emit(DictationState.IDLE)
     assert warmed == [True]
+
+
+def test_repeated_warm_up_requests_reload_once(ctx, monkeypatch):
+    warmed = []
+    monkeypatch.setattr(ctx.controller, "warm_up", lambda: warmed.append(True))
+    app_mod._warm_up_when_idle(ctx)
+    app_mod._warm_up_when_idle(ctx)  # ör. model indirildi + ayarlarda model değişti
+    ctx.controller.state_changed.emit(DictationState.CORRECTING)
+    assert warmed == []
+    ctx.controller.state_changed.emit(DictationState.RESULT)
+    ctx.controller.state_changed.emit(DictationState.IDLE)
+    assert warmed == [True]
+
+
+def test_background_jobs_are_released_when_finished(ctx, qtbot):
+    results = []
+    app_mod._run_background(ctx, lambda: 42, results.append, lambda _e: None)
+    app_mod._run_background(ctx, lambda: 1 / 0, lambda _r: None, results.append)
+    qtbot.waitUntil(lambda: len(results) == 2, timeout=2000)
+    qtbot.waitUntil(lambda: not ctx.background_jobs, timeout=2000)
+    assert not hasattr(app_mod, "_background_jobs")
 
 
 def test_config_issues_are_reported(ctx, monkeypatch):
