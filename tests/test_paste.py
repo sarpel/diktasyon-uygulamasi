@@ -18,9 +18,14 @@ def test_input_struct_matches_win32_abi():
 
 
 @pytest.fixture(autouse=True)
-def _reset_warning():
+def _reset_warning(monkeypatch):
+    # Testler X11 oturumu varsayar; geliştiricinin Wayland masaüstü sonucu değiştirmesin.
+    monkeypatch.delenv("WAYLAND_DISPLAY", raising=False)
+    monkeypatch.setenv("XDG_SESSION_TYPE", "x11")
+    paste._warned.clear()
     paste._warned["tools"] = False
     yield
+    paste._warned.clear()
     paste._warned["tools"] = False
 
 
@@ -161,9 +166,16 @@ def test_type_unicode_text_linux_xdotool(monkeypatch):
     )
     ran = []
     monkeypatch.setattr(
-        paste.subprocess, "run", lambda cmd, **k: ran.append(cmd) or SimpleNamespace(returncode=0)
+        paste.subprocess,
+        "run",
+        lambda cmd, **k: ran.append((cmd, k)) or SimpleNamespace(returncode=0),
     )
-    assert paste.type_unicode_text("çay") is True and ran[0][-1] == "çay"
+    assert paste.type_unicode_text("çay") is True
+    cmd, kwargs = ran[0]
+    # Dikte edilen metin /proc/<pid>/cmdline'da görünmesin diye stdin'den verilir.
+    assert "çay" not in cmd
+    assert cmd[-2:] == ["--file", "-"]
+    assert kwargs["input"] == "çay"
 
 
 def test_type_unicode_text_without_tools_returns_false(monkeypatch):
@@ -249,3 +261,236 @@ def test_linux_combo_ctrl_z_for_undo(monkeypatch):
 
 def test_windows_ctrl_z_vks():
     assert paste._COMBO_VKS["ctrl+z"] == (paste.VK_CONTROL, paste.VK_Z)
+
+
+# --- Windows: basılı tutulan değiştirici tuşlar (bas-konuş kısayolu) -------------------
+
+
+class FakeClock:
+    def __init__(self):
+        self.now = 0.0
+        self.sleeps = []
+
+    def __call__(self):
+        return self.now
+
+    def sleep(self, dt):
+        self.sleeps.append(dt)
+        self.now += dt
+
+
+class FakeUser32:
+    """`ctypes.windll.user32` taklidi: GetAsyncKeyState + SendInput."""
+
+    def __init__(self, clock, held=None, sent_result=None):
+        self.clock = clock
+        self.held = dict(held or {})  # vk → bu ana dek basılı (inf = hiç bırakılmaz)
+        self.sent_result = sent_result
+        self.calls = []
+
+    def GetAsyncKeyState(self, vk):
+        return -32768 if self.clock() < self.held.get(vk, -1) else 0
+
+    def SendInput(self, n, arr, size):
+        assert size == ctypes.sizeof(paste._INPUT)
+        self.calls.append([(arr[i].ki.wVk, arr[i].ki.wScan, arr[i].ki.dwFlags) for i in range(n)])
+        return n if self.sent_result is None else self.sent_result(n)
+
+
+UP = paste.KEYEVENTF_KEYUP
+
+
+def _send_win(user32, clock):
+    return paste._send_windows("ctrl+v", user32=user32, sleep=clock.sleep, clock=clock)
+
+
+def test_windows_paste_waits_until_hotkey_modifiers_are_released():
+    clock = FakeClock()
+    user32 = FakeUser32(clock, held={paste.VK_CONTROL: 0.1, paste.VK_MENU: 0.05})
+    assert _send_win(user32, clock) is True
+    assert 0.1 <= clock.now < paste._MODIFIER_WAIT_S
+    # Kullanıcı bıraktı: yalnızca kendi Ctrl+V'miz gönderilir, ek tuş yok.
+    assert [(vk, f) for vk, _s, f in user32.calls[0]] == [
+        (paste.VK_CONTROL, 0),
+        (paste.VK_V, 0),
+        (paste.VK_V, UP),
+        (paste.VK_CONTROL, UP),
+    ]
+
+
+def test_windows_paste_releases_still_held_modifiers_after_timeout():
+    clock = FakeClock()
+    held = {paste.VK_CONTROL: float("inf"), paste.VK_SHIFT: float("inf")}
+    user32 = FakeUser32(clock, held=held)
+    assert _send_win(user32, clock) is True
+    assert clock.now >= paste._MODIFIER_WAIT_S
+    events = [(vk, f) for vk, _s, f in user32.calls[0]]
+    # Önce basılı kalanlar bırakılır (yeniden basılmaz), sonra Ctrl+V.
+    assert sorted(events[:2]) == sorted([(paste.VK_SHIFT, UP), (paste.VK_CONTROL, UP)])
+    assert events[2:] == [
+        (paste.VK_CONTROL, 0),
+        (paste.VK_V, 0),
+        (paste.VK_V, UP),
+        (paste.VK_CONTROL, UP),
+    ]
+
+
+def test_windows_releasing_alt_or_win_is_masked_to_avoid_menu_or_start():
+    """Tek başına Alt/Win bırakmak menü çubuğunu/Başlat menüsünü açar; önce atanmamış bir
+    "maske" tuşu basılıp bırakılır."""
+    clock = FakeClock()
+    user32 = FakeUser32(clock, held={paste.VK_LWIN: float("inf")})
+    assert _send_win(user32, clock) is True
+    events = [(vk, f) for vk, _s, f in user32.calls[0]]
+    assert events[:3] == [(paste.VK_MASK, 0), (paste.VK_MASK, UP), (paste.VK_LWIN, UP)]
+
+
+def test_windows_type_also_waits_for_modifiers_and_reports_typed():
+    clock = FakeClock()
+    user32 = FakeUser32(clock, held={paste.VK_CONTROL: float("inf")})
+    result = paste._type_windows("a", user32=user32, sleep=clock.sleep, clock=clock)
+    assert result is paste.TypeOutcome.TYPED
+    events = user32.calls[0]
+    assert events[0] == (paste.VK_CONTROL, 0, UP)
+    assert [s for _vk, s, _f in events[1:]] == [ord("a"), ord("a")]
+
+
+def test_windows_type_partial_send_is_reported_as_partial():
+    clock = FakeClock()
+    user32 = FakeUser32(clock, sent_result=lambda n: n - 2)
+    result = paste._type_windows("merhaba", user32=user32, sleep=clock.sleep, clock=clock)
+    assert result is paste.TypeOutcome.PARTIAL
+
+
+def test_windows_type_nothing_sent_is_failed():
+    clock = FakeClock()
+    user32 = FakeUser32(clock, sent_result=lambda n: 0)
+    result = paste._type_windows("merhaba", user32=user32, sleep=clock.sleep, clock=clock)
+    assert result is paste.TypeOutcome.FAILED
+
+
+def test_windows_paste_fails_when_sendinput_blocked():
+    clock = FakeClock()
+    user32 = FakeUser32(clock, sent_result=lambda n: 0)
+    assert _send_win(user32, clock) is False
+
+
+# --- Linux: Wayland ---------------------------------------------------------------------
+
+WAYLAND_ENV = {"XDG_SESSION_TYPE": "wayland", "WAYLAND_DISPLAY": "wayland-0"}
+
+
+def _both_tools(monkeypatch, returncodes, stderr=""):
+    monkeypatch.setattr(paste.sys, "platform", "linux")
+    monkeypatch.setattr(paste.shutil, "which", lambda n: f"/usr/bin/{n}")
+    ran = []
+
+    def run(cmd, **kwargs):
+        ran.append((cmd, kwargs))
+        name = cmd[0].rsplit("/", 1)[-1]
+        return SimpleNamespace(returncode=returncodes[name], stderr=stderr)
+
+    monkeypatch.setattr(paste.subprocess, "run", run)
+    return ran
+
+
+def test_is_wayland_session_detection():
+    assert paste.is_wayland_session({"XDG_SESSION_TYPE": "wayland"}) is True
+    assert paste.is_wayland_session({"WAYLAND_DISPLAY": "wayland-0"}) is True
+    assert paste.is_wayland_session({"XDG_SESSION_TYPE": "x11", "DISPLAY": ":0"}) is False
+    assert paste.is_wayland_session({}) is False
+
+
+def test_wayland_paste_prefers_wtype(monkeypatch):
+    ran = _both_tools(monkeypatch, {"wtype": 0, "xdotool": 0})
+    assert paste.send_paste_keystroke(env=WAYLAND_ENV) is True
+    assert [c[0][0] for c in ran] == ["/usr/bin/wtype"]
+
+
+def test_wayland_detected_from_os_environ(monkeypatch):
+    ran = _both_tools(monkeypatch, {"wtype": 0, "xdotool": 0})
+    monkeypatch.setenv("WAYLAND_DISPLAY", "wayland-0")
+    assert paste.send_paste_keystroke() is True
+    assert ran[0][0][0] == "/usr/bin/wtype"
+
+
+def test_wayland_without_virtual_keyboard_reports_not_pasted(monkeypatch, caplog):
+    """GNOME sanal klavye protokolünü desteklemez; wtype başarısız olur. XWayland yoksa
+    xdotool denenmez ve sonuç "yapıştırılmadı" olur (başarı sanılmaz)."""
+    ran = _both_tools(
+        monkeypatch,
+        {"wtype": 1, "xdotool": 0},
+        stderr="Compositor does not support the virtual keyboard protocol",
+    )
+    assert paste.send_paste_keystroke(env=WAYLAND_ENV) is False
+    assert [c[0][0] for c in ran] == ["/usr/bin/wtype"]
+    assert "sanal klavye" in caplog.text
+
+
+def test_wayland_xdotool_fallback_is_not_counted_as_success(monkeypatch, caplog):
+    """xdotool Wayland'de yalnızca XWayland pencerelerine ulaşır: çıkış kodu 0 olsa da
+    yapıştırma doğrulanamaz. Başarı sayılırsa pano geri yüklenir ve dikte kaybolurdu."""
+    ran = _both_tools(monkeypatch, {"wtype": 1, "xdotool": 0})
+    env = {**WAYLAND_ENV, "DISPLAY": ":0"}
+    assert paste.send_paste_keystroke(env=env) is False
+    assert [c[0][0] for c in ran] == ["/usr/bin/wtype", "/usr/bin/xdotool"]
+    assert "XWayland" in caplog.text
+
+
+def test_paste_active_window_forwards_env(monkeypatch):
+    ran = _both_tools(monkeypatch, {"wtype": 0, "xdotool": 0})
+    assert paste.paste_active_window({42}, env=WAYLAND_ENV) is True
+    assert ran[0][0][0] == "/usr/bin/wtype"
+
+
+def test_wayland_typing_prefers_wtype_from_stdin(monkeypatch):
+    ran = _both_tools(monkeypatch, {"wtype": 0, "xdotool": 0})
+    assert paste.type_text("gizli metin", env=WAYLAND_ENV) is paste.TypeOutcome.TYPED
+    cmd, kwargs = ran[0]
+    assert cmd == ["/usr/bin/wtype", "-"]
+    assert kwargs["input"] == "gizli metin"
+
+
+def test_wayland_typing_via_xdotool_is_unverified(monkeypatch):
+    _both_tools(monkeypatch, {"wtype": 1, "xdotool": 0})
+    env = {**WAYLAND_ENV, "DISPLAY": ":0"}
+    assert paste.type_text("merhaba", env=env) is paste.TypeOutcome.UNVERIFIED
+    assert paste.type_unicode_text("merhaba", env=env) is False
+
+
+# --- Linux: zaman aşımı / kısmi yazma ------------------------------------------------------
+
+
+def test_typing_timeout_is_partial_and_does_not_retry_other_tool(monkeypatch, caplog):
+    monkeypatch.setattr(paste.sys, "platform", "linux")
+    monkeypatch.setattr(paste.shutil, "which", lambda n: f"/usr/bin/{n}")
+    ran = []
+
+    def run(cmd, **kwargs):
+        ran.append(cmd[0])
+        raise subprocess.TimeoutExpired(cmd, kwargs["timeout"])
+
+    monkeypatch.setattr(paste.subprocess, "run", run)
+    assert paste.type_text("uzun metin") is paste.TypeOutcome.PARTIAL
+    # Yarıda kesilen metni ikinci araçla baştan yazmak yinelenmiş metin üretirdi.
+    assert ran == ["/usr/bin/xdotool"]
+    assert paste.type_unicode_text("uzun metin") is False
+    assert "panoda" in caplog.text
+
+
+def test_type_text_failed_when_no_tools(monkeypatch):
+    monkeypatch.setattr(paste.sys, "platform", "linux")
+    monkeypatch.setattr(paste.shutil, "which", lambda n: None)
+    assert paste.type_text("merhaba") is paste.TypeOutcome.FAILED
+
+
+def test_type_text_uses_injected_sender():
+    assert paste.type_text("a", sender=lambda t: True) is paste.TypeOutcome.TYPED
+    assert paste.type_text("a", sender=lambda t: False) is paste.TypeOutcome.FAILED
+
+
+def test_type_outcome_messages_are_turkish():
+    assert "panoda" in paste.TypeOutcome.PARTIAL.user_message
+    assert "bir kısmı" in paste.TypeOutcome.PARTIAL.user_message
+    assert "panoda" in paste.TypeOutcome.FAILED.user_message
+    assert paste.TypeOutcome.TYPED.user_message == ""
