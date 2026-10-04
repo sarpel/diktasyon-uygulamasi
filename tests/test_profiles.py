@@ -43,3 +43,22 @@ def test_longest_substring_match_wins():
 def test_exact_match_is_case_insensitive_and_ignores_exe_suffix():
     upper = AppProfile(name="Kod", match="Code")
     assert match_profile((AppProfile(name="X", match="cod"), upper), "CODE.EXE") is upper
+
+
+def test_match_with_exe_suffix_matches_stem_foreground_name():
+    # Ön plan yoklayıcısı ".exe"siz kök döndürür; profil "KeePass.exe" diye yazılmış olabilir.
+    keepass = AppProfile(name="KeePass", match="KeePass.exe")
+    assert match_profile((keepass,), "keepass") is keepass
+    assert match_profile((keepass,), "KeePass.exe") is keepass
+
+
+def test_match_with_exe_suffix_still_matches_by_substring():
+    code = AppProfile(name="Kod", match="Code.exe")
+    assert match_profile((code,), "vscode") is code
+    assert match_profile((code,), "explorer") is None
+
+
+def test_exe_suffix_profile_exact_stem_beats_longer_substring():
+    code = AppProfile(name="Kod", match="Code.exe")
+    vscode = AppProfile(name="VS Code", match="vscode")
+    assert match_profile((vscode, code), "code") is code
