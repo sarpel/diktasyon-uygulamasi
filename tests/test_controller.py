@@ -1250,3 +1250,68 @@ def test_undo_phrase_is_plain_text_when_voice_commands_off(qtbot):
     c.toggle()
     qtbot.waitUntil(lambda: c.state is DictationState.RESULT, timeout=5000)
     assert c.session.corrected_text == "Geri al."
+
+
+# ---- yeni oturum yayını ve geçmiş senkronu (boş satır/yinelenen kimlik regresyonu)
+
+
+def _reach_result(c, qtbot):
+    c.toggle()
+    c.toggle()
+    qtbot.waitUntil(lambda: c.state is DictationState.RESULT, timeout=3000)
+
+
+def test_new_session_is_not_emitted_while_still_in_result(ctl, qtbot):
+    """Yeni (boş) oturum RESULT'tayken yayınlanırsa app geçmişe boş satır yazıyordu."""
+    c, *_ = ctl
+    _reach_result(c, qtbot)
+    seen = []
+    c.session_updated.connect(lambda s: seen.append((c.state, s.raw_text)))
+    c.start_recording()
+    assert seen and seen[0][0] is not DictationState.RESULT
+
+
+def test_transcribe_file_does_not_emit_new_session_in_result(qtbot):
+    c = DictationController(
+        Settings(),
+        recorder=FakeRecorder(),
+        stt=FakeStt(),
+        llm=FakeLlm(),
+        pool=QThreadPool(),
+        audio_loader=lambda path: np.zeros(16000, dtype=np.float32),
+    )
+    _reach_result(c, qtbot)
+    seen = []
+    c.session_updated.connect(lambda s: seen.append(c.state))
+    c.transcribe_file("/tmp/x.wav")
+    assert seen and seen[0] is not DictationState.RESULT
+    qtbot.waitUntil(lambda: c.state is DictationState.RESULT, timeout=3000)
+
+
+def test_retry_does_not_emit_new_session_in_result(qtbot, tmp_path):
+    stt = FailingStt()
+    c = _failing_ctl(tmp_path, stt)
+    c.toggle()
+    c.toggle()
+    qtbot.waitUntil(lambda: c.state is DictationState.IDLE, timeout=3000)
+    stt.transcribe = lambda audio, language=None, **kw: (  # type: ignore[method-assign]
+        TranscriptResult("merhaba dünya", "tr", 1.0, ())
+    )
+    _reach_result(c, qtbot)
+    seen = []
+    c.session_updated.connect(lambda s: seen.append(c.state))
+    assert c.retry_last_failed()
+    assert seen and seen[0] is not DictationState.RESULT
+    qtbot.waitUntil(lambda: c.state is DictationState.RESULT, timeout=3000)
+
+
+def test_failed_start_from_result_keeps_previous_session(ctl, qtbot):
+    c, rec, *_ = ctl
+    _reach_result(c, qtbot)
+    before = c.session
+    seen = []
+    c.session_updated.connect(seen.append)
+    rec._fail_to_start = True
+    c.start_recording()
+    assert c.state is DictationState.RESULT
+    assert c.session is before and seen == []

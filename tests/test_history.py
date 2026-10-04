@@ -229,3 +229,34 @@ def test_load_uses_cache_until_file_changes(tmp_path: Path, monkeypatch):
     other.append(Session(raw_text="dış değişiklik uzun metin"))
     assert h.load()[-1].raw_text == "dış değişiklik uzun metin"
     assert parsed
+
+
+# ---- yinelenen kimlik / boş oturum
+
+
+def test_append_with_existing_id_replaces_instead_of_duplicating(tmp_path: Path):
+    h = History(tmp_path / "h.jsonl", limit=10)
+    s = Session(raw_text="a", corrected_text="A.")
+    h.append(Session(raw_text="önce"))
+    h.append(s)
+    h.append(Session(raw_text="sonra"))
+    h.append(s.with_(corrected_text="A düzeltildi."))
+    loaded = h.load()
+    assert [x.raw_text for x in loaded] == ["önce", "a", "sonra"]
+    assert loaded[1].corrected_text == "A düzeltildi."
+
+
+def test_empty_session_is_not_persisted(tmp_path: Path):
+    p = tmp_path / "h.jsonl"
+    h = History(p, limit=10)
+    h.append(Session())
+    h.update(Session())
+    assert h.load() == () and not p.exists()
+
+
+def test_update_with_empty_text_keeps_existing_row(tmp_path: Path):
+    h = History(tmp_path / "h.jsonl", limit=10)
+    s = Session(raw_text="a", corrected_text="A.")
+    h.append(s)
+    h.update(Session(id=s.id))
+    assert [x.corrected_text for x in h.load()] == ["A."]

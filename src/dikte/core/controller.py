@@ -240,9 +240,7 @@ class DictationController(QObject):
         self._gen += 1  # eski çeviri/prompt gibi bekleyen işler bu oturuma yazılmasın
         self._active_profile = None
         self._source = "file"
-        self._session = Session(source_path=path)
-        self.session_updated.emit(self._session)
-        self._set_state(DictationState.TRANSCRIBING)
+        self._begin_session(Session(source_path=path), DictationState.TRANSCRIBING)
         lang = self._settings.stt.language
         self._spawn(
             lambda: self._stt.transcribe(self._audio_loader(path), lang),
@@ -269,9 +267,7 @@ class DictationController(QObject):
         self._active_profile = None
         self._source = "retry"
         self._reset_chunks()
-        self._session = Session()
-        self.session_updated.emit(self._session)
-        self._set_state(DictationState.TRANSCRIBING)
+        self._begin_session(Session(), DictationState.TRANSCRIBING)
         lang = self._settings.stt.language
         self._spawn(
             lambda: self._stt.transcribe(load_wav(path), lang),
@@ -352,24 +348,34 @@ class DictationController(QObject):
         self._session_audio = []
         self._failure = None
 
-    def _start_recording(self, mode: str = "correct", *, profile: AppProfile | None = None) -> None:
-        self._gen += 1  # eski çeviri/prompt gibi bekleyen işler bu oturuma yazılmasın
-        self._active_profile = profile
-        self._source = "mic"
-        effective_mode = profile.mode if profile and mode == "correct" else mode
-        self._session = Session(mode=effective_mode, profile=profile.name if profile else "")
+    def _begin_session(self, session: Session, state: DictationState) -> None:
+        """Yeni oturuma geçer: önce oturum ve durum değişir, `session_updated` EN SON
+        yayınlanır. RESULT durumundayken boş oturum yayınlanırsa geçmiş senkronu
+        (`app._sync_history_on_edit`) onu önceki sonucun yerine boş satır olarak yazardı."""
+        self._session = session
+        self._set_state(state)
         self.session_updated.emit(self._session)
-        self._reset_chunks()
+
+    def _start_recording(self, mode: str = "correct", *, profile: AppProfile | None = None) -> None:
         # Parçalama kipi bu kayıt boyunca sabittir (kayıt ortası update_settings değiştirmez).
         self._apply_chunking()
-        self._chunk_mode = self._settings.stt.live_chunk_s > 0
         self._recorder.start()
         if not self._recorder.is_recording:
             # AudioRecorder.start() mikrofon açılamazsa hatayı zaten error sinyaliyle
-            # bildirdi (_on_recorder_error tetiklendi); burada IDLE'a geçmeyip RECORDING
-            # göstermek, hiç ses yakalanmayan bir kaydı kullanıcıya "kayıtta" gösterirdi.
+            # bildirdi (_on_recorder_error tetiklendi). Önceki oturum/durum (ör. RESULT
+            # ekranındaki sonuç) olduğu gibi kalır; hiç ses yakalanmayan bir kayıt
+            # kullanıcıya "kayıtta" gösterilmez.
             return
-        self._set_state(DictationState.RECORDING)
+        self._gen += 1  # eski çeviri/prompt gibi bekleyen işler bu oturuma yazılmasın
+        self._active_profile = profile
+        self._source = "mic"
+        self._reset_chunks()
+        self._chunk_mode = self._settings.stt.live_chunk_s > 0
+        effective_mode = profile.mode if profile and mode == "correct" else mode
+        self._begin_session(
+            Session(mode=effective_mode, profile=profile.name if profile else ""),
+            DictationState.RECORDING,
+        )
 
     def _stop_and_transcribe(self) -> None:
         audio: np.ndarray = self._recorder.stop()

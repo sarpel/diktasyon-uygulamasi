@@ -49,6 +49,14 @@ def _from_json(line: str) -> Session | None:
         return None
 
 
+def _is_empty(s: Session) -> bool:
+    """Hiç metin taşımayan (ör. yeni başlamış) oturum: geçmişe yazılacak bir şey yok."""
+    if any(t.strip() for t in (s.raw_text, s.corrected_text, s.translation, s.enhanced_prompt)):
+        return False
+    log.debug("boş oturum geçmişe yazılmadı: %s", s.id)
+    return True
+
+
 def _naive(dt: datetime) -> datetime:
     return dt.astimezone().replace(tzinfo=None) if dt.tzinfo is not None else dt
 
@@ -92,14 +100,21 @@ class History:
         return self._visible(self._read().sessions)
 
     def append(self, session: Session) -> None:
-        if self._limit <= 0:
+        """Oturumu sona ekler. Aynı `id` zaten varsa satır yerinde değiştirilir (yinelenen
+        kimlik oluşmaz); hiç metin içermeyen oturum yazılmaz."""
+        if self._limit <= 0 or _is_empty(session):
             return
-        kept = self.load()[-(self._limit - 1) :] if self._limit > 1 else ()
+        existing = self.load()
+        if any(s.id == session.id for s in existing):
+            self._write(tuple(session if s.id == session.id else s for s in existing))
+            return
+        kept = existing[-(self._limit - 1) :] if self._limit > 1 else ()
         self._write((*kept, session))
 
     def update(self, session: Session) -> None:
-        """Aynı `id`'ye sahip satır varsa yerinde değiştirir, yoksa `append` gibi ekler."""
-        if self._limit <= 0:
+        """Aynı `id`'ye sahip satır varsa yerinde değiştirir, yoksa `append` gibi ekler.
+        Hiç metin içermeyen oturum yok sayılır (var olan satır boşaltılmaz)."""
+        if self._limit <= 0 or _is_empty(session):
             return
         existing = self.load()
         if any(s.id == session.id for s in existing):
