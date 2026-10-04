@@ -23,7 +23,8 @@ Dikte'nin günlük kullanımı, ayarları ve ileri özellikleri. Kurulum için b
 
 1. Dikte tray'de (sistem tepsisi) sürekli açık durur.
 2. Kısayola basarsınız (Windows varsayılanı `Ctrl+Alt+Space`) → ekranda küçük bir kayıt
-   penceresi (overlay) açılır, konuşurken dalga çubukları hareket eder.
+   penceresi (overlay) açılır; konuşurken dikenleri sesle uzayan dönen bir küre (ya da Ayarlar →
+   Genel → "Kayıt göstergesi" ile seçilirse çubuk dalga) hareket eder.
 3. Tekrar basınca kayıt durur; ses GPU'da metne çevrilir, isteğe bağlı olarak LLM ile düzeltilir.
 4. Metin panoya yazılır ve çalıştığınız pencereye yapıştırılır.
 
@@ -83,6 +84,10 @@ Ek davranışlar:
   (Uzak Masaüstü, Hyper-V, VirtualBox, VMware, Remmina…) hiç geri yükleme yapılmaz.
 - Windows'ta dikte metni varsayılan olarak pano geçmişine (`Win+V`) ve bulut panosuna girmez
   (Ayarlar → Genel → "Dikte metnini pano geçmişine ve bulut eşitlemesine alma").
+- Sonuç penceresi ham ve düzeltilmiş metin arasındaki farkı `git diff` gibi gösterir: ham
+  panelde silinen/değişen kelimeler kırmızı, düzeltilmiş panelde eklenen/yeni hâli yeşil arka
+  planlıdır; üzerine gelince "‘eski’ → ‘yeni’ (neden)" ipucu çıkar. Elle düzenleme yaptıkça
+  farklar ham metne göre yeniden hesaplanır.
 - Düzeltilmiş metni elle düzenleyip `Ctrl+Enter` ile yeniden yapıştırabilirsiniz; düzeltmeniz
   geçmişe yazılır ve tek kelimelik düzeltmeler için sözlüğe ekleme önerilir.
 - Sonuç penceresi varsayılan olarak öne gelmez; odağınız çalıştığınız uygulamada kalır
@@ -172,7 +177,7 @@ Ayarlar penceresi (tray menüsü veya araç çubuğu → "Ayarlar…") sekiz sek
 
 | Sekme | İçerik |
 |---|---|
-| Genel | Kısayol (tuşa basarak yakalanır) + isteğe bağlı çeviri / agent-prompt / son sonucu yapıştır kısayolları, bas-konuş (yalnızca Windows), geçmiş kayıt sayısı ve saklama süresi, açılışta başlat, panoya kopyala / yapıştır / pencereyi öne getir, pano geçmişinden hariç tutma, kayıtta medyayı duraklat, başarısız diktelerin sesini sakla, gösterge (overlay) konumu, sesli komutlar, elle düzeltmelerden sözlük önerisi |
+| Genel | Kısayol (tuşa basarak yakalanır) + isteğe bağlı çeviri / agent-prompt / son sonucu yapıştır kısayolları, bas-konuş (yalnızca Windows), geçmiş kayıt sayısı ve saklama süresi, açılışta başlat, panoya kopyala / yapıştır / pencereyi öne getir, pano geçmişinden hariç tutma, kayıtta medyayı duraklat, başarısız diktelerin sesini sakla, gösterge (overlay) konumu, kayıt göstergesi (Küre / Dalga) ve gösterge teması (Varsayılan, Dracula, Nord, Catppuccin Mocha/Latte, Gruvbox, Tokyo Night, Solarized Dark, One Dark, Monokai), sesli komutlar, elle düzeltmelerden sözlük önerisi |
 | Ses | Mikrofon (adıyla saklanır; Windows'ta WASAPI cihazları), kayıt süresi sınırı (0 = sınırsız), sessizlikte otomatik durdurma (0 = kapalı), sessiz mikrofon uyarısı, canlı seviye testi |
 | Konuşma Tanıma | Whisper modeli, hassasiyet (compute_type), dil, toplu çözümleme, açılışta ısıtma, canlı çözümleme parça süresi, "Sessizlik ve halüsinasyon" (VAD eşiği, en kısa sessizlik, konuşma yok eşiği, kara liste) |
 | Metin Düzeltme | LLM aç/kapa, sağlayıcı ve sağlayıcıya özel alanlar, bellekte tutma, sağlamlık kontrolü ("Düzeltme metinden çok saparsa ham metni kullan") |

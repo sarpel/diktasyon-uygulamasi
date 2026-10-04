@@ -782,3 +782,18 @@ def test_about_tab_health_button_requests_app_health_dialog(qtbot):
 def test_settings_dialog_forwards_health_request(dlg, qtbot):
     with qtbot.waitSignal(dlg.health_requested, timeout=1000):
         dlg.health_btn.click()
+
+
+def test_overlay_indicator_combo_shows_turkish_labels(dlg):
+    combo = dlg.overlay_indicator_combo
+    labels = [combo.itemText(i) for i in range(combo.count())]
+    assert labels == ["Küre", "Dalga"]
+    assert combo.currentData() == "sphere"
+    combo.setCurrentIndex(combo.findData("wave"))
+    assert dlg.result_settings().overlay_indicator == "wave"
+
+
+def test_overlay_indicator_loads_saved_value(qtbot):
+    d = SettingsDialog(Settings(overlay_indicator="wave"), ())
+    qtbot.addWidget(d)
+    assert d.overlay_indicator_combo.currentData() == "wave"

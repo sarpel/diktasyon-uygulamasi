@@ -256,7 +256,7 @@ class ResultWindow(QMainWindow):
         self.raw_pane.set_text(s.raw_text)
         self.corrected_pane.set_text(s.corrected_text)
         self._last_shown_text = s.corrected_text
-        self.corrected_pane.set_highlights(s.changes)
+        self._show_diff(s)
         if self._pending == "translation" and s.translation:
             self.output_pane.set_text(s.translation)
             self._finish_pending()
@@ -271,6 +271,11 @@ class ResultWindow(QMainWindow):
             self.output_pane.set_text(s.enhanced_prompt)
         self.output_pane.setVisible(bool(self.output_pane.text()))
         self._show_session_stats(s)  # _finish_pending mesajı temizledikten sonra yazılır
+
+    def _show_diff(self, s: Session) -> None:
+        """Ham ile düzeltilmiş arasındaki farkı git diff gibi iki panelde gösterir."""
+        self.raw_pane.set_highlights(s.changes, side="old")
+        self.corrected_pane.set_highlights(s.changes, side="new")
 
     def on_state(self, state: DictationState) -> None:
         self.record_action.setText(
@@ -318,7 +323,7 @@ class ResultWindow(QMainWindow):
             TITLE_PROMPT if (s.enhanced_prompt and not s.translation) else TITLE_TRANSLATION
         )
         self.output_pane.setVisible(bool(self.output_pane.text()))
-        self.corrected_pane.set_highlights(s.changes)
+        self._show_diff(s)
         self._show_session_stats(s)
         self._sync_llm_buttons()  # geçmiş görüntülenirken çeviri/prompt kapalı
 

@@ -522,3 +522,32 @@ def test_escape_in_docked_history_search_clears_text_only(qtbot):
     qtbot.keyClick(panel.search_edit, Qt.Key.Key_Escape)
     assert panel.search_edit.text() == ""
     assert w.isVisible()  # pencerenin Esc kısayolu (gizle) tetiklenmemeli
+
+
+def test_session_shows_git_style_diff_in_both_panes(qtbot):
+    """Ham panelde silinen/değişen kelimeler kırmızı, düzeltilmişte eklenen/yeni hâli yeşil."""
+    from dikte.llm.diff import word_changes
+    from dikte.ui.text_pane import ADDED_COLOR, REMOVED_COLOR
+
+    w, c = make(qtbot)
+    raw, fixed = "bugün ee hava çuk güzel", "Bugün hava çok güzel."
+    c.session_updated.emit(
+        Session(raw_text=raw, corrected_text=fixed, changes=word_changes(raw, fixed))
+    )
+    old = w.raw_pane.editor.extraSelections()
+    new = w.corrected_pane.editor.extraSelections()
+    assert "ee" in [s.cursor.selectedText() for s in old]
+    assert "çuk" in [s.cursor.selectedText() for s in old]
+    assert "çok" in [s.cursor.selectedText() for s in new]
+    assert all(s.format.background().color() == REMOVED_COLOR for s in old)
+    assert all(s.format.background().color() == ADDED_COLOR for s in new)
+
+
+def test_history_session_also_shows_diff(qtbot):
+    from dikte.llm.diff import word_changes
+
+    w, c = make(qtbot)
+    raw, fixed = "hava çuk güzel", "hava çok güzel"
+    w.load_session(Session(raw_text=raw, corrected_text=fixed, changes=word_changes(raw, fixed)))
+    assert [s.cursor.selectedText() for s in w.raw_pane.editor.extraSelections()] == ["çuk"]
+    assert [s.cursor.selectedText() for s in w.corrected_pane.editor.extraSelections()] == ["çok"]

@@ -55,6 +55,8 @@ _PROXIED = {
         "keep_failed_audio_check",
         "clipboard_exclude_history_check",
         "overlay_position_combo",
+        "overlay_indicator_combo",
+        "overlay_theme_combo",
     ),
     "audio": (
         "device_combo",

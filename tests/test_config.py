@@ -325,3 +325,30 @@ def test_config_with_16k_sample_rate_still_loads(tmp_path: Path):
     p.write_text(json.dumps({"audio": {"sample_rate": 16000}}), encoding="utf-8")
     s, issues = load_settings_with_issues(p)
     assert s.audio.sample_rate == 16000 and issues == ()
+
+
+def test_overlay_indicator_defaults_to_sphere():
+    assert Settings().overlay_indicator == "sphere"
+
+
+def test_old_config_without_overlay_indicator_loads(tmp_path: Path):
+    import json
+
+    from dikte.config import load_settings_with_issues
+
+    p = tmp_path / "config.json"
+    p.write_text(json.dumps({"hotkey": "f9"}), encoding="utf-8")
+    s, issues = load_settings_with_issues(p)
+    assert s.overlay_indicator == "sphere" and issues == ()
+
+
+def test_invalid_overlay_indicator_resets_only_that_field(tmp_path: Path):
+    import json
+
+    from dikte.config import load_settings_with_issues
+
+    p = tmp_path / "config.json"
+    p.write_text(json.dumps({"hotkey": "f9", "overlay_indicator": "kup"}), encoding="utf-8")
+    s, issues = load_settings_with_issues(p)
+    assert s.hotkey == "f9" and s.overlay_indicator == "sphere"
+    assert issues == ("overlay_indicator",)

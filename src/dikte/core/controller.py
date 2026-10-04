@@ -333,9 +333,10 @@ class DictationController(QObject):
         if self._state is not DictationState.RESULT:
             return
         before = self._session.corrected_text
-        # changes=(): LLM düzeltmesinin ham metne göre vurguları artık geçersiz — kullanıcının
-        # düzenlediği yeni metinde eski ofsetler yanlış kelimeleri işaretlerdi.
-        self._update_session(corrected_text=text, changes=())
+        # Fark görünümü (git diff) düzenlenmiş metinde de doğru kalsın: eski ofsetler yeni
+        # metinde yanlış kelimeleri işaretleyeceğinden farklar ham metne göre yeniden hesaplanır.
+        diff = word_changes(self._session.raw_text, text)
+        self._update_session(corrected_text=text, changes=diff)
         changes = word_changes(before, text)
         if changes:
             self.edit_learned.emit(changes)

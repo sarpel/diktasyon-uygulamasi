@@ -3,10 +3,12 @@
 from __future__ import annotations
 
 from PySide6.QtCore import QElapsedTimer, QPoint, QRect, Qt, QTimer, Signal
-from PySide6.QtGui import QCursor, QGuiApplication, QMouseEvent
+from PySide6.QtGui import QColor, QCursor, QGuiApplication, QMouseEvent
 from PySide6.QtWidgets import QHBoxLayout, QLabel, QPushButton, QVBoxLayout, QWidget
 
 from dikte.core.state import DictationState
+from dikte.ui.sphere import SphereWidget
+from dikte.ui.themes import DEFAULT_THEME, THEMES, get_theme
 from dikte.ui.waveform import WaveformWidget
 
 _STATUS = {
@@ -36,23 +38,22 @@ class RecordingOverlay(QWidget):
         )
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
         self.setAttribute(Qt.WidgetAttribute.WA_ShowWithoutActivating)
-        # Bilerek koyu: yarı saydam, her masaüstü arka planının üzerinde okunaklı kalması gereken
-        # bir HUD panelidir; sistem temasına bağlamak kontrastı öngörülemez kılar.
-        self.setStyleSheet(
-            "QWidget#panel{background:rgba(20,20,20,225);border-radius:14px;}"
-            "QLabel{color:white;font-size:14px;}"
-            "QPushButton{color:white;background:rgba(255,255,255,30);border:0;"
-            "border-radius:6px;padding:4px 10px;font-size:13px;}"
-            "QPushButton:hover{background:rgba(255,255,255,55);}"
-        )
+        # Renkler sistem temasına değil seçilen overlay temasına bağlıdır: yarı saydam, her
+        # masaüstü arka planının üzerinde okunaklı kalması gereken bir HUD panelidir.
+        self._theme_name = DEFAULT_THEME
+        self._theme = get_theme(DEFAULT_THEME)
+        self._dot_role = "accent"
         panel = QWidget(self)
         panel.setObjectName("panel")
         row = QHBoxLayout()
         row.setSpacing(12)
         self._dot = QLabel("●")
-        self._dot.setStyleSheet("color:#E53935;font-size:22px;")
         self._wave = WaveformWidget()
         self._wave.setFixedSize(220, 44)
+        self._sphere = SphereWidget()
+        self._sphere.setFixedSize(88, 88)
+        self._sphere.hide()
+        self._indicator = "wave"
         self._time = QLabel("00:00")
         self._time.setMinimumWidth(48)
         self._status = QLabel("")
@@ -62,13 +63,11 @@ class RecordingOverlay(QWidget):
         self.cancel_btn.clicked.connect(self.cancel_requested)
         self.cancel_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self.setCursor(Qt.CursorShape.OpenHandCursor)  # panel sürüklenerek taşınabilir
-        for w in (self._dot, self._wave, self._time, self._status, self.cancel_btn):
+        for w in (self._dot, self._wave, self._sphere, self._time, self._status, self.cancel_btn):
             row.addWidget(w)
         self._partial = QLabel("")
-        self._partial.setStyleSheet("color:#BBBBBB;font-size:12px;")
         self._partial.hide()
         self._warning = QLabel("")
-        self._warning.setStyleSheet("color:#F5A623;font-size:12px;")
         self._warning.hide()
         panel_lay = QVBoxLayout(panel)
         panel_lay.setContentsMargins(16, 10, 16, 10)
@@ -100,6 +99,7 @@ class RecordingOverlay(QWidget):
         self._custom_xy: tuple[int, int] | None = None
         self._drag_offset: QPoint | None = None
         self._drag_start: QPoint | None = None
+        self._apply_theme()
 
     # ---- kamu
     def set_position(self, position: str, xy: tuple[int, int] | None) -> None:
@@ -111,11 +111,82 @@ class RecordingOverlay(QWidget):
         if self.isVisible():
             self._place()
 
+    @property
+    def theme(self) -> str:
+        """Seçili overlay temasının adı."""
+        return self._theme_name
+
+    def set_theme(self, name: str) -> None:
+        """Renk temasını uygular; bilinmeyen ad varsayılana düşer. Görünürlüğü değiştirmez."""
+        self._theme_name = name if name in THEMES else DEFAULT_THEME
+        self._theme = get_theme(self._theme_name)
+        self._apply_theme()
+
+    def _apply_theme(self) -> None:
+        t = self._theme
+        panel = QColor(t.panel)
+        button = "0,0,0" if t.light else "255,255,255"
+        self.setStyleSheet(
+            f"QWidget#panel{{background:rgba({panel.red()},{panel.green()},{panel.blue()},"
+            f"{t.panel_alpha});border-radius:14px;}}"
+            f"QLabel{{color:{t.text};font-size:14px;}}"
+            f"QPushButton{{color:{t.text};background:rgba({button},30);border:0;"
+            "border-radius:6px;padding:4px 10px;font-size:13px;}"
+            f"QPushButton:hover{{background:rgba({button},55);}}"
+        )
+        # Overlay henüz hiç gösterilmemişken stil değişirse Qt çocukların eski (ilk) stilini
+        # önbellekte tutup onunla çiziyor; tema açılışta/ayar kaydında tam bu durumda
+        # uygulanır. Bu yüzden tüm alt bileşenler yeniden cilalanır (unpolish/polish).
+        for widget in (self, *self.findChildren(QWidget)):
+            style = widget.style()
+            style.unpolish(widget)
+            style.polish(widget)
+            widget.update()
+        self._partial.setStyleSheet(f"color:{t.muted};font-size:12px;")
+        self._warning.setStyleSheet(f"color:{t.warning};font-size:12px;")
+        self._wave.set_color(t.accent)
+        self._sphere.set_colors(t.accent, t.accent2)
+        self._set_dot(self._dot_role)
+
+    def _set_dot(self, role: str) -> None:
+        """Durum noktasının rengi: "accent" (kayıt), "warning" (işleniyor), "error"."""
+        self._dot_role = role
+        color = {"warning": self._theme.warning, "error": self._theme.error}.get(
+            role, self._theme.accent
+        )
+        self._dot.setStyleSheet(f"color:{color};font-size:22px;")
+
+    @property
+    def indicator(self) -> str:
+        """Kayıtta gösterilen ses animasyonu: "sphere" ya da "wave"."""
+        return self._indicator
+
+    def set_indicator(self, kind: str) -> None:
+        """Dalga ile küre birbirinin yerine geçer. Kayıt sürüyorsa hemen değişir; overlay
+        gizliyse yalnızca bir sonraki kayıt için hatırlanır (görünür hâle getirmez)."""
+        self._indicator = "sphere" if kind == "sphere" else "wave"
+        if self._time.isVisibleTo(self):  # kayıt görünümündeyiz
+            self._show_indicator()
+            self._resize_keeping_anchor()
+
+    def _active_indicator(self) -> WaveformWidget | SphereWidget:
+        return self._sphere if self._indicator == "sphere" else self._wave
+
+    def _show_indicator(self) -> None:
+        active = self._active_indicator()
+        for w in (self._wave, self._sphere):
+            w.setVisible(w is active)
+
+    def _hide_indicators(self) -> None:
+        self._wave.hide()
+        self._sphere.hide()
+
     def show_recording(self) -> None:
         self._showing_error = False
         self._clear_warning()
         self._wave.clear()
-        self._wave.show()
+        self._sphere.clear()
+        self._show_indicator()
         self._time.show()
         self._status.hide()
         self._partial.setText("")
@@ -135,9 +206,9 @@ class RecordingOverlay(QWidget):
         self._clear_warning()
         self._blink.stop()
         self._clock.stop()
-        self._dot.setStyleSheet("color:#F5A623;font-size:22px;")
+        self._set_dot("warning")
         self._dot.setVisible(True)
-        self._wave.hide()
+        self._hide_indicators()
         self._time.hide()
         self._status.setText(text)
         self._status.show()
@@ -155,9 +226,9 @@ class RecordingOverlay(QWidget):
         self._showing_error = True
         self._error_token += 1
         self._pending_error_token = self._error_token
-        self._dot.setStyleSheet("color:#E53935;font-size:22px;")
+        self._set_dot("error")
         self._dot.setVisible(True)
-        self._wave.hide()
+        self._hide_indicators()
         self._time.hide()
         self._status.setText(f"✗ {text}")
         self._status.show()
@@ -177,7 +248,7 @@ class RecordingOverlay(QWidget):
         self._clock.stop()
         self._showing_error = False
         self._clear_warning()
-        self._dot.setStyleSheet("color:#E53935;font-size:22px;")
+        self._set_dot("accent")
         self._partial.setText("")
         self._partial.hide()
         self.hide()
@@ -201,7 +272,7 @@ class RecordingOverlay(QWidget):
         self._partial.setVisible(bool(truncated))
 
     def on_buckets(self, buckets) -> None:
-        self._wave.push_buckets(tuple(buckets))
+        self._active_indicator().push_buckets(tuple(buckets))
 
     def on_state(self, state: DictationState) -> None:
         """RECORDING'de kayıt görünümü, TRANSCRIBING/CORRECTING'de durum metni; diğerlerinde
