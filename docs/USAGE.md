@@ -84,6 +84,10 @@ Ek davranışlar:
   (Uzak Masaüstü, Hyper-V, VirtualBox, VMware, Remmina…) hiç geri yükleme yapılmaz.
 - Windows'ta dikte metni varsayılan olarak pano geçmişine (`Win+V`) ve bulut panosuna girmez
   (Ayarlar → Genel → "Dikte metnini pano geçmişine ve bulut eşitlemesine alma").
+- Sonuç penceresi ham ve düzeltilmiş metin arasındaki farkı `git diff` gibi gösterir: ham
+  panelde silinen/değişen kelimeler kırmızı, düzeltilmiş panelde eklenen/yeni hâli yeşil arka
+  planlıdır; üzerine gelince "‘eski’ → ‘yeni’ (neden)" ipucu çıkar. Elle düzenleme yaptıkça
+  farklar ham metne göre yeniden hesaplanır.
 - Düzeltilmiş metni elle düzenleyip `Ctrl+Enter` ile yeniden yapıştırabilirsiniz; düzeltmeniz
   geçmişe yazılır ve tek kelimelik düzeltmeler için sözlüğe ekleme önerilir.
 - Sonuç penceresi varsayılan olarak öne gelmez; odağınız çalıştığınız uygulamada kalır

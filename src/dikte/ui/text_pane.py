@@ -1,4 +1,5 @@
-"""Başlıklı, kopyala düğmeli metin paneli; LLM değişikliklerini vurgular ve ipucunda gösterir."""
+"""Başlıklı, kopyala düğmeli metin paneli; ham/düzeltilmiş farkını git diff gibi (silinen
+kırmızı, eklenen yeşil) vurgular ve ipucunda gösterir."""
 
 from __future__ import annotations
 
@@ -21,7 +22,9 @@ from dikte.llm.diff import Change
 from dikte.platform.clipboard import copy_text
 from dikte.ui.icons import copy_icon
 
-HIGHLIGHT_COLOR = QColor(255, 235, 59, 90)
+# GitHub'ın fark renkleri, yarı saydam: açık ve koyu sistem temasında okunaklı kalır.
+ADDED_COLOR = QColor(46, 160, 67, 110)
+REMOVED_COLOR = QColor(248, 81, 73, 110)
 
 
 class TextPane(QWidget):
@@ -46,6 +49,7 @@ class TextPane(QWidget):
         self.editor.setMouseTracking(True)
         self.editor.viewport().installEventFilter(self)
         self._changes: tuple[Change, ...] = ()
+        self._side = "new"
         header = QHBoxLayout()
         header.addWidget(self.title_label)
         header.addStretch(1)
@@ -61,31 +65,51 @@ class TextPane(QWidget):
             self.editor.setPlainText(text)
         self.set_highlights(())
 
-    def set_highlights(self, changes: Sequence[Change]) -> None:
-        """Konumu geçerli değişiklikleri sarıyla vurgular; öncekilerin yerini alır."""
-        self._changes = tuple(c for c in changes if c.start >= 0 and c.end > c.start)
+    def _span(self, c: Change) -> tuple[int, int]:
+        return (c.orig_start, c.orig_end) if self._side == "old" else (c.start, c.end)
+
+    def set_highlights(self, changes: Sequence[Change], *, side: str = "new") -> None:
+        """Değişiklikleri git diff gibi vurgular; öncekilerin yerini alır.
+
+        `side="new"` (düzeltilmiş metin): eklenen/yeni hâli yeşil. `side="old"` (ham metin):
+        silinen/değişen kelimeler kırmızı. Bu panelde aralığı olmayan (ör. düzeltilmişte
+        saf silme) ya da konumu bilinmeyen (eski kayıt) değişiklikler atlanır."""
+        self._side = side
+        length = len(self.editor.toPlainText())
+        self._changes = tuple(
+            c for c in changes if 0 <= self._span(c)[0] < self._span(c)[1] <= length
+        )
+        color = REMOVED_COLOR if side == "old" else ADDED_COLOR
         selections = []
         for c in self._changes:
+            start, end = self._span(c)
             cursor = QTextCursor(self.editor.document())
-            cursor.setPosition(c.start)
-            cursor.setPosition(c.end, QTextCursor.MoveMode.KeepAnchor)
+            cursor.setPosition(start)
+            cursor.setPosition(end, QTextCursor.MoveMode.KeepAnchor)
             sel = QTextEdit.ExtraSelection()
             sel.cursor = cursor
-            sel.format.setBackground(HIGHLIGHT_COLOR)
+            sel.format.setBackground(color)
             selections.append(sel)
         self.editor.setExtraSelections(selections)
+
+    def _change_at(self, offset: int) -> Change | None:
+        for c in self._changes:
+            start, end = self._span(c)
+            if start <= offset < end:
+                return c
+        return None
 
     def eventFilter(self, obj, event):
         if obj is self.editor.viewport() and event.type() == QEvent.Type.ToolTip:
             offset = self.editor.cursorForPosition(event.pos()).position()
-            for c in self._changes:
-                if c.start <= offset < c.end:
-                    QToolTip.showText(
-                        event.globalPos(),
-                        f"‘{c.original}’ → ‘{c.replacement}’ ({c.reason})",
-                        self.editor,
-                    )
-                    return True
+            c = self._change_at(offset)
+            if c is not None:
+                QToolTip.showText(
+                    event.globalPos(),
+                    f"‘{c.original}’ → ‘{c.replacement}’ ({c.reason})",
+                    self.editor,
+                )
+                return True
             QToolTip.hideText()
             return True
         return super().eventFilter(obj, event)

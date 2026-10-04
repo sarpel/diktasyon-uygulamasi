@@ -262,3 +262,19 @@ def test_update_with_empty_text_keeps_existing_row(tmp_path: Path):
     h.append(s)
     h.update(Session(id=s.id))
     assert [x.corrected_text for x in h.load()] == ["A."]
+
+
+def test_change_original_offsets_roundtrip(tmp_path):
+    from dikte.core.history import History
+    from dikte.core.state import Session
+    from dikte.llm.diff import Change
+
+    h = History(tmp_path / "h.jsonl", limit=10)
+    s = Session(
+        raw_text="hava çuk",
+        corrected_text="hava çok",
+        changes=(Change("çuk", "çok", "değiştirildi", 5, 8, 5, 8),),
+    )
+    h.append(s)
+    (loaded,) = h.load()
+    assert (loaded.changes[0].orig_start, loaded.changes[0].orig_end) == (5, 8)

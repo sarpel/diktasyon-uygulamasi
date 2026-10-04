@@ -17,13 +17,16 @@ _PUNCT = re.compile(r"[^\w\s]+", re.UNICODE)
 
 @dataclass(frozen=True)
 class Change:
-    """Tek bir kelime düzeyi değişiklik; `start`/`end` düzeltilmiş metindeki aralıktır."""
+    """Tek bir kelime düzeyi değişiklik. `start`/`end` düzeltilmiş metindeki, `orig_start`/
+    `orig_end` ham metindeki aralıktır (git diff görünümünde iki taraf ayrı işaretlenir)."""
 
     original: str
     replacement: str
     reason: str
     start: int = -1  # düzeltilmiş metindeki karakter aralığı; eski kayıtlarda -1
     end: int = -1
+    orig_start: int = -1  # ham metindeki karakter aralığı; eski kayıtlarda -1
+    orig_end: int = -1
 
 
 def _norm(word: str) -> str:
@@ -63,14 +66,27 @@ def word_changes(original: str, corrected: str) -> tuple[Change, ...]:
                 if aw == bw:
                     continue
                 start, end = b_spans[j1 + k]
-                out.append(Change(aw, bw, "noktalama/büyük harf", start, end))
+                o_start, o_end = a_spans[i1 + k]
+                out.append(Change(aw, bw, "noktalama/büyük harf", start, end, o_start, o_end))
             continue
         a_words, b_words = a[i1:i2], b[j1:j2]
         if j1 < j2:
             start, end = b_spans[j1][0], b_spans[j2 - 1][1]
         else:  # silme: önceki kelimenin sonu (yoksa 0)
             start = end = b_spans[j1 - 1][1] if j1 > 0 else 0
+        if i1 < i2:
+            o_start, o_end = a_spans[i1][0], a_spans[i2 - 1][1]
+        else:  # ekleme: ham metinde önceki kelimenin sonu (yoksa 0)
+            o_start = o_end = a_spans[i1 - 1][1] if i1 > 0 else 0
         out.append(
-            Change(" ".join(a_words), " ".join(b_words), _reason(a_words, b_words), start, end)
+            Change(
+                " ".join(a_words),
+                " ".join(b_words),
+                _reason(a_words, b_words),
+                start,
+                end,
+                o_start,
+                o_end,
+            )
         )
     return tuple(out)

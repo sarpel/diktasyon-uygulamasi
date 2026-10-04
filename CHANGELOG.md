@@ -13,6 +13,9 @@ Bu projedeki önemli değişiklikler bu dosyada tutulur. Biçim
 - Kayıt göstergesi için renk temaları (Ayarlar → Genel → "Gösterge teması"): Varsayılan,
   Dracula, Nord, Catppuccin Mocha, Catppuccin Latte (açık), Gruvbox, Tokyo Night, Solarized
   Dark, One Dark, Monokai. Tüm temalarda yazı/arka plan kontrastı en az 4.5:1.
+- Sonuç penceresinde git diff tarzı fark görünümü: ham panelde silinen/değişen kelimeler kırmızı,
+  düzeltilmiş panelde eklenen/yeni hâli yeşil (önceden yalnızca düzeltilmişte sarı vurgu vardı);
+  elle düzenlemeden sonra da farklar ham metne göre güncel kalır.
 - Lisans (MIT), İngilizce README özeti, kurulum ve kullanım kılavuzları, katkı rehberi, güvenlik
   politikası, davranış kuralları, üçüncü taraf lisans bildirimleri, issue/PR şablonları.
 - "Son sonucu yapıştır" (tray menüsü ve isteğe bağlı kısayol).

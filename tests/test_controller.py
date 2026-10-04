@@ -1465,3 +1465,18 @@ def test_exception_in_error_callback_recovers_to_idle(qtbot):
     c.toggle()
     qtbot.waitUntil(lambda: c.state is DictationState.IDLE, timeout=3000)
     assert errors and "Beklenmeyen bir hata" in errors[-1]
+
+
+def test_apply_edit_keeps_diff_against_raw_text(ctl, qtbot):
+    """Elle düzenlemeden sonra da git diff görünümü sürsün: farklar ham metne göre
+    yeniden hesaplanır (eskiden tümü siliniyordu)."""
+    c, *_ = ctl
+    c.toggle()
+    c.toggle()
+    qtbot.waitUntil(lambda: c.state is DictationState.RESULT, timeout=5000)
+    raw = c.session.raw_text
+    edited = raw + " eklendi"
+    c.apply_edit(edited)
+    changes = c.session.changes
+    assert changes and changes[-1].reason == "eklendi"
+    assert edited[changes[-1].start : changes[-1].end] == "eklendi"
