@@ -95,14 +95,14 @@ def test_empty_stt_model_blocks_accept_and_switches_tab(dlg):
     dlg.stt_model_edit.setText("   ")
     dlg.accept()
     assert "STT model" in dlg.error_label.text()
-    assert dlg.tabs.currentWidget() is dlg.stt
+    assert dlg.current_tab() is dlg.stt
 
 
 def test_empty_llm_model_blocks_accept(dlg):
     dlg.llm_model_edit.setText("")
     dlg.accept()
     assert "LLM model" in dlg.error_label.text()
-    assert dlg.tabs.currentWidget() is dlg.llm
+    assert dlg.current_tab() is dlg.llm
 
 
 def test_disabled_llm_skips_model_validation(dlg):
@@ -240,7 +240,7 @@ def test_openai_requires_base_url(dlg):
     dlg.openai_base_url_edit.setText("   ")
     dlg.accept()
     assert "temel URL" in dlg.error_label.text()
-    assert dlg.tabs.currentWidget() is dlg.llm
+    assert dlg.current_tab() is dlg.llm
 
 
 def test_connection_test_button_reports_success(dlg, monkeypatch):
@@ -320,7 +320,7 @@ def test_empty_lmstudio_model_blocks_accept(dlg):
     dlg.provider_combo.setCurrentText("lmstudio")
     dlg.lmstudio_model_edit.setText("")
     dlg.accept()
-    assert "model adı" in dlg.error_label.text() and dlg.tabs.currentWidget() is dlg.llm
+    assert "model adı" in dlg.error_label.text() and dlg.current_tab() is dlg.llm
 
 
 def test_empty_ollama_host_blocks_accept(dlg):
@@ -797,3 +797,35 @@ def test_overlay_indicator_loads_saved_value(qtbot):
     d = SettingsDialog(Settings(overlay_indicator="wave"), ())
     qtbot.addWidget(d)
     assert d.overlay_indicator_combo.currentData() == "wave"
+
+
+def test_every_tab_scrolls_instead_of_growing_the_dialog(dlg):
+    """Uzun sekmeler (ör. Genel) pencereyi ekrandan uzun yapıp Tamam/İptal'i ekranın dışına
+    itiyordu; her sekme kendi içinde kaydırılır."""
+    from PySide6.QtWidgets import QScrollArea
+
+    for i in range(dlg.tabs.count()):
+        page = dlg.tabs.widget(i)
+        assert isinstance(page, QScrollArea)
+        assert page.widgetResizable()
+    assert dlg.tabs.widget(0).widget() is dlg.general
+
+
+def test_dialog_minimum_height_is_small(dlg):
+    """En küçük boy, sekme içeriğinin uzunluğundan bağımsız ve küçük ekranlara sığar."""
+    assert dlg.minimumSizeHint().height() < 480
+
+
+def test_dialog_fits_on_screen_when_shown(dlg, qtbot):
+    from PySide6.QtGui import QGuiApplication
+
+    dlg.show()
+    qtbot.waitExposed(dlg)
+    screen = (dlg.screen() or QGuiApplication.primaryScreen()).availableGeometry()
+    assert dlg.frameGeometry().height() <= screen.height()
+    assert dlg.height() >= 300
+
+
+def test_current_tab_follows_selected_page(dlg):
+    dlg.tabs.setCurrentIndex(2)
+    assert dlg.current_tab() is dlg.stt

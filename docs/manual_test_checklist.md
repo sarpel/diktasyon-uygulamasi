@@ -231,3 +231,5 @@
 - [ ] Ayarlar → Genel → "Gösterge teması" değiştirilip Kaydet'e basınca bir sonraki kayıtta
       overlay paneli, yazılar, kayıt noktası ve küre/dalga yeni tema renkleriyle çıkıyor
       (özellikle açık tema Catppuccin Latte'de panel açık renkte).
+- [ ] Küçük ekranda (ör. 1366×768, %125 ölçek) Ayarlar açılınca Tamam/İptal görünüyor; Genel
+      sekmesi uzunsa sekmenin içinde kaydırma çubuğu çıkıyor.

@@ -43,9 +43,9 @@ Bu projedeki önemli değişiklikler bu dosyada tutulur. Biçim
 - Linux'ta CUDA kütüphaneleri başlatıcı olmadan da açılışta önceden yüklenir.
 - Sözlük kuralları tek geçişte uygulanır (bir düzeltme başka bir kuralı yeniden tetiklemez).
 - `anthropic` SDK alt sınırı `>=1.0`.
-- Python üst sürüm sınırı kaldırıldı (`>=3.11`); CI Linux ve Windows'ta 3.11–3.14'ü zorunlu
-  test eder, 3.15 için PR'ı engellemeyen bir erken uyarı işi vardır (3.15, PySide6/ctranslate2/
-  onnxruntime o sürüm için paket yayımlayınca çalışır). macOS desteklenmez (CUDA yok).
+- Python üst sürüm sınırı kaldırıldı (`>=3.11`); CI Linux ve Windows'ta 3.11–3.14'ü test eder
+  (3.15, PySide6/ctranslate2/onnxruntime o sürüm için paket yayımlayınca çalışır). macOS
+  desteklenmez (CUDA yok).
 - Windows'ta medya duraklatma artık terk edilmiş `winsdk` yerine pywinrt (`winrt-*`) paketlerini
   kullanır; desteklenen tüm Python sürümlerinde çalışır.
 - LLM düzeltme sağlamlık kontrolü sıkılaştı: 4 kelimeden kısa diktelerde en fazla 2 kelime
@@ -77,6 +77,8 @@ Bu projedeki önemli değişiklikler bu dosyada tutulur. Biçim
 
 ### Düzeltildi
 
+- Ayarlar penceresinin küçük ekranlarda ekrandan uzun olup Tamam/İptal düğmelerinin görünmemesi:
+  her sekme artık kendi içinde kaydırılır ve pencere açıldığı ekrana sığdırılır.
 - Panoda dikte metni varken uygulama kapanınca sürecin çökmesi (Python'da oluşturulan
   `QMimeData` Qt kapanışında geçersiz Python koduna yönleniyordu).
 - Windows kurulum paketinde `winsdk` olmadığı için "kayıtta medyayı duraklat" özelliğinin çalışmaması.
