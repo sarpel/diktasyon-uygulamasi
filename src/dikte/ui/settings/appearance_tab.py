@@ -94,7 +94,10 @@ class ColorButton(QPushButton):
     def set_color(self, color: str) -> None:
         self.color = QColor(color).name().upper()
         self.setText(self.color)
-        self.setStyleSheet(f"background:{self.color};color:{_contrast(self.color)};")
+        # :enabled — devre dışıyken (renk kipi özel değilse) sistem stiline döner, soluk görünür.
+        self.setStyleSheet(
+            f"QPushButton:enabled{{background:{self.color};color:{_contrast(self.color)};}}"
+        )
 
     def _pick(self) -> None:
         chosen = self._picker(QColor(self.color), self, "Renk seçin")
