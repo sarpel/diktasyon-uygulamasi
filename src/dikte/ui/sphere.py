@@ -77,14 +77,15 @@ class SphereWidget(QWidget):
 
     def set_settings(self, cfg: IndicatorSettings) -> None:
         """Görünüm ayarlarını uygular; diken sayısı değiştiyse noktalar yeniden dağıtılır."""
-        if getattr(self, "_cfg", None) is None or cfg.point_count != self._cfg.point_count:
+        old: IndicatorSettings | None = getattr(self, "_cfg", None)
+        if old is None or cfg.point_count != old.point_count:
             self._points = fibonacci_sphere(cfg.point_count)
             rng = np.random.default_rng(7)  # sabit tohum: her açılışta aynı karakter
             self._phase = rng.uniform(0.0, 2.0 * math.pi, cfg.point_count)
             self._speed = rng.uniform(0.15, 0.45, cfg.point_count)
             self._band = rng.integers(0, BANDS, cfg.point_count)
             self._rank = rng.uniform(0.0, 1.0, cfg.point_count)  # açılma sırası (eşik)
-        self._cfg = cfg
+        self._cfg: IndicatorSettings = cfg
         self._timer.setInterval(max(1, 1000 // cfg.fps))
         self.update()
 

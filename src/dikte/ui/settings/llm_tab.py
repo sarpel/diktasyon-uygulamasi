@@ -159,9 +159,9 @@ class LlmTab(QWidget):
             (self.gemini_key_env_edit, self.gemini_key_status),
             (self.custom_key_env_edit, self.custom_key_status),
         )
-        for edit, label in self._key_fields:
+        for edit, status in self._key_fields:
             edit.textChanged.connect(self.refresh_key_status)
-            label.setToolTip("Anahtarın değeri hiçbir zaman gösterilmez veya kaydedilmez.")
+            status.setToolTip("Anahtarın değeri hiçbir zaman gösterilmez veya kaydedilmez.")
 
         self.privacy_label = QLabel(
             "⚠ Uzak sağlayıcıda dikte metni dış servise gönderilir. "
@@ -253,8 +253,8 @@ class LlmTab(QWidget):
 
     def refresh_key_status(self) -> None:
         """Yalnızca anahtarın tanımlı olup olmadığını gösterir; değer döndürülmez/gösterilmez."""
-        for edit, label in self._key_fields:
-            label.setText(KEY_PRESENT if key_status(edit.text().strip()) else KEY_MISSING)
+        for edit, status in self._key_fields:
+            status.setText(KEY_PRESENT if key_status(edit.text().strip()) else KEY_MISSING)
 
     def _show_group(self, provider: str) -> None:
         wanted = self._group_for(provider)
