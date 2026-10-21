@@ -12,6 +12,7 @@ import sys
 import time
 from collections.abc import Callable
 from dataclasses import dataclass, field
+from functools import partial
 from pathlib import Path
 from typing import cast
 
@@ -51,7 +52,7 @@ from dikte.core.history_export import to_markdown, to_text
 from dikte.core.state import BUSY_STATES, MODES, DictationState
 from dikte.core.workers import run_in_pool
 from dikte.llm import LlmError, make_provider
-from dikte.logging_setup import setup_logging
+from dikte.logging_setup import set_debug, setup_logging
 from dikte.platform.autostart import AutostartError, set_autostart
 from dikte.platform.clipboard import (
     build_mime,
@@ -273,9 +274,10 @@ def _wire(ctx: AppContext) -> None:
     c.error.connect(lambda m: ctx.tray.notify(APP_NAME, m, critical=True))
     c.error.connect(lambda m: _maybe_show_health_dialog_on_error(ctx, m))
     c.state_changed.connect(ctx.sounds.on_state)
+    c.error.connect(lambda m: log.warning("hata bildirimi: %s", m))
     c.error.connect(ctx.sounds.on_error)
     c.error.connect(ctx.overlay.show_error)
-    c.state_changed.connect(lambda s: s is DictationState.RESULT and _store_session(ctx))
+    c.state_changed.connect(lambda s: _store_session(ctx) if s is DictationState.RESULT else None)
     ctx.hotkey.activated.connect(lambda: _on_hotkey(ctx))
     ctx.hotkey_translate.activated.connect(lambda: _on_hotkey(ctx, "translate"))
     ctx.hotkey_prompt.activated.connect(lambda: _on_hotkey(ctx, "prompt"))
@@ -321,7 +323,7 @@ def _wire(ctx: AppContext) -> None:
     ctx.window.learn_requested.connect(lambda words: _learn_words(ctx, words))
     c.session_updated.connect(lambda s: _sync_history_on_edit(ctx, s))
     c.edit_learned.connect(lambda changes: _suggest(ctx, changes))
-    c.ready_changed.connect(lambda ready: ready and _refresh_status_info(ctx))
+    c.ready_changed.connect(lambda ready: _refresh_status_info(ctx) if ready else None)
     # Saklama süresi dolmuş dikteler yalnızca listeden gizlenmez, açılışta diskten de silinir.
     _guard_history(ctx, lambda: _prune_history(ctx))
     _refresh_history(ctx)
@@ -420,7 +422,7 @@ def _apply_history_edit(ctx: AppContext, session_id: str, text: str) -> None:
     for s in sessions:
         if s.id == session_id:
             edited = s.with_(corrected_text=text)
-            _guard_history(ctx, lambda edited=edited: ctx.history.update(edited))
+            _guard_history(ctx, partial(ctx.history.update, edited))
             _refresh_history(ctx)
             return
 
@@ -1037,6 +1039,7 @@ def _open_settings(ctx: AppContext) -> None:
         return
     needs_reload = ctx.stt.update_settings(new.stt)
     ctx.recorder.update_settings(new.audio)
+    old_debug = ctx.settings.debug_logging
     llm_changed = new.llm != ctx.settings.llm
     ctx.settings = new
     _apply_autostart(ctx, new.autostart)
@@ -1048,6 +1051,8 @@ def _open_settings(ctx: AppContext) -> None:
     ctx.window.close_after_copy = new.close_after_copy
     ctx.window.set_clipboard_exclude_history(new.clipboard_exclude_history)
     ctx.sounds.set_enabled(new.sounds_enabled)
+    if new.debug_logging != old_debug:
+        set_debug(new.debug_logging)
     ctx.overlay.set_position(new.overlay_position, new.overlay_xy)
     ctx.overlay.set_indicator(new.overlay_indicator)
     ctx.overlay.set_indicator_settings(new.indicator)
@@ -1269,6 +1274,7 @@ def main(argv: list[str] | None = None) -> int:
     try:
         first_run = not paths.config_path().exists()
         settings, config_issues = load_settings_with_issues()
+        set_debug(settings.debug_logging)
         ctx = build_app(settings)
     except OSError as exc:
         # Veri klasörü (paths.app_data_dir()) oluşturulamadı/yazılamadı — paketlenmiş

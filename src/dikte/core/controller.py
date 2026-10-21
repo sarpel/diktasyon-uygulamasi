@@ -760,6 +760,7 @@ class DictationController(QObject):
     def _set_state(self, new: DictationState) -> None:
         if new is self._state:
             return
+        log.debug("durum: %s → %s", self._state.name, new.name)
         self._state = new
         self.state_changed.emit(new)
 

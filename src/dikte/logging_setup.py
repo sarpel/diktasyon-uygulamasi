@@ -9,6 +9,30 @@ from dikte import paths
 
 log = logging.getLogger(__name__)
 
+# Hata ayıklamada bile ayrıntısı işe yaramayan, günlüğü dolduran kütüphaneler.
+_NOISY = ("httpcore", "httpx", "urllib3", "huggingface_hub", "filelock", "PIL", "asyncio")
+
+
+def _log_qt_message(mode, context, message: str) -> None:
+    """Qt'nin kendi uyarılarını (stil, OpenGL, ekran…) günlüğe yönlendirir."""
+    from PySide6.QtCore import QtMsgType
+
+    level = {
+        QtMsgType.QtDebugMsg: logging.DEBUG,
+        QtMsgType.QtInfoMsg: logging.INFO,
+        QtMsgType.QtWarningMsg: logging.WARNING,
+    }.get(mode, logging.ERROR)
+    logging.getLogger("qt").log(level, "%s (%s:%s)", message, context.file, context.line)
+
+
+def set_debug(enabled: bool) -> None:
+    """Hata ayıklama günlüğü: açıkken her şey (DEBUG) ve Qt'nin kendi uyarıları da yazılır;
+    kapalıyken INFO. Gürültülü kütüphaneler hep INFO'da tutulur. Çalışırken değiştirilebilir."""
+    logging.getLogger().setLevel(logging.DEBUG if enabled else logging.INFO)
+    for name in _NOISY:
+        logging.getLogger(name).setLevel(logging.INFO)
+    log.info("hata ayıklama günlüğü %s", "açık" if enabled else "kapalı")
+
 
 def _log_uncaught(exc_type, exc_value, exc_tb) -> None:
     if issubclass(exc_type, KeyboardInterrupt):
@@ -48,3 +72,6 @@ def setup_logging(level: str = "INFO") -> None:
     # slot'ları hariç — onlar zaten kendi try/except'leriyle sarılı) için loglanır.
     sys.excepthook = _log_uncaught
     threading.excepthook = _log_uncaught_thread
+    from PySide6.QtCore import qInstallMessageHandler
+
+    qInstallMessageHandler(_log_qt_message)
