@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import argparse
 import logging
+import signal
 import sys
 import time
 from collections.abc import Callable
@@ -97,6 +98,7 @@ from dikte.ui.sounds import SoundPlayer
 from dikte.ui.tray import TrayIcon
 
 log = logging.getLogger(__name__)
+SIGNAL_POLL_MS = 250  # Ctrl+C'nin fark edilme gecikmesi
 # Windows dışında global kısayol yoktur; masaüstü ortamı bu komuta bir tuş bağlar.
 CLI_TOGGLE_HINT = "dikte --toggle"
 # Çıkışta kuyruktaki medya pause() çağrısı için en fazla bekleme (MediaPauser zaman aşımı ~1,5 sn).
@@ -1103,8 +1105,17 @@ def _quit(ctx: AppContext) -> None:
 
 
 def _install_shutdown(ctx: AppContext, app: QObject) -> None:
-    """`app.aboutToQuit` sinyaline `_shutdown`ı bağlar (tepsi, oturum kapatma, kapanış)."""
+    """`app.aboutToQuit` sinyaline `_shutdown`ı bağlar (tepsi, oturum kapatma, kapanış).
+
+    Konsoldaki Ctrl+C de aynı temiz kapanıştan geçer: Python'un varsayılan işleyicisi
+    `KeyboardInterrupt`i Qt geri çağrısı içinde fırlatır, Qt onu yutar ve uygulama kapanmaz."""
     app.aboutToQuit.connect(lambda: _shutdown(ctx))  # type: ignore[attr-defined]
+    signal.signal(signal.SIGINT, lambda *_: app.quit())  # type: ignore[attr-defined]
+    # Olay döngüsü C++'ta beklerken Python sinyal işleyicisi çalışamaz; boş zamanlayıcı
+    # yorumlayıcıya düzenli olarak dönüp sinyali işlemesini sağlar.
+    timer = QTimer(app)
+    timer.timeout.connect(lambda: None)
+    timer.start(SIGNAL_POLL_MS)
 
 
 def _shutdown(ctx: AppContext) -> None:
