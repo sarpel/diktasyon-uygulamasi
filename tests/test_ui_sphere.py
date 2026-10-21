@@ -96,7 +96,7 @@ def test_paints_without_error_silent_and_loud(qtbot):
 
 
 def test_spikes_follow_their_own_band(qtbot):
-    """Ses tek dilimdeyse yalnızca o dilime bağlı dikenler uzar; küre bütün olarak büyümez."""
+    """Ses tek dilimdeyse yalnızca o dilime bağlı dikenler uzar."""
     w = SphereWidget()
     qtbot.addWidget(w)
     w.push_buckets((1.0,) + (0.0,) * (BANDS - 1))
@@ -136,3 +136,15 @@ def test_all_color_modes_paint(qtbot):
     for mode in ("holo", "theme", "custom"):
         w.set_settings(IndicatorSettings(color_mode=mode, glow=0.0, core_opacity=0.0))
         assert not w.grab().isNull()
+
+
+def test_core_swells_with_level(qtbot):
+    from dikte.config import IndicatorSettings
+
+    w = SphereWidget()
+    qtbot.addWidget(w)
+    assert w.core_scale() == 1.0
+    w.push_buckets((1.0,) * 16)
+    assert w.core_scale() == 1.0 + IndicatorSettings().swell
+    w.set_settings(IndicatorSettings(swell=0.0))
+    assert w.core_scale() == 1.0

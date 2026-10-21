@@ -61,7 +61,8 @@ _SPHERE = (
     ("spin_speed", "Dönüş hızı", 0.0, 5.0, 0.1, "Radyan/sn; 0 = sabit küre."),
     ("tilt", "Eğim", -1.5, 1.5, 0.05, "Kürenin bakış açısı (radyan)."),
     ("glow", "Parıltı", 0.0, 3.0, 0.1, "Neon hale yoğunluğu; 0 = kapalı."),
-    ("line_width", "Çizgi kalınlığı", 0.3, 4.0, 0.1, "Diken kalınlığı çarpanı."),
+    ("line_width", "Diken kalınlığı", 0.3, 4.0, 0.1, "Konik dikenin taban genişliği çarpanı."),
+    ("swell", "Genleşme", 0.0, 1.0, 0.05, "Ses yükseldikçe kürenin büyüme oranı; 0 = sabit."),
     ("shimmer_speed", "Renk kayması", 0.0, 5.0, 0.1, "Holografik renk akışının hızı."),
     ("core_opacity", "Çekirdek", 0.0, 3.0, 0.1, "Cam çekirdeğin görünürlüğü; 0 = yalnız dikenler."),
 )

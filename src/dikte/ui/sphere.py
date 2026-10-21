@@ -1,10 +1,11 @@
 """Kayıt göstergesinde sese tepki veren dikenli küre.
 
 Kürenin yüzeyine eşit aralıklı noktalar dağıtılır (Fibonacci küresi); her noktadan dışarı
-doğru bir diken çıkar. Sese yalnızca dikenler tepki verir: her diken bir ses dilimine
-bağlıdır ve o dilimin seviyesiyle uzayıp kısalır. Kürenin kendisi (yarıçap, konum, dönüş
-hızı) sabittir; sallanmaz. Neon/holografik görünüm için toplamalı (additive) karışım ve
-yöne göre kayan cyan–magenta renk tonu kullanılır.
+doğru, ferromanyetik sıvıdaki gibi tabanı geniş, ucu sivri konik bir diken çıkar. Her diken
+bir ses dilimine bağlıdır ve o dilimin seviyesiyle uzayıp kısalır; küre de genel ses
+seviyesiyle hafifçe genleşir (`swell`). Konum ve dönüş hızı sesten bağımsızdır; sallanmaz.
+Neon/holografik görünüm için toplamalı (additive) karışım ve yöne göre kayan
+cyan–magenta renk tonu kullanılır.
 
 Çizim QPainter ile yapılır (GPU/OpenGL gerektirmez); geometri numpy ile vektörel
 hesaplanır. Zamanlayıcı yalnızca bileşen görünürken çalışır.
@@ -16,7 +17,7 @@ import math
 
 import numpy as np
 from PySide6.QtCore import QPointF, Qt, QTimer
-from PySide6.QtGui import QColor, QPainter, QPen, QRadialGradient
+from PySide6.QtGui import QColor, QLinearGradient, QPainter, QPainterPath, QPen, QRadialGradient
 from PySide6.QtWidgets import QWidget
 
 from dikte.config import IndicatorSettings
@@ -102,6 +103,10 @@ class SphereWidget(QWidget):
         self._levels = np.zeros(BANDS)
         self.update()
 
+    def core_scale(self) -> float:
+        """Kürenin sesle genleşme çarpanı (1 = sessiz)."""
+        return 1.0 + self._cfg.swell * self.level
+
     def spike_radii(self) -> np.ndarray:
         """Her noktanın merkezden uzaklığı, yarıçap birimiyle (≥ 1)."""
         c = self._cfg
@@ -169,10 +174,13 @@ class SphereWidget(QWidget):
         w, h = self.width(), self.height()
         cx, cy = w / 2.0, h / 2.0
         center = QPointF(cx, cy)
-        # Dikenler tam uzadığında da kutuya sığsın; yarıçap sese göre değişmez.
-        radius = min(w, h) / 2.0 / (1.0 + c.rest_spike + c.max_spike) * 0.98
+        # Küre tam genleşip dikenler tam uzadığında da kutuya sığsın.
+        unit = min(w, h) / 2.0 / (1.0 + c.swell + c.rest_spike + c.max_spike) * 0.98
+        radius = unit * self.core_scale()
         dirs, depth = self._projected()
-        radii = self.spike_radii()
+        spikes = self.spike_radii() - 1.0  # diken boyu, `unit` biriminde
+        # Komşu dikenler arası açı ≈ √(4π/n): tabanlar birbirine değecek kadar geniş.
+        half_base = 0.5 * math.sqrt(4.0 * math.pi / c.point_count) * radius * c.line_width
         # Toplamalı karışım: üst üste binen ışık parlar (neon).
         p.setCompositionMode(QPainter.CompositionMode.CompositionMode_Plus)
 
@@ -192,23 +200,44 @@ class SphereWidget(QWidget):
         for i in np.argsort(depth):
             dx, dy = float(dirs[i, 0]), float(dirs[i, 1])
             front = (float(depth[i]) + 1.0) / 2.0  # 0 arka, 1 ön
-            root = QPointF(cx + dx * radius, cy - dy * radius)
-            tip_r = radius * float(radii[i])
-            tip = QPointF(cx + dx * tip_r, cy - dy * tip_r)
+            length = unit * float(spikes[i])
             # Yön ve zamanla kayan renk: dönen hologram yanardönerliği.
             mix = 0.5 + 0.5 * math.sin(3.0 * dx + 2.0 * dy + self._t * c.shimmer_speed)
-            grow = min(1.0, (float(radii[i]) - 1.0 - c.rest_spike) / c.max_spike * 1.5)
-            pens = [
-                QPen(
-                    self._spike_color(mix, 0.65 - 0.45 * grow, 0.25 + 0.7 * front),
-                    (0.6 + 0.9 * front) * c.line_width,
-                )
-            ]
+            grow = min(1.0, (float(spikes[i]) - c.rest_spike) / c.max_spike * 1.5)
+            # Kısa diken ince kalır: sessizlikte yüzey pürüzsüz, ses geldikçe koni büyür.
+            cone = _cone(cx, cy, dx, dy, radius, length, min(half_base, 0.6 * length))
+            root = QPointF(cx + dx * radius, cy - dy * radius)
+            tip = QPointF(cx + dx * (radius + length), cy - dy * (radius + length))
             if c.glow > 0:
-                glow_color = self._spike_color(mix, 0.9, (0.10 + 0.15 * front) * c.glow)
-                pens.insert(0, QPen(glow_color, (2.5 + 2.5 * front) * c.line_width))
-            for pen in pens:
-                pen.setCapStyle(Qt.PenCapStyle.RoundCap)
-                p.setPen(pen)
-                p.drawLine(root, tip)
+                glow = QPen(self._spike_color(mix, 0.9, (0.10 + 0.15 * front) * c.glow))
+                glow.setWidthF((1.5 + 2.0 * front) * c.line_width)
+                glow.setJoinStyle(Qt.PenJoinStyle.RoundJoin)
+                p.setPen(glow)
+            else:
+                p.setPen(Qt.PenStyle.NoPen)
+            # Tabanda doygun ve sönük, uca doğru beyazımsı ve parlak (ışık uçta toplanır).
+            fill = QLinearGradient(root, tip)
+            fill.setColorAt(0.0, self._spike_color(mix, 0.85, 0.15 + 0.35 * front))
+            fill.setColorAt(1.0, self._spike_color(mix, 0.65 - 0.45 * grow, 0.3 + 0.7 * front))
+            p.setBrush(fill)
+            p.drawPath(cone)
         p.end()
+
+
+def _cone(
+    cx: float, cy: float, dx: float, dy: float, radius: float, length: float, half_base: float
+) -> QPainterPath:
+    """Kürenin yüzeyinden (dx, dy) yönünde çıkan, kenarları içe kıvrık konik diken.
+
+    Ferromanyetik sıvı dikeni gibi: taban geniş ve yüzeye yumuşakça bağlanır, uç sivri."""
+    norm = math.hypot(dx, dy) or 1.0
+    px, py = dy / norm * half_base, dx / norm * half_base  # ekranda eksene dik yarım taban
+    bx, by = cx + dx * radius, cy - dy * radius
+    tx, ty = bx + dx * length, by - dy * length
+    # Kontrol noktası eksene yakın ve tabana yakın: kenarlar içe kıvrılır, uç incelir.
+    ax, ay = bx + (tx - bx) * 0.3, by + (ty - by) * 0.3
+    path = QPainterPath(QPointF(bx + px, by + py))
+    path.quadTo(QPointF(ax + px * 0.2, ay + py * 0.2), QPointF(tx, ty))
+    path.quadTo(QPointF(ax - px * 0.2, ay - py * 0.2), QPointF(bx - px, by - py))
+    path.closeSubpath()
+    return path

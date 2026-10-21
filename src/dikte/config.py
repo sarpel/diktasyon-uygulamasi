@@ -175,7 +175,8 @@ class IndicatorSettings(BaseModel):
     spin_speed: float = Field(default=0.6, ge=0.0, le=5.0)  # radyan/sn
     tilt: float = Field(default=0.45, ge=-1.5, le=1.5)  # radyan
     glow: float = Field(default=1.0, ge=0.0, le=3.0)  # neon parıltı yoğunluğu
-    line_width: float = Field(default=1.0, ge=0.3, le=4.0)  # diken kalınlığı çarpanı
+    line_width: float = Field(default=1.0, ge=0.3, le=4.0)  # diken taban kalınlığı çarpanı
+    swell: float = Field(default=0.25, ge=0.0, le=1.0)  # tam seste kürenin genleşme oranı
     shimmer_speed: float = Field(default=0.8, ge=0.0, le=5.0)  # renk kayması hızı
     core_opacity: float = Field(default=1.0, ge=0.0, le=3.0)  # cam çekirdek görünürlüğü
     # ---- dalga
