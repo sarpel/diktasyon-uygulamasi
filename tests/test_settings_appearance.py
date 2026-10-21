@@ -1,4 +1,7 @@
+from typing import cast
+
 from PySide6.QtGui import QColor
+from PySide6.QtWidgets import QDoubleSpinBox
 
 from dikte.config import IndicatorSettings, Settings
 from dikte.ui.settings.appearance_tab import AppearanceTab
@@ -46,8 +49,8 @@ def test_spin_change_updates_preview(qtbot):
 
 def test_hue_order_is_validated(qtbot):
     tab = make(qtbot)
-    tab.spins["hue_low"].setValue(0.9)
-    tab.spins["hue_high"].setValue(0.1)
+    cast(QDoubleSpinBox, tab.spins["hue_low"]).setValue(0.9)
+    cast(QDoubleSpinBox, tab.spins["hue_high"]).setValue(0.1)
     assert tab.validate()
 
 

@@ -288,8 +288,10 @@ def test_blinking_dot_does_not_shift_indicator(qtbot):
     qtbot.waitExposed(o)
     x = o._sphere.x()
     o._toggle_dot()
-    o.layout().activate()
-    o._sphere.parentWidget().layout().activate()
+    for widget in (o, o._sphere.parentWidget()):
+        layout = widget.layout() if widget else None
+        assert layout is not None
+        layout.activate()
     assert not o._dot.isVisible()
     assert o._sphere.x() == x
 

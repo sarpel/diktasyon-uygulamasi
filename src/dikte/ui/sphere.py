@@ -151,11 +151,16 @@ class SphereWidget(QWidget):
         )
         # Düşük doygunluk = beyaza yakın: uzayan diken ucu parlasın (holo kipiyle aynı his).
         white = max(0.0, min(1.0, 1.0 - saturation / 0.9))
-        rgb = [
-            (x + (y - x) * mix) * (1.0 - white) + white
-            for x, y in zip(a.getRgbF()[:3], b.getRgbF()[:3], strict=True)
-        ]
-        return QColor.fromRgbF(*rgb, min(1.0, alpha))
+
+        def channel(x: float, y: float) -> float:
+            return (x + (y - x) * mix) * (1.0 - white) + white
+
+        return QColor.fromRgbF(
+            channel(a.redF(), b.redF()),
+            channel(a.greenF(), b.greenF()),
+            channel(a.blueF(), b.blueF()),
+            min(1.0, alpha),
+        )
 
     def paintEvent(self, event) -> None:
         c = self._cfg

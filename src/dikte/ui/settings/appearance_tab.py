@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import math
+from typing import cast
 
 from PySide6.QtCore import QTimer
 from PySide6.QtGui import QColor
@@ -146,7 +147,7 @@ class AppearanceTab(QWidget):
         top.addRow("Gösterge teması", self.overlay_theme_combo)
         common = self._group("Ortak", _COMMON)
         sphere = self._group("Küre", _SPHERE)
-        sphere_form = sphere.layout()
+        sphere_form = cast(QFormLayout, sphere.layout())
         sphere_form.insertRow(0, "Renk kipi", self.color_mode_combo)
         colors = QHBoxLayout()
         colors.addWidget(self.color1_btn)
@@ -217,12 +218,13 @@ class AppearanceTab(QWidget):
         self._refresh_preview()
 
     def indicator_settings(self) -> IndicatorSettings:
-        values = {name: box.value() for name, box in self.spins.items()}
-        return IndicatorSettings(
-            **values,
-            color_mode=self.color_mode_combo.currentData(),
-            custom_color=self.color1_btn.color,
-            custom_color2=self.color2_btn.color,
+        return IndicatorSettings.model_validate(
+            {
+                **{name: box.value() for name, box in self.spins.items()},
+                "color_mode": self.color_mode_combo.currentData(),
+                "custom_color": self.color1_btn.color,
+                "custom_color2": self.color2_btn.color,
+            }
         )
 
     def validate(self) -> str | None:
