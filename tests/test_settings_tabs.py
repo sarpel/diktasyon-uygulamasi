@@ -6,6 +6,7 @@ from dikte.ui.settings_dialog import SettingsDialog
 
 TAB_TITLES = [
     "Genel",
+    "Görünüm",
     "Ses",
     "Konuşma Tanıma",
     "Metin Düzeltme",
@@ -827,5 +828,19 @@ def test_dialog_fits_on_screen_when_shown(dlg, qtbot):
 
 
 def test_current_tab_follows_selected_page(dlg):
-    dlg.tabs.setCurrentIndex(2)
+    dlg.tabs.setCurrentIndex(3)
     assert dlg.current_tab() is dlg.stt
+
+
+def test_learned_words_can_be_removed_or_cleared(qtbot):
+    from dikte.config import DictionarySettings
+
+    s = Settings(dictionary=DictionarySettings(learned=("çok", "Kubernetes", "Sarp")))
+    d = SettingsDialog(s, ())
+    qtbot.addWidget(d)
+    assert d.learned_list.count() == 3
+    d.learned_list.item(1).setSelected(True)
+    d.remove_learned_btn.click()
+    assert d.result_settings().dictionary.learned == ("çok", "Sarp")
+    d.clear_learned_btn.click()
+    assert d.result_settings().dictionary.learned == ()

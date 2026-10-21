@@ -1658,3 +1658,17 @@ def test_build_app_and_settings_apply_overlay_theme(qtbot, tmp_path, monkeypatch
     monkeypatch.setattr(app_mod, "SettingsDialog", FakeDialog)
     app_mod._open_settings(c)
     assert c.overlay.theme == "dracula"
+
+
+def test_learn_saves_words_as_hints_not_rules(ctx, monkeypatch):
+    saved = []
+    monkeypatch.setattr(app_mod, "save_settings", saved.append)
+    hints = []
+    monkeypatch.setattr(ctx.stt, "set_dictionary", lambda h, p: hints.append((h, p)))
+    ctx.window.learn_requested.emit(("Kubernetes", "çok"))
+    assert ctx.settings.dictionary.learned == ("Kubernetes", "çok")
+    assert ctx.settings.dictionary.entries == ()  # değiştirme kuralı eklenmez
+    assert saved and saved[0].dictionary.learned == ("Kubernetes", "çok")
+    assert "Kubernetes" in hints[-1][0] and "çok" in hints[-1][1]
+    ctx.window.learn_requested.emit(("çok", "Sarp"))
+    assert ctx.settings.dictionary.learned == ("çok", "Sarp", "Kubernetes")

@@ -24,6 +24,7 @@ from dikte.config import Settings
 from dikte.ui.settings import (
     AboutTab,
     AdvancedTab,
+    AppearanceTab,
     AudioTab,
     DictionaryTab,
     GeneralTab,
@@ -62,8 +63,16 @@ _PROXIED = {
         "keep_failed_audio_check",
         "clipboard_exclude_history_check",
         "overlay_position_combo",
+    ),
+    "appearance": (
         "overlay_indicator_combo",
         "overlay_theme_combo",
+        "color_mode_combo",
+        "color1_btn",
+        "color2_btn",
+        "preview_sphere",
+        "preview_wave",
+        "preview_btn",
     ),
     "audio": (
         "device_combo",
@@ -123,7 +132,15 @@ _PROXIED = {
         "llm_test_btn",
         "llm_test_status",
     ),
-    "dictionary": ("dictionary_table", "add_entry_btn", "remove_entry_btn", "instructions_edit"),
+    "dictionary": (
+        "dictionary_table",
+        "add_entry_btn",
+        "remove_entry_btn",
+        "instructions_edit",
+        "learned_list",
+        "remove_learned_btn",
+        "clear_learned_btn",
+    ),
     "advanced": (
         "beam_spin",
         "initial_prompt_edit",
@@ -163,6 +180,7 @@ class SettingsDialog(QDialog):
         self._settings = settings
 
         self.general = GeneralTab(settings)
+        self.appearance = AppearanceTab(settings)
         self.audio = AudioTab(settings, devices)
         self.stt = SttTab(settings)
         self.llm = LlmTab(settings)
@@ -174,6 +192,7 @@ class SettingsDialog(QDialog):
         self.about.health_requested.connect(self.health_requested)
         self._tabs_in_order = (
             self.general,
+            self.appearance,
             self.audio,
             self.stt,
             self.llm,

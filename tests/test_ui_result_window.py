@@ -551,3 +551,54 @@ def test_history_session_also_shows_diff(qtbot):
     w.load_session(Session(raw_text=raw, corrected_text=fixed, changes=word_changes(raw, fixed)))
     assert [s.cursor.selectedText() for s in w.raw_pane.editor.extraSelections()] == ["çuk"]
     assert [s.cursor.selectedText() for s in w.corrected_pane.editor.extraSelections()] == ["çok"]
+
+
+def test_clear_all_empties_every_pane(qtbot):
+    w, c = make(qtbot)
+    c.session_updated.emit(Session(raw_text="ham", corrected_text="Düz.", translation="tr"))
+    w.output_pane.set_text("prompt")
+    w.clear_all()
+    assert w.raw_pane.text() == w.corrected_pane.text() == w.output_pane.text() == ""
+    assert not w.output_pane.isVisibleTo(w)
+
+
+def test_clear_all_does_not_emit_empty_edit(qtbot):
+    w, c = make(qtbot)
+    c.session_updated.emit(Session(raw_text="ham", corrected_text="Düz."))
+    edits = []
+    w.text_edited.connect(lambda sid, t: edits.append(t))
+    w.clear_all()
+    w._emit_text_edited()
+    assert edits == []
+
+
+def test_learned_words_takes_only_new_spellings():
+    from dikte.ui.result_window import learned_words
+
+    assert learned_words("kuber netes kümesi, çuk iyi.", "Kubernetes kümesi, çok iyi.") == (
+        "Kubernetes",
+        "çok",
+    )
+    assert learned_words("merhaba dünya.", "merhaba dünya") == ()
+    assert learned_words("bir iki üç", "bir üç") == ()
+
+
+def test_learn_button_emits_hand_corrected_words(qtbot):
+    w, c = make(qtbot)
+    c.session_updated.emit(Session(raw_text="çuk iyi", corrected_text="çuk iyi"))
+    got = []
+    w.learn_requested.connect(got.append)
+    w.corrected_pane.editor.setPlainText("çok iyi")
+    w._emit_text_edited()  # debounce sonrası kayıt; denetleyici aynı metni geri yollar
+    c.session_updated.emit(Session(raw_text="çuk iyi", corrected_text="çok iyi"))
+    w.learn_btn.click()
+    assert got == [("çok",)]
+
+
+def test_learn_without_edits_emits_nothing(qtbot):
+    w, c = make(qtbot)
+    c.session_updated.emit(Session(raw_text="a", corrected_text="a"))
+    got = []
+    w.learn_requested.connect(got.append)
+    w.learn_btn.click()
+    assert got == []

@@ -18,6 +18,7 @@ from PySide6.QtWidgets import (
 )
 
 from dikte.core.state import BUSY_STATES, DictationState, Session
+from dikte.llm.diff import word_changes
 from dikte.ui.history_panel import HistoryPanel
 from dikte.ui.text_pane import TextPane
 from dikte.ui.toast import Toast
@@ -25,7 +26,20 @@ from dikte.ui.toast import Toast
 EDIT_DEBOUNCE_MS = 800
 TITLE_TRANSLATION = "İngilizce Çeviri"
 TITLE_PROMPT = "Agent Prompt (EN)"
+_EDGE_PUNCT = ".,;:!?…\"'()[]{}«»“”‘’"
 AUDIO_EXTENSIONS = (".wav", ".mp3", ".m4a", ".ogg", ".flac", ".webm", ".mp4", ".opus")
+
+
+def learned_words(before: str, after: str) -> tuple[str, ...]:
+    """`before` → `after` elle düzenlemesinde yeni yazılan kelimeler (noktalamasız, sırayla,
+    tekrarsız). Silinen kelimeler öğrenilmez."""
+    words: dict[str, None] = {}
+    for change in word_changes(before, after):
+        for word in change.replacement.split():
+            cleaned = word.strip(_EDGE_PUNCT)
+            if cleaned and change.original.strip(_EDGE_PUNCT) != cleaned:
+                words[cleaned] = None
+    return tuple(words)
 
 
 def _dropped_audio_path(mime_data) -> str | None:
@@ -53,6 +67,7 @@ class ResultWindow(QMainWindow):
     text_edited = Signal(str, str)  # session_id, text
     repaste_requested = Signal(str)
     dictionary_add_requested = Signal(str, str)  # wrong, term
+    learn_requested = Signal(tuple)  # elle düzeltilmiş kelimeler (Whisper ipucu olur)
     file_requested = Signal(str)
 
     def __init__(self, parent=None, file_dialog=None):
@@ -73,6 +88,7 @@ class ResultWindow(QMainWindow):
         self._session_updates = 0
         self.close_after_copy = False
         self._last_shown_text = ""
+        self._learn_base = ""  # elle düzenlemeden önceki metin; "Öğren" farkı buna göre alır
         self._pending_suggestion: tuple[str, str] | None = None
         self._edit_timer = QTimer(self)
         self._edit_timer.setSingleShot(True)
@@ -117,7 +133,18 @@ class ResultWindow(QMainWindow):
             split.addWidget(w)
         split.setSizes([330, 400, 370])
 
+        self.clear_btn = QPushButton("Tümünü sil")
+        self.clear_btn.setToolTip("Ham, düzeltilmiş ve çeviri/prompt metinlerini ekrandan temizler")
+        self.clear_btn.clicked.connect(self.clear_all)
+        self.learn_btn = QPushButton("Öğren")
+        self.learn_btn.setToolTip(
+            "Düzeltilmiş metinde elle düzelttiğiniz kelimeleri öğrenir; sonraki diktelerde "
+            "bu yazımlar tercih edilir (zorla değiştirilmez)"
+        )
+        self.learn_btn.clicked.connect(self._on_learn)
         buttons = QHBoxLayout()
+        buttons.addWidget(self.clear_btn)
+        buttons.addWidget(self.learn_btn)
         buttons.addStretch(1)
         buttons.addWidget(self.translate_btn)
         buttons.addWidget(self.enhance_btn)
@@ -255,6 +282,10 @@ class ResultWindow(QMainWindow):
         self._sync_llm_buttons()
         self.raw_pane.set_text(s.raw_text)
         self.corrected_pane.set_text(s.corrected_text)
+        if s.corrected_text != self._last_shown_text:
+            # Kendi düzenlememizin yankısı değil (o, _last_shown_text'e önceden yazılır):
+            # yeni sonuç geldi, "Öğren" farkının tabanı bu metin olur.
+            self._learn_base = s.corrected_text
         self._last_shown_text = s.corrected_text
         self._show_diff(s)
         if self._pending == "translation" and s.translation:
@@ -317,7 +348,7 @@ class ResultWindow(QMainWindow):
         self.output_pane.set_busy(False)
         self.raw_pane.set_text(s.raw_text)
         self.corrected_pane.set_text(s.corrected_text)
-        self._last_shown_text = s.corrected_text
+        self._last_shown_text = self._learn_base = s.corrected_text
         self.output_pane.set_text(s.translation or s.enhanced_prompt)
         self.output_pane.title_label.setText(
             TITLE_PROMPT if (s.enhanced_prompt and not s.translation) else TITLE_TRANSLATION
@@ -341,6 +372,25 @@ class ResultWindow(QMainWindow):
             return
         self._start_pending("enhanced_prompt", TITLE_PROMPT)
         self._controller.request_enhanced_prompt(text)
+
+    def clear_all(self) -> None:
+        """Üç paneli ekrandan temizler; oturuma/geçmişe dokunmaz (bekleyen düzenleme kaydedilir)."""
+        self._flush_pending_edit()
+        self._displayed_session_id = None  # boş metin oturuma "düzenleme" olarak yazılmasın
+        for pane in (self.raw_pane, self.corrected_pane, self.output_pane):
+            pane.set_text("")
+        self._edit_timer.stop()
+        self._last_shown_text = self._learn_base = ""
+        self.output_pane.setVisible(False)
+        self._dismiss_suggestion()
+        self.statusBar().clearMessage()
+
+    def _on_learn(self) -> None:
+        words = learned_words(self._learn_base, self.corrected_pane.text())
+        if words:
+            self.learn_requested.emit(words)
+        else:
+            self.statusBar().showMessage("Öğrenilecek elle düzeltme yok", 4000)
 
     def _on_corrected_text_changed(self) -> None:
         self._edit_timer.start()  # her tuş vuruşunda yeniden başlar (debounce)

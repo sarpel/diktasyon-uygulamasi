@@ -1,6 +1,6 @@
 import numpy as np
 
-from dikte.ui.sphere import POINT_COUNT, SphereWidget, fibonacci_sphere
+from dikte.ui.sphere import BANDS, POINT_COUNT, REST_SPIKE, SphereWidget, fibonacci_sphere
 
 
 def test_fibonacci_sphere_gives_unit_vectors():
@@ -21,7 +21,7 @@ def test_silent_sphere_is_smooth(qtbot):
     assert w.level == 0.0
     radii = w.spike_radii()
     assert radii.shape == (POINT_COUNT,)
-    assert radii.min() >= 1.0 and radii.max() < 1.08  # yalnızca hafif "nefes"
+    assert radii.min() >= 1.0 and radii.max() < 1.08  # yalnızca kısa dinlenme dikenleri
 
 
 def test_loud_audio_grows_spikes(qtbot):
@@ -93,3 +93,46 @@ def test_paints_without_error_silent_and_loud(qtbot):
     assert not w.grab().isNull()
     w.push_buckets((1.0,) * 16)
     assert not w.grab().isNull()
+
+
+def test_spikes_follow_their_own_band(qtbot):
+    """Ses tek dilimdeyse yalnızca o dilime bağlı dikenler uzar; küre bütün olarak büyümez."""
+    w = SphereWidget()
+    qtbot.addWidget(w)
+    w.push_buckets((1.0,) + (0.0,) * (BANDS - 1))
+    radii = w.spike_radii()
+    quiet = radii[w._band != 0]
+    assert radii[w._band == 0].max() > 1.3
+    assert quiet.max() == quiet.min() == 1.0 + REST_SPIKE
+
+
+def test_spin_speed_does_not_depend_on_level(qtbot):
+    w = SphereWidget()
+    qtbot.addWidget(w)
+    w._tick()
+    quiet = w._angle
+    w.push_buckets((1.0,) * 16)
+    w._tick()
+    assert w._angle - quiet == quiet
+
+
+def test_sensitivity_scales_levels(qtbot):
+    from dikte.config import IndicatorSettings
+
+    w = SphereWidget()
+    qtbot.addWidget(w)
+    w.set_settings(IndicatorSettings(sensitivity=4.0))
+    w.push_buckets((0.2,) * 16)
+    assert w.level == 0.8
+
+
+def test_all_color_modes_paint(qtbot):
+    from dikte.config import IndicatorSettings
+
+    w = SphereWidget()
+    qtbot.addWidget(w)
+    w.resize(96, 96)
+    w.push_buckets((1.0,) * 16)
+    for mode in ("holo", "theme", "custom"):
+        w.set_settings(IndicatorSettings(color_mode=mode, glow=0.0, core_opacity=0.0))
+        assert not w.grab().isNull()

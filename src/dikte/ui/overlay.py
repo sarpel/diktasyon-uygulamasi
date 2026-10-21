@@ -6,6 +6,7 @@ from PySide6.QtCore import QElapsedTimer, QPoint, QRect, Qt, QTimer, Signal
 from PySide6.QtGui import QColor, QCursor, QGuiApplication, QMouseEvent
 from PySide6.QtWidgets import QHBoxLayout, QLabel, QPushButton, QVBoxLayout, QWidget
 
+from dikte.config import IndicatorSettings
 from dikte.core.state import DictationState
 from dikte.ui.sphere import SphereWidget
 from dikte.ui.themes import DEFAULT_THEME, THEMES, get_theme
@@ -48,6 +49,10 @@ class RecordingOverlay(QWidget):
         row = QHBoxLayout()
         row.setSpacing(12)
         self._dot = QLabel("●")
+        # Yanıp sönerken yeri korunsun; yoksa küre/dalga her yarım saniyede sağa-sola kayar.
+        policy = self._dot.sizePolicy()
+        policy.setRetainSizeWhenHidden(True)
+        self._dot.setSizePolicy(policy)
         self._wave = WaveformWidget()
         self._wave.setFixedSize(220, 44)
         self._sphere = SphereWidget()
@@ -167,6 +172,15 @@ class RecordingOverlay(QWidget):
         self._indicator = "sphere" if kind == "sphere" else "wave"
         if self._time.isVisibleTo(self):  # kayıt görünümündeyiz
             self._show_indicator()
+            self._resize_keeping_anchor()
+
+    def set_indicator_settings(self, cfg: IndicatorSettings) -> None:
+        """Küre/dalga görünüm ayarları (boyut, duyarlılık, renk…); kayıt sürerken de uygulanır."""
+        self._sphere.set_settings(cfg)
+        self._sphere.setFixedSize(cfg.size, cfg.size)
+        self._wave.set_settings(cfg)
+        self._wave.setFixedSize(cfg.wave_width, 44)
+        if self.isVisible():
             self._resize_keeping_anchor()
 
     def _active_indicator(self) -> WaveformWidget | SphereWidget:

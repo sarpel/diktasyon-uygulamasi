@@ -113,6 +113,8 @@ CLIPBOARD_WRITE_FAILED = (
 )
 TYPING_FAILED = "Metnin bir kısmı yazılamadı; tamamı panoda."
 
+LEARNED_MAX = 50  # Whisper promptu ~400 karakterde kesilir; fazlası işe yaramaz
+
 
 @dataclass
 class AppContext:
@@ -238,6 +240,7 @@ def build_app(settings: Settings) -> AppContext:
     ctx.hotkey_paste_last = GlobalHotkey(hotkey_id=HOTKEY_ID + 4)
     overlay.set_position(settings.overlay_position, settings.overlay_xy)
     overlay.set_indicator(settings.overlay_indicator)
+    overlay.set_indicator_settings(settings.indicator)
     overlay.set_theme(settings.overlay_theme)
     _wire(ctx)
     return ctx
@@ -313,6 +316,7 @@ def _wire(ctx: AppContext) -> None:
         lambda wrong, term: _add_dictionary_entry(ctx, wrong, term)
     )
     ctx.window.repaste_requested.connect(lambda text: _repaste(ctx, text))
+    ctx.window.learn_requested.connect(lambda words: _learn_words(ctx, words))
     c.session_updated.connect(lambda s: _sync_history_on_edit(ctx, s))
     c.edit_learned.connect(lambda changes: _suggest(ctx, changes))
     c.ready_changed.connect(lambda ready: ready and _refresh_status_info(ctx))
@@ -448,6 +452,19 @@ def _add_dictionary_entry(ctx: AppContext, wrong: str, term: str) -> None:
         return
     ctx.settings = new_settings
     ctx.controller.update_settings(new_settings)
+
+
+def _learn_words(ctx: AppContext, words: tuple[str, ...]) -> None:
+    """Elle düzeltilen kelimeleri Whisper ipucu listesinin başına ekler (en fazla LEARNED_MAX)."""
+    old = ctx.settings.dictionary.learned
+    learned = tuple(dict.fromkeys((*words, *old)))[:LEARNED_MAX]
+    new_dictionary = ctx.settings.dictionary.model_copy(update={"learned": learned})
+    new_settings = ctx.settings.model_copy(update={"dictionary": new_dictionary})
+    if not _guard_settings(ctx, lambda: save_settings(new_settings)):
+        return
+    ctx.settings = new_settings
+    ctx.controller.update_settings(new_settings)
+    ctx.window.statusBar().showMessage(f"Öğrenildi: {', '.join(words)}", 6000)
 
 
 def _repaste(ctx: AppContext, text: str) -> None:
@@ -1031,6 +1048,7 @@ def _open_settings(ctx: AppContext) -> None:
     ctx.sounds.set_enabled(new.sounds_enabled)
     ctx.overlay.set_position(new.overlay_position, new.overlay_xy)
     ctx.overlay.set_indicator(new.overlay_indicator)
+    ctx.overlay.set_indicator_settings(new.indicator)
     ctx.overlay.set_theme(new.overlay_theme)
     ctx.history = _make_history(new)
     # Sınır/saklama süresi düşürüldüyse (ör. 0 = geçmiş kapalı) eski dikteler diskte kalmasın.

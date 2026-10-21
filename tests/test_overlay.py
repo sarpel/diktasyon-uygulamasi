@@ -278,3 +278,27 @@ def test_indicator_change_while_hidden_does_not_show_overlay(qtbot):
     qtbot.addWidget(o)
     o.set_indicator("sphere")
     assert not o.isVisible()
+
+
+def test_blinking_dot_does_not_shift_indicator(qtbot):
+    o = RecordingOverlay()
+    qtbot.addWidget(o)
+    o.set_indicator("sphere")
+    o.show_recording()
+    qtbot.waitExposed(o)
+    x = o._sphere.x()
+    o._toggle_dot()
+    o.layout().activate()
+    o._sphere.parentWidget().layout().activate()
+    assert not o._dot.isVisible()
+    assert o._sphere.x() == x
+
+
+def test_indicator_settings_resize_widgets(qtbot):
+    from dikte.config import IndicatorSettings
+
+    o = RecordingOverlay()
+    qtbot.addWidget(o)
+    o.set_indicator_settings(IndicatorSettings(size=150, wave_width=300, bar_count=12))
+    assert o._sphere.width() == 150 and o._wave.width() == 300
+    assert len(o._wave.bars) == 12
