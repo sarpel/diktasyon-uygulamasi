@@ -23,8 +23,8 @@ Dikte'nin günlük kullanımı, ayarları ve ileri özellikleri. Kurulum için b
 
 1. Dikte tray'de (sistem tepsisi) sürekli açık durur.
 2. Kısayola basarsınız (Windows varsayılanı `Ctrl+Alt+Space`) → ekranda küçük bir kayıt
-   penceresi (overlay) açılır; konuşurken dikenleri sesle uzayan dönen bir küre (ya da Ayarlar →
-   Genel → "Kayıt göstergesi" ile seçilirse çubuk dalga) hareket eder.
+   penceresi (overlay) açılır; konuşurken sesle dalgalanıp parlayan bir nebula küresi (ya da Ayarlar →
+   Görünüm → "Kayıt göstergesi" ile seçilirse dikenli küre veya çubuk dalga) hareket eder.
 3. Tekrar basınca kayıt durur; ses GPU'da metne çevrilir, isteğe bağlı olarak LLM ile düzeltilir.
 4. Metin panoya yazılır ve çalıştığınız pencereye yapıştırılır.
 
@@ -177,12 +177,12 @@ Ayarlar penceresi (tray menüsü veya araç çubuğu → "Ayarlar…") sekiz sek
 
 | Sekme | İçerik |
 |---|---|
-| Genel | Kısayol (tuşa basarak yakalanır) + isteğe bağlı çeviri / agent-prompt / son sonucu yapıştır kısayolları, bas-konuş (yalnızca Windows), geçmiş kayıt sayısı ve saklama süresi, açılışta başlat, panoya kopyala / yapıştır / pencereyi öne getir, pano geçmişinden hariç tutma, kayıtta medyayı duraklat, başarısız diktelerin sesini sakla, gösterge (overlay) konumu, kayıt göstergesi (Küre / Dalga) ve gösterge teması (Varsayılan, Dracula, Nord, Catppuccin Mocha/Latte, Gruvbox, Tokyo Night, Solarized Dark, One Dark, Monokai), sesli komutlar, elle düzeltmelerden sözlük önerisi |
+| Genel | Kısayol (tuşa basarak yakalanır) + isteğe bağlı çeviri / agent-prompt / son sonucu yapıştır kısayolları, bas-konuş (yalnızca Windows), geçmiş kayıt sayısı ve saklama süresi, açılışta başlat, panoya kopyala / yapıştır / pencereyi öne getir, pano geçmişinden hariç tutma, kayıtta medyayı duraklat, başarısız diktelerin sesini sakla, gösterge (overlay) konumu, kayıt göstergesi (Nebula küresi / Dikenli küre / Dalga) ve gösterge teması (Varsayılan, Dracula, Nord, Catppuccin Mocha/Latte, Gruvbox, Tokyo Night, Solarized Dark, One Dark, Monokai), sesli komutlar, elle düzeltmelerden sözlük önerisi |
 | Ses | Mikrofon (adıyla saklanır; Windows'ta WASAPI cihazları), kayıt süresi sınırı (0 = sınırsız), sessizlikte otomatik durdurma (0 = kapalı), sessiz mikrofon uyarısı, canlı seviye testi |
 | Konuşma Tanıma | Whisper modeli, hassasiyet (compute_type), dil, toplu çözümleme, açılışta ısıtma, canlı çözümleme parça süresi, "Sessizlik ve halüsinasyon" (VAD eşiği, en kısa sessizlik, konuşma yok eşiği, kara liste) |
 | Metin Düzeltme | LLM aç/kapa, sağlayıcı ve sağlayıcıya özel alanlar, bellekte tutma, sağlamlık kontrolü ("Düzeltme metinden çok saparsa ham metni kullan") |
 | Sözlük | Özel terimler (doğru yazım + yanlış tanınan biçimler), LLM düzeltmesine ek serbest talimat |
-| Gelişmiş | beam_size, başlangıç promptu, num_ctx, top_p, top_k, zaman aşımı, düşünme modu |
+| Gelişmiş | beam_size, başlangıç promptu, num_ctx, top_p, top_k, zaman aşımı, düşünme modu, hata ayıklama günlüğü (açıkken her adım loga yazılır; Hakkında → "Log dosyasını aç") |
 | Profiller | Ön plandaki uygulamaya göre mod / yapıştırma / LLM / sonek profilleri |
 | Hakkında | Sürümler, GPU ve desteklenen hassasiyetler, VRAM kullanımı (`nvidia-smi`), log / ayar klasörünü aç, durum kontrolü |
 

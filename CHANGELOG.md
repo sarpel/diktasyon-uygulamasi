@@ -8,7 +8,14 @@ Bu projedeki önemli değişiklikler bu dosyada tutulur. Biçim
 
 ### Eklendi
 
-- Kayıt göstergesinde sese tepki veren dikenli küre animasyonu (varsayılan); Ayarlar → Genel →
+- Ayarlar → Gelişmiş → "Hata ayıklama günlüğü": açıkken uygulama her adımı (durum geçişleri,
+  Qt uyarıları dahil) günlüğe yazar; sorun bildirirken kullanılır.
+- Ayarlar penceresinde fare tekerleği sayı kutularının ve açılır listelerin değerini
+  değiştirmez; sayfayı kaydırır.
+- Kayıt göstergesinde sesle dalgalanan "nebula" küresi (varsayılan; VoiceOrbs Nebula Orb'dan
+  uyarlandı, MIT; özgün shader OpenGL ile GPU'da çalışır). Dikenli küre ve çubuk dalga
+  seçilebilir kalır.
+- Kayıt göstergesinde sese tepki veren dikenli küre animasyonu; Ayarlar → Genel →
   "Kayıt göstergesi" ile çubuk dalgaya geri dönülebilir.
 - Kayıt göstergesi için renk temaları (Ayarlar → Genel → "Gösterge teması"): Varsayılan,
   Dracula, Nord, Catppuccin Mocha, Catppuccin Latte (açık), Gruvbox, Tokyo Night, Solarized
