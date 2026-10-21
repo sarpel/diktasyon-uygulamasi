@@ -10,7 +10,8 @@ pr-fix-suggestions.md
 # Sanal ortamlar
 .venv/
 venv/
-uv.lock  # kurulum "uv pip install" ile; kilit dosyası kullanılmıyor
+# kurulum "uv pip install" ile; kilit dosyası kullanılmıyor
+uv.lock
 env/
 implementation_plan.md
 # Test ve araç önbellekleri
