@@ -28,6 +28,8 @@ def _fake_default_audio_device(monkeypatch):
     monkeypatch.setattr(
         "dikte.audio.recorder._default_stream_factory", lambda **kwargs: _FakeInputStream()
     )
+    # Uyarı sesleri de: `build_app()` testleri yoksa hoparlörden gerçek bip çalardı.
+    monkeypatch.setattr("dikte.ui.sounds._default_player", lambda data, sr: None)
 
 
 def _has_cuda() -> bool:
