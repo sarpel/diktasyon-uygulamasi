@@ -1628,7 +1628,7 @@ def test_settings_change_switches_overlay_indicator(ctx, monkeypatch):
             return self._settings.model_copy(update={"overlay_indicator": "wave"})
 
     monkeypatch.setattr(app_mod, "SettingsDialog", FakeDialog)
-    assert ctx.overlay.indicator == "sphere"
+    assert ctx.overlay.indicator == "nebula"
     app_mod._open_settings(ctx)
     assert ctx.overlay.indicator == "wave"
 

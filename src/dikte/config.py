@@ -217,6 +217,7 @@ class Settings(BaseModel):
     push_to_talk: bool = True  # Windows: kısayolu basılı tutunca kayıt, bırakınca çözümleme
     raise_window_on_result: bool = False  # dikte akışını bozmamak için varsayılan kapalı
     sounds_enabled: bool = True  # başlat/durdur/hata sesleri
+    debug_logging: bool = False  # açıkken günlüğe her ayrıntı (DEBUG) yazılır
     suggest_dictionary: bool = True  # elle düzenlemeden tek kelimelik sözlük önerisi çıkar
     voice_commands: bool = True  # "yeni satır", "yeni paragraf", "son cümleyi sil"
     hotkey_paste_last: str = ""  # boş = kapalı; son sonucu yeniden yapıştırır
@@ -224,8 +225,8 @@ class Settings(BaseModel):
     keep_failed_audio: bool = True  # başarısız diktenin sesini WAV olarak sakla
     overlay_position: Literal["bottom", "top", "custom"] = "bottom"
     overlay_xy: tuple[int, int] | None = None  # "custom" konumda sürüklenen son yer
-    # Kayıt göstergesindeki ses animasyonu: dikenli küre ya da çubuk dalga.
-    overlay_indicator: Literal["sphere", "wave"] = "sphere"
+    # Kayıt göstergesindeki ses animasyonu: nebula küresi, dikenli küre ya da çubuk dalga.
+    overlay_indicator: Literal["nebula", "sphere", "wave"] = "nebula"
     indicator: IndicatorSettings = IndicatorSettings()
     # Kayıt göstergesinin renk teması (ui/themes.py ile aynı adlar).
     overlay_theme: Literal[

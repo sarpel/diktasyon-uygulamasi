@@ -1,4 +1,4 @@
-"""Ayarlar → Görünüm sekmesi: kayıt göstergesi (küre / dalga) ve tema, canlı önizlemeli."""
+"""Ayarlar → Görünüm sekmesi: kayıt göstergesi (nebula / küre / dalga) ve tema, canlı önizlemeli."""
 
 from __future__ import annotations
 
@@ -21,13 +21,15 @@ from PySide6.QtWidgets import (
 )
 
 from dikte.config import IndicatorSettings, Settings
+from dikte.ui.nebula import NebulaWidget
 from dikte.ui.settings._reset import make_reset_button, reset_row
 from dikte.ui.sphere import SphereWidget
 from dikte.ui.themes import THEMES, get_theme
 from dikte.ui.waveform import WaveformWidget
 
 OVERLAY_INDICATORS = (
-    ("sphere", "Küre"),
+    ("nebula", "Nebula küresi"),
+    ("sphere", "Dikenli küre"),
     ("wave", "Dalga"),
 )
 
@@ -134,8 +136,8 @@ class AppearanceTab(QWidget):
         for value, label in OVERLAY_INDICATORS:
             self.overlay_indicator_combo.addItem(label, value)
         self.overlay_indicator_combo.setToolTip(
-            "Kayıt sırasında sese tepki veren animasyon: dikenleri sesle uzayan dönen bir "
-            "küre ya da çubuk dalga."
+            "Kayıt sırasında sese tepki veren animasyon: sesle dalgalanan nebula küresi, "
+            "dikenleri sesle uzayan dönen bir küre ya da çubuk dalga."
         )
         self.overlay_theme_combo = QComboBox()
         for value, theme in THEMES.items():
@@ -166,6 +168,7 @@ class AppearanceTab(QWidget):
 
         self.preview_sphere = SphereWidget()
         self.preview_wave = WaveformWidget()
+        self.preview_nebula = NebulaWidget()
         self.preview_btn = QPushButton("Önizleme sesi")
         self.preview_btn.setCheckable(True)
         self.preview_btn.setToolTip("Önizlemeye yapay ses seviyesi gönderir")
@@ -180,6 +183,7 @@ class AppearanceTab(QWidget):
         preview_lay = QVBoxLayout(preview)
         preview_lay.addWidget(self.preview_sphere)
         preview_lay.addWidget(self.preview_wave)
+        preview_lay.addWidget(self.preview_nebula)
         preview_lay.addWidget(self.preview_btn)
         preview_lay.addStretch(1)
 
@@ -262,9 +266,13 @@ class AppearanceTab(QWidget):
         self.preview_wave.set_settings(cfg)
         self.preview_wave.set_color(theme.accent)
         self.preview_wave.setFixedSize(cfg.wave_width, 44)
-        sphere = self.overlay_indicator_combo.currentData() == "sphere"
-        self.preview_sphere.setVisible(sphere)
-        self.preview_wave.setVisible(not sphere)
+        self.preview_nebula.set_settings(cfg)
+        self.preview_nebula.set_colors(theme.accent, theme.accent2)
+        self.preview_nebula.setFixedSize(cfg.size, cfg.size)
+        kind = self.overlay_indicator_combo.currentData()
+        self.preview_sphere.setVisible(kind == "sphere")
+        self.preview_nebula.setVisible(kind == "nebula")
+        self.preview_wave.setVisible(kind == "wave")
         for name in ("hue_low", "hue_high"):
             self.spins[name].setEnabled(cfg.color_mode == "holo")
         for btn in (self.color1_btn, self.color2_btn):
@@ -276,3 +284,4 @@ class AppearanceTab(QWidget):
         buckets = tuple(level * (0.5 + 0.5 * math.sin(self._fake_t * 0.9 + i)) for i in range(16))
         self.preview_sphere.push_buckets(buckets)
         self.preview_wave.push_buckets(buckets)
+        self.preview_nebula.push_buckets(buckets)
