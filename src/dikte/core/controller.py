@@ -11,7 +11,7 @@ import numpy as np
 from PySide6.QtCore import QObject, QThreadPool, QTimer, Signal, Slot
 
 from dikte.audio.recorder import DEVICE_LOST_MESSAGE
-from dikte.config import AppProfile, Settings
+from dikte.config import AppProfile, DictionaryEntry, Settings
 from dikte.core.state import DictationState, Session
 from dikte.core.workers import run_in_pool
 from dikte.llm import prompts, tasks
@@ -348,7 +348,10 @@ class DictationController(QObject):
         setter = getattr(self._stt, "set_dictionary", None)
         if setter is None:
             return
-        setter(hotwords(entries), prompt_terms(entries))
+        # Öğrenilenler önce: Whisper promptu kesildiğinde en yeni düzeltmeler kaybolmasın.
+        learned = tuple(DictionaryEntry(term=t) for t in self._settings.dictionary.learned)
+        hints = (*learned, *entries)
+        setter(hotwords(hints), prompt_terms(hints))
 
     def _require_llm(self) -> bool:
         if self._settings.llm.enabled:
@@ -757,6 +760,7 @@ class DictationController(QObject):
     def _set_state(self, new: DictationState) -> None:
         if new is self._state:
             return
+        log.debug("durum: %s → %s", self._state.name, new.name)
         self._state = new
         self.state_changed.emit(new)
 

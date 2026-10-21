@@ -74,6 +74,7 @@ class SoundPlayer:
         """Kapalıysa bir şey yapmaz; ses cihazı hatası yükseltilmez, yalnızca bir kez loglanır."""
         if not self._enabled:
             return
+        log.info("uyarı sesi çalınıyor: %s", kind)  # beklenmedik bip'lerin kaynağı izlenebilsin
         try:
             self._player(self._tones[kind], _SAMPLE_RATE)
         except Exception as exc:  # noqa: BLE001 - ses cihazı hatası dikteyi durdurmamalı

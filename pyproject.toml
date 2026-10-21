@@ -95,6 +95,16 @@ pythonVersion = "3.11"
 # platformun dallarını da analiz eder.
 pythonPlatform = "All"
 
+[tool.mypy]
+# VS Code Mypy eklentisi için: PyInstaller çıktısı (dist/, build/) ve sanal ortam taranmasın;
+# tip denetiminin asıl kapısı pyright (CI). Tip taslağı olmayan üçüncü taraf paketler susturulur.
+files = ["src", "scripts", "tests"]
+exclude = ["^dist/", "^build/", "^\\.venv/"]
+
+[[tool.mypy.overrides]]
+module = ["sounddevice", "tqdm", "tqdm.*", "ctranslate2", "ctranslate2.*", "faster_whisper.*"]
+ignore_missing_imports = true
+
 [tool.ruff.format]
 # Markdown içindeki örnek kod blokları kasıtlı olarak kısaltılmıştır (AGENTS.md "KÖTÜ/İYİ"
 # örnekleri, plan dosyaları); ruff 0.16+ bunları biçimlendirmesin.

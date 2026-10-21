@@ -6,6 +6,7 @@ from dikte.ui.settings_dialog import SettingsDialog
 
 TAB_TITLES = [
     "Genel",
+    "Görünüm",
     "Ses",
     "Konuşma Tanıma",
     "Metin Düzeltme",
@@ -787,8 +788,8 @@ def test_settings_dialog_forwards_health_request(dlg, qtbot):
 def test_overlay_indicator_combo_shows_turkish_labels(dlg):
     combo = dlg.overlay_indicator_combo
     labels = [combo.itemText(i) for i in range(combo.count())]
-    assert labels == ["Küre", "Dalga"]
-    assert combo.currentData() == "sphere"
+    assert labels == ["Nebula küresi", "Dikenli küre", "Dalga"]
+    assert combo.currentData() == "nebula"
     combo.setCurrentIndex(combo.findData("wave"))
     assert dlg.result_settings().overlay_indicator == "wave"
 
@@ -827,5 +828,48 @@ def test_dialog_fits_on_screen_when_shown(dlg, qtbot):
 
 
 def test_current_tab_follows_selected_page(dlg):
-    dlg.tabs.setCurrentIndex(2)
+    dlg.tabs.setCurrentIndex(3)
     assert dlg.current_tab() is dlg.stt
+
+
+def test_learned_words_can_be_removed_or_cleared(qtbot):
+    from dikte.config import DictionarySettings
+
+    s = Settings(dictionary=DictionarySettings(learned=("çok", "Kubernetes", "Sarp")))
+    d = SettingsDialog(s, ())
+    qtbot.addWidget(d)
+    assert d.learned_list.count() == 3
+    d.learned_list.item(1).setSelected(True)
+    d.remove_learned_btn.click()
+    assert d.result_settings().dictionary.learned == ("çok", "Sarp")
+    d.clear_learned_btn.click()
+    assert d.result_settings().dictionary.learned == ()
+
+
+def test_mouse_wheel_scrolls_page_instead_of_changing_values(dlg):
+    from PySide6.QtCore import QPoint, QPointF, Qt
+    from PySide6.QtGui import QWheelEvent
+    from PySide6.QtWidgets import QApplication, QComboBox, QDoubleSpinBox
+
+    dlg.tabs.setCurrentWidget(
+        dlg.tabs.widget(
+            next(i for i in range(dlg.tabs.count()) if dlg.tabs.tabText(i) == "Görünüm")
+        )
+    )
+    page = dlg.current_tab()
+    spin = page.findChildren(QDoubleSpinBox)[0]
+    combo = page.findChildren(QComboBox)[0]
+    before = (spin.value(), combo.currentIndex())
+    for w in (spin, combo):
+        event = QWheelEvent(
+            QPointF(5, 5),
+            QPointF(5, 5),
+            QPoint(0, 0),
+            QPoint(0, -120),
+            Qt.MouseButton.NoButton,
+            Qt.KeyboardModifier.NoModifier,
+            Qt.ScrollPhase.NoScrollPhase,
+            False,
+        )
+        QApplication.sendEvent(w, event)
+    assert (spin.value(), combo.currentIndex()) == before

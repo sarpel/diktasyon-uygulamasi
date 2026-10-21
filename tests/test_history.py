@@ -221,7 +221,12 @@ def test_load_uses_cache_until_file_changes(tmp_path: Path, monkeypatch):
     h.load()
     parsed = []
     real = history_mod._from_json
-    monkeypatch.setattr(history_mod, "_from_json", lambda line: parsed.append(1) or real(line))
+
+    def counting(line):
+        parsed.append(1)
+        return real(line)
+
+    monkeypatch.setattr(history_mod, "_from_json", counting)
     h.load()
     h.append(Session(raw_text="b"))  # kendi yazdığı dosyayı tekrar ayrıştırmaz
     assert h.load()[-1].raw_text == "b"

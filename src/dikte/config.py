@@ -148,6 +148,43 @@ class DictionarySettings(BaseModel):
     model_config = ConfigDict(frozen=True)
     entries: tuple[DictionaryEntry, ...] = ()
     user_instructions: str = ""  # LLM düzeltme talimatına ek serbest metin
+    # "Öğren" ile elle düzeltmelerden toplanan kelimeler (en yeni önce). Değiştirme kuralı
+    # değildir; yalnızca Whisper'a ipucu verilir ki bu kelimeleri seçme olasılığı artsın.
+    learned: tuple[str, ...] = ()
+
+
+class IndicatorSettings(BaseModel):
+    """Kayıt göstergesi animasyonlarının (küre ve dalga) görünüm ayarları."""
+
+    model_config = ConfigDict(frozen=True)
+    # ---- ortak
+    size: int = Field(default=88, ge=48, le=240)  # küre kutusu / dalga yüksekliği (piksel)
+    sensitivity: float = Field(default=1.0, ge=0.2, le=5.0)  # ses seviyesi çarpanı
+    decay: float = Field(default=0.88, ge=0.5, le=0.99)  # 1/30 sn'de korunan seviye oranı
+    fps: int = Field(default=60, ge=10, le=120)
+    # ---- küre
+    color_mode: Literal["holo", "theme", "custom"] = "holo"  # diken renkleri nereden gelir
+    hue_low: float = Field(default=0.48, ge=0.0, le=1.0)  # holografik ton aralığı başı
+    hue_high: float = Field(default=0.86, ge=0.0, le=1.0)  # … sonu (cyan → magenta)
+    custom_color: str = Field(default="#00E5FF", pattern=r"^#[0-9A-Fa-f]{6}$")
+    custom_color2: str = Field(default="#FF00E5", pattern=r"^#[0-9A-Fa-f]{6}$")
+    point_count: int = Field(default=96, ge=30, le=600)  # en fazla diken sayısı
+    # 0: tüm dikenler hep açık; 1: açık diken sayısı sesle sıfırdan tamamına çıkar.
+    spike_reveal: float = Field(default=0.85, ge=0.0, le=1.0)
+    max_spike: float = Field(default=0.75, ge=0.1, le=2.0)  # tam seste diken boyu / yarıçap
+    rest_spike: float = Field(default=0.05, ge=0.0, le=0.5)  # sessizlikte kalan diken boyu
+    spikiness: float = Field(default=0.85, ge=0.0, le=1.0)  # 0 düzgün büyüme, 1 çok düzensiz
+    spin_speed: float = Field(default=0.6, ge=0.0, le=5.0)  # radyan/sn
+    tilt: float = Field(default=0.45, ge=-1.5, le=1.5)  # radyan
+    glow: float = Field(default=1.0, ge=0.0, le=3.0)  # neon parıltı yoğunluğu
+    line_width: float = Field(default=1.0, ge=0.3, le=4.0)  # diken taban kalınlığı çarpanı
+    swell: float = Field(default=0.25, ge=0.0, le=1.0)  # tam seste kürenin genleşme oranı
+    shimmer_speed: float = Field(default=0.8, ge=0.0, le=5.0)  # renk kayması hızı
+    core_opacity: float = Field(default=1.0, ge=0.0, le=3.0)  # cam çekirdek görünürlüğü
+    # ---- dalga
+    bar_count: int = Field(default=32, ge=8, le=128)
+    wave_width: int = Field(default=220, ge=80, le=600)
+    bar_gap: float = Field(default=2.0, ge=0.0, le=8.0)
 
 
 class AppProfile(BaseModel):
@@ -180,6 +217,7 @@ class Settings(BaseModel):
     push_to_talk: bool = True  # Windows: kısayolu basılı tutunca kayıt, bırakınca çözümleme
     raise_window_on_result: bool = False  # dikte akışını bozmamak için varsayılan kapalı
     sounds_enabled: bool = True  # başlat/durdur/hata sesleri
+    debug_logging: bool = False  # açıkken günlüğe her ayrıntı (DEBUG) yazılır
     suggest_dictionary: bool = True  # elle düzenlemeden tek kelimelik sözlük önerisi çıkar
     voice_commands: bool = True  # "yeni satır", "yeni paragraf", "son cümleyi sil"
     hotkey_paste_last: str = ""  # boş = kapalı; son sonucu yeniden yapıştırır
@@ -187,8 +225,9 @@ class Settings(BaseModel):
     keep_failed_audio: bool = True  # başarısız diktenin sesini WAV olarak sakla
     overlay_position: Literal["bottom", "top", "custom"] = "bottom"
     overlay_xy: tuple[int, int] | None = None  # "custom" konumda sürüklenen son yer
-    # Kayıt göstergesindeki ses animasyonu: dikenli küre ya da çubuk dalga.
-    overlay_indicator: Literal["sphere", "wave"] = "sphere"
+    # Kayıt göstergesindeki ses animasyonu: nebula küresi, dikenli küre ya da çubuk dalga.
+    overlay_indicator: Literal["nebula", "sphere", "wave"] = "nebula"
+    indicator: IndicatorSettings = IndicatorSettings()
     # Kayıt göstergesinin renk teması (ui/themes.py ile aynı adlar).
     overlay_theme: Literal[
         "default",

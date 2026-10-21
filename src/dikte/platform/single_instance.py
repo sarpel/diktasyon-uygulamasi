@@ -78,7 +78,7 @@ def _current_user() -> str:
 
 
 def _current_uid() -> int:
-    return os.getuid()
+    return os.getuid()  # type: ignore[attr-defined]  # yalnızca Unix dallarından çağrılır
 
 
 def _lstat_owner(path: Path) -> int:
@@ -187,7 +187,8 @@ def unix_peer_uid(descriptor: int, name: str) -> int | None:
     dosyasının sahibi (yalnızca tam yol adlarında)."""
     so_peercred = getattr(socket, "SO_PEERCRED", None)
     if so_peercred is not None and descriptor >= 0:
-        with socket.fromfd(descriptor, socket.AF_UNIX, socket.SOCK_STREAM) as sock:
+        family = socket.AF_UNIX  # type: ignore[attr-defined]  # SO_PEERCRED yalnızca Unix'te
+        with socket.fromfd(descriptor, family, socket.SOCK_STREAM) as sock:
             creds = sock.getsockopt(socket.SOL_SOCKET, so_peercred, struct.calcsize("3i"))
         _pid, uid, _gid = struct.unpack("3i", creds)
         return uid

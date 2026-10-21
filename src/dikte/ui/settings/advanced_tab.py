@@ -18,7 +18,7 @@ from dikte.ui.settings._reset import make_reset_button, reset_row
 
 
 class AdvancedTab(QWidget):
-    """Nadiren değiştirilen çözümleme ve LLM örnekleme parametreleri."""
+    """Nadiren değiştirilen çözümleme ve LLM örnekleme parametreleri, hata ayıklama günlüğü."""
 
     title = "Gelişmiş"
 
@@ -58,11 +58,20 @@ class AdvancedTab(QWidget):
         llm_form.addRow("Zaman aşımı", self.timeout_spin)
         llm_form.addRow(self.think_check)
 
+        self.debug_check = QCheckBox("Hata ayıklama günlüğü (her şeyi logla)")
+        self.debug_check.setToolTip(
+            "Açıkken uygulama her adımı günlüğe yazar (Hakkında → Log dosyasını aç). Bir sorunu "
+            "yeniden üretip günlüğü paylaşmak için açın; günlük hızla büyür, sonra kapatın."
+        )
+        debug_group = QGroupBox("Tanılama")
+        QVBoxLayout(debug_group).addWidget(self.debug_check)
+
         self.reset_btn = make_reset_button(lambda: self.load(Settings()))
 
         lay = QVBoxLayout(self)
         lay.addWidget(stt_group)
         lay.addWidget(llm_group)
+        lay.addWidget(debug_group)
         lay.addStretch(1)
         lay.addLayout(reset_row(self.reset_btn))
 
@@ -78,6 +87,7 @@ class AdvancedTab(QWidget):
         self.top_k_spin.setValue(llm.top_k)
         self.timeout_spin.setValue(llm.timeout_s)
         self.think_check.setChecked(llm.think)
+        self.debug_check.setChecked(settings.debug_logging)
 
     def validate(self) -> str | None:
         return None
@@ -85,6 +95,7 @@ class AdvancedTab(QWidget):
     def apply(self, s: Settings) -> Settings:
         return s.model_copy(
             update={
+                "debug_logging": self.debug_check.isChecked(),
                 "stt": s.stt.model_copy(
                     update={
                         "beam_size": self.beam_spin.value(),

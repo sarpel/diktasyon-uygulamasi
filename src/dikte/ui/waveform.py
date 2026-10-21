@@ -7,33 +7,44 @@ from PySide6.QtCore import QRectF, Qt, QTimer
 from PySide6.QtGui import QColor, QPainter
 from PySide6.QtWidgets import QWidget
 
-BAR_COUNT = 32
-DECAY = 0.85
-TICK_MS = 33
+from dikte.config import IndicatorSettings
+
+BAR_COUNT = IndicatorSettings().bar_count
+TICK_MS = 16
 
 
 class WaveformWidget(QWidget):
-    """`BAR_COUNT` çubuklu seviye göstergesi: yeni tepe anında yükselir, sonra yavaşça söner."""
+    """Çubuklu seviye göstergesi: yeni tepe anında yükselir, sonra yavaşça söner."""
 
     def __init__(self, parent=None, color: str = "#E53935"):
         super().__init__(parent)
-        self._bars: tuple[float, ...] = (0.0,) * BAR_COUNT
+        self._cfg = IndicatorSettings()
+        self._bars: tuple[float, ...] = (0.0,) * self._cfg.bar_count
         self._color = QColor(color)
         self._timer = QTimer(self)
+        self._timer.setTimerType(Qt.TimerType.PreciseTimer)
         self._timer.timeout.connect(self._tick)
         self._timer.start(TICK_MS)
         self.setMinimumHeight(40)
+
+    def set_settings(self, cfg: IndicatorSettings) -> None:
+        """Çubuk sayısı/aralığı, duyarlılık, sönüm ve kare hızı."""
+        if cfg.bar_count != len(self._bars):
+            self._bars = (0.0,) * cfg.bar_count
+        self._cfg = cfg
+        self._timer.setInterval(max(1, 1000 // cfg.fps))
+        self.update()
 
     @property
     def bars(self) -> tuple[float, ...]:
         return self._bars
 
     def push_buckets(self, buckets: tuple[float, ...]) -> None:
-        """0–1 arası seviye dilimlerini `BAR_COUNT` çubuğa yeniden örnekleyip ekler."""
-        src = np.asarray(buckets, dtype=np.float32)
+        """0–1 arası seviye dilimlerini duyarlılıkla çarpıp çubuk sayısına örnekler."""
+        src = np.clip(np.asarray(buckets, dtype=np.float32) * self._cfg.sensitivity, 0.0, 1.0)
         if src.size == 0:
             return
-        idx = np.linspace(0, src.size - 1, BAR_COUNT)
+        idx = np.linspace(0, src.size - 1, len(self._bars))
         resampled = np.interp(idx, np.arange(src.size), src)
         # yeni değer mevcut değerden büyükse hemen yükselt, değilse tick decay'e bırak
         self._bars = tuple(max(float(n), o) for n, o in zip(resampled, self._bars, strict=True))
@@ -45,20 +56,23 @@ class WaveformWidget(QWidget):
         self.update()
 
     def clear(self) -> None:
-        self._bars = (0.0,) * BAR_COUNT
+        self._bars = (0.0,) * len(self._bars)
         self.update()
 
     def _tick(self) -> None:
         if any(self._bars):
-            self._bars = tuple(v * DECAY if v > 0.01 else 0.0 for v in self._bars)
+            # `decay` 1/30 sn için tanımlı: kare hızı değişse de sönüş hızı aynı kalır.
+            k = self._cfg.decay ** (self._timer.interval() / 1000.0 * 30.0)
+            self._bars = tuple(v * k if v > 0.01 else 0.0 for v in self._bars)
             self.update()
 
     def paintEvent(self, event) -> None:
         p = QPainter(self)
         p.setRenderHint(QPainter.RenderHint.Antialiasing)
         w, h = self.width(), self.height()
-        gap = 2.0
-        bw = max(1.0, (w - gap * (BAR_COUNT - 1)) / BAR_COUNT)
+        gap = self._cfg.bar_gap
+        count = len(self._bars)
+        bw = max(1.0, (w - gap * (count - 1)) / count)
         p.setPen(Qt.PenStyle.NoPen)
         p.setBrush(self._color)
         for i, v in enumerate(self._bars):

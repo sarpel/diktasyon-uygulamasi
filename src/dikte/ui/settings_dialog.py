@@ -7,9 +7,12 @@ from collections.abc import Iterable
 from functools import reduce
 from typing import Any
 
-from PySide6.QtCore import Signal
+from PySide6.QtCore import QEvent, QObject, Signal
 from PySide6.QtGui import QGuiApplication, QPalette
 from PySide6.QtWidgets import (
+    QAbstractSpinBox,
+    QApplication,
+    QComboBox,
     QDialog,
     QDialogButtonBox,
     QFrame,
@@ -24,6 +27,7 @@ from dikte.config import Settings
 from dikte.ui.settings import (
     AboutTab,
     AdvancedTab,
+    AppearanceTab,
     AudioTab,
     DictionaryTab,
     GeneralTab,
@@ -62,8 +66,16 @@ _PROXIED = {
         "keep_failed_audio_check",
         "clipboard_exclude_history_check",
         "overlay_position_combo",
+    ),
+    "appearance": (
         "overlay_indicator_combo",
         "overlay_theme_combo",
+        "color_mode_combo",
+        "color1_btn",
+        "color2_btn",
+        "preview_sphere",
+        "preview_wave",
+        "preview_btn",
     ),
     "audio": (
         "device_combo",
@@ -123,7 +135,15 @@ _PROXIED = {
         "llm_test_btn",
         "llm_test_status",
     ),
-    "dictionary": ("dictionary_table", "add_entry_btn", "remove_entry_btn", "instructions_edit"),
+    "dictionary": (
+        "dictionary_table",
+        "add_entry_btn",
+        "remove_entry_btn",
+        "instructions_edit",
+        "learned_list",
+        "remove_learned_btn",
+        "clear_learned_btn",
+    ),
     "advanced": (
         "beam_spin",
         "initial_prompt_edit",
@@ -132,6 +152,7 @@ _PROXIED = {
         "top_k_spin",
         "timeout_spin",
         "think_check",
+        "debug_check",
     ),
     "profiles": ("profiles_table", "add_profile_btn", "remove_profile_btn"),
     "about": ("gpu_label", "vram_label", "open_log_btn", "open_config_btn", "health_btn"),
@@ -144,6 +165,21 @@ def list_input_devices() -> tuple[InputDevice, ...]:
 
     # Sorgu hatasını recorder günlüğe yazar ve boş liste döndürür.
     return tuple(as_input_device(d) for d in query_input_devices())
+
+
+class _WheelScrollsPage(QObject):
+    """Fare tekerleği sayı kutularının/açılır listelerin değerini değiştirmez; olay sayfayı
+    kaydırsın diye kaydırma alanına iletilir (değer ok tuşları veya klavyeyle değişir)."""
+
+    def __init__(self, area: QScrollArea):
+        super().__init__(area)
+        self._area = area
+
+    def eventFilter(self, watched: QObject, event: QEvent) -> bool:
+        if event.type() == QEvent.Type.Wheel:
+            QApplication.sendEvent(self._area.verticalScrollBar(), event)
+            return True
+        return False
 
 
 class SettingsDialog(QDialog):
@@ -163,6 +199,7 @@ class SettingsDialog(QDialog):
         self._settings = settings
 
         self.general = GeneralTab(settings)
+        self.appearance = AppearanceTab(settings)
         self.audio = AudioTab(settings, devices)
         self.stt = SttTab(settings)
         self.llm = LlmTab(settings)
@@ -172,8 +209,9 @@ class SettingsDialog(QDialog):
         self.profiles = ProfilesTab(settings)
         self.about = AboutTab(settings)
         self.about.health_requested.connect(self.health_requested)
-        self._tabs_in_order = (
+        self._tabs_in_order: tuple[Any, ...] = (
             self.general,
+            self.appearance,
             self.audio,
             self.stt,
             self.llm,
@@ -215,6 +253,12 @@ class SettingsDialog(QDialog):
         area.setWidget(tab)
         area.setWidgetResizable(True)
         area.setFrameShape(QFrame.Shape.NoFrame)
+        wheel = _WheelScrollsPage(area)
+        # shortcut: yalnızca açılışta var olan kutular; sonradan eklenen satırlar (ör. profil
+        # tablosu) tekerlekle değişebilir, sorun olursa satır eklerken de filtre kurulur.
+        for kind in (QAbstractSpinBox, QComboBox):
+            for widget in tab.findChildren(kind):
+                widget.installEventFilter(wheel)
         return area
 
     def current_tab(self) -> QWidget | None:

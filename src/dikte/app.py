@@ -7,10 +7,12 @@ from __future__ import annotations
 
 import argparse
 import logging
+import signal
 import sys
 import time
 from collections.abc import Callable
 from dataclasses import dataclass, field
+from functools import partial
 from pathlib import Path
 from typing import cast
 
@@ -50,7 +52,7 @@ from dikte.core.history_export import to_markdown, to_text
 from dikte.core.state import BUSY_STATES, MODES, DictationState
 from dikte.core.workers import run_in_pool
 from dikte.llm import LlmError, make_provider
-from dikte.logging_setup import setup_logging
+from dikte.logging_setup import set_debug, setup_logging
 from dikte.platform.autostart import AutostartError, set_autostart
 from dikte.platform.clipboard import (
     build_mime,
@@ -97,6 +99,7 @@ from dikte.ui.sounds import SoundPlayer
 from dikte.ui.tray import TrayIcon
 
 log = logging.getLogger(__name__)
+SIGNAL_POLL_MS = 250  # Ctrl+C'nin fark edilme gecikmesi
 # Windows dışında global kısayol yoktur; masaüstü ortamı bu komuta bir tuş bağlar.
 CLI_TOGGLE_HINT = "dikte --toggle"
 # Çıkışta kuyruktaki medya pause() çağrısı için en fazla bekleme (MediaPauser zaman aşımı ~1,5 sn).
@@ -112,6 +115,8 @@ CLIPBOARD_WRITE_FAILED = (
     "yapıştırma yapılmadı. Metni Dikte penceresinden kopyalayabilirsiniz."
 )
 TYPING_FAILED = "Metnin bir kısmı yazılamadı; tamamı panoda."
+
+LEARNED_MAX = 50  # Whisper promptu ~400 karakterde kesilir; fazlası işe yaramaz
 
 
 @dataclass
@@ -238,6 +243,7 @@ def build_app(settings: Settings) -> AppContext:
     ctx.hotkey_paste_last = GlobalHotkey(hotkey_id=HOTKEY_ID + 4)
     overlay.set_position(settings.overlay_position, settings.overlay_xy)
     overlay.set_indicator(settings.overlay_indicator)
+    overlay.set_indicator_settings(settings.indicator)
     overlay.set_theme(settings.overlay_theme)
     _wire(ctx)
     return ctx
@@ -268,9 +274,10 @@ def _wire(ctx: AppContext) -> None:
     c.error.connect(lambda m: ctx.tray.notify(APP_NAME, m, critical=True))
     c.error.connect(lambda m: _maybe_show_health_dialog_on_error(ctx, m))
     c.state_changed.connect(ctx.sounds.on_state)
+    c.error.connect(lambda m: log.warning("hata bildirimi: %s", m))
     c.error.connect(ctx.sounds.on_error)
     c.error.connect(ctx.overlay.show_error)
-    c.state_changed.connect(lambda s: s is DictationState.RESULT and _store_session(ctx))
+    c.state_changed.connect(lambda s: _store_session(ctx) if s is DictationState.RESULT else None)
     ctx.hotkey.activated.connect(lambda: _on_hotkey(ctx))
     ctx.hotkey_translate.activated.connect(lambda: _on_hotkey(ctx, "translate"))
     ctx.hotkey_prompt.activated.connect(lambda: _on_hotkey(ctx, "prompt"))
@@ -313,9 +320,10 @@ def _wire(ctx: AppContext) -> None:
         lambda wrong, term: _add_dictionary_entry(ctx, wrong, term)
     )
     ctx.window.repaste_requested.connect(lambda text: _repaste(ctx, text))
+    ctx.window.learn_requested.connect(lambda words: _learn_words(ctx, words))
     c.session_updated.connect(lambda s: _sync_history_on_edit(ctx, s))
     c.edit_learned.connect(lambda changes: _suggest(ctx, changes))
-    c.ready_changed.connect(lambda ready: ready and _refresh_status_info(ctx))
+    c.ready_changed.connect(lambda ready: _refresh_status_info(ctx) if ready else None)
     # Saklama süresi dolmuş dikteler yalnızca listeden gizlenmez, açılışta diskten de silinir.
     _guard_history(ctx, lambda: _prune_history(ctx))
     _refresh_history(ctx)
@@ -414,7 +422,7 @@ def _apply_history_edit(ctx: AppContext, session_id: str, text: str) -> None:
     for s in sessions:
         if s.id == session_id:
             edited = s.with_(corrected_text=text)
-            _guard_history(ctx, lambda edited=edited: ctx.history.update(edited))
+            _guard_history(ctx, partial(ctx.history.update, edited))
             _refresh_history(ctx)
             return
 
@@ -448,6 +456,19 @@ def _add_dictionary_entry(ctx: AppContext, wrong: str, term: str) -> None:
         return
     ctx.settings = new_settings
     ctx.controller.update_settings(new_settings)
+
+
+def _learn_words(ctx: AppContext, words: tuple[str, ...]) -> None:
+    """Elle düzeltilen kelimeleri Whisper ipucu listesinin başına ekler (en fazla LEARNED_MAX)."""
+    old = ctx.settings.dictionary.learned
+    learned = tuple(dict.fromkeys((*words, *old)))[:LEARNED_MAX]
+    new_dictionary = ctx.settings.dictionary.model_copy(update={"learned": learned})
+    new_settings = ctx.settings.model_copy(update={"dictionary": new_dictionary})
+    if not _guard_settings(ctx, lambda: save_settings(new_settings)):
+        return
+    ctx.settings = new_settings
+    ctx.controller.update_settings(new_settings)
+    ctx.window.statusBar().showMessage(f"Öğrenildi: {', '.join(words)}", 6000)
 
 
 def _repaste(ctx: AppContext, text: str) -> None:
@@ -1018,6 +1039,7 @@ def _open_settings(ctx: AppContext) -> None:
         return
     needs_reload = ctx.stt.update_settings(new.stt)
     ctx.recorder.update_settings(new.audio)
+    old_debug = ctx.settings.debug_logging
     llm_changed = new.llm != ctx.settings.llm
     ctx.settings = new
     _apply_autostart(ctx, new.autostart)
@@ -1029,8 +1051,11 @@ def _open_settings(ctx: AppContext) -> None:
     ctx.window.close_after_copy = new.close_after_copy
     ctx.window.set_clipboard_exclude_history(new.clipboard_exclude_history)
     ctx.sounds.set_enabled(new.sounds_enabled)
+    if new.debug_logging != old_debug:
+        set_debug(new.debug_logging)
     ctx.overlay.set_position(new.overlay_position, new.overlay_xy)
     ctx.overlay.set_indicator(new.overlay_indicator)
+    ctx.overlay.set_indicator_settings(new.indicator)
     ctx.overlay.set_theme(new.overlay_theme)
     ctx.history = _make_history(new)
     # Sınır/saklama süresi düşürüldüyse (ör. 0 = geçmiş kapalı) eski dikteler diskte kalmasın.
@@ -1085,8 +1110,17 @@ def _quit(ctx: AppContext) -> None:
 
 
 def _install_shutdown(ctx: AppContext, app: QObject) -> None:
-    """`app.aboutToQuit` sinyaline `_shutdown`ı bağlar (tepsi, oturum kapatma, kapanış)."""
+    """`app.aboutToQuit` sinyaline `_shutdown`ı bağlar (tepsi, oturum kapatma, kapanış).
+
+    Konsoldaki Ctrl+C de aynı temiz kapanıştan geçer: Python'un varsayılan işleyicisi
+    `KeyboardInterrupt`i Qt geri çağrısı içinde fırlatır, Qt onu yutar ve uygulama kapanmaz."""
     app.aboutToQuit.connect(lambda: _shutdown(ctx))  # type: ignore[attr-defined]
+    signal.signal(signal.SIGINT, lambda *_: app.quit())  # type: ignore[attr-defined]
+    # Olay döngüsü C++'ta beklerken Python sinyal işleyicisi çalışamaz; boş zamanlayıcı
+    # yorumlayıcıya düzenli olarak dönüp sinyali işlemesini sağlar.
+    timer = QTimer(app)
+    timer.timeout.connect(lambda: None)
+    timer.start(SIGNAL_POLL_MS)
 
 
 def _shutdown(ctx: AppContext) -> None:
@@ -1240,6 +1274,7 @@ def main(argv: list[str] | None = None) -> int:
     try:
         first_run = not paths.config_path().exists()
         settings, config_issues = load_settings_with_issues()
+        set_debug(settings.debug_logging)
         ctx = build_app(settings)
     except OSError as exc:
         # Veri klasörü (paths.app_data_dir()) oluşturulamadı/yazılamadı — paketlenmiş

@@ -284,6 +284,7 @@ def test_shutdown_runs_when_application_is_about_to_quit(ctx, monkeypatch):
         aboutToQuit = Signal()  # noqa: N815 - Qt sinyal adı
 
     calls = _record_shutdown_calls(ctx, monkeypatch)
+    monkeypatch.setattr(app_mod.signal, "signal", lambda *_a: None)  # pytest'in Ctrl+C'si kalsın
     fake_app = FakeApp()
     app_mod._install_shutdown(ctx, fake_app)
     fake_app.aboutToQuit.emit()
@@ -1627,7 +1628,7 @@ def test_settings_change_switches_overlay_indicator(ctx, monkeypatch):
             return self._settings.model_copy(update={"overlay_indicator": "wave"})
 
     monkeypatch.setattr(app_mod, "SettingsDialog", FakeDialog)
-    assert ctx.overlay.indicator == "sphere"
+    assert ctx.overlay.indicator == "nebula"
     app_mod._open_settings(ctx)
     assert ctx.overlay.indicator == "wave"
 
@@ -1658,3 +1659,41 @@ def test_build_app_and_settings_apply_overlay_theme(qtbot, tmp_path, monkeypatch
     monkeypatch.setattr(app_mod, "SettingsDialog", FakeDialog)
     app_mod._open_settings(c)
     assert c.overlay.theme == "dracula"
+
+
+def test_learn_saves_words_as_hints_not_rules(ctx, monkeypatch):
+    saved = []
+    monkeypatch.setattr(app_mod, "save_settings", saved.append)
+    hints = []
+    monkeypatch.setattr(ctx.stt, "set_dictionary", lambda h, p: hints.append((h, p)))
+    ctx.window.learn_requested.emit(("Kubernetes", "çok"))
+    assert ctx.settings.dictionary.learned == ("Kubernetes", "çok")
+    assert ctx.settings.dictionary.entries == ()  # değiştirme kuralı eklenmez
+    assert saved and saved[0].dictionary.learned == ("Kubernetes", "çok")
+    assert "Kubernetes" in hints[-1][0] and "çok" in hints[-1][1]
+    ctx.window.learn_requested.emit(("çok", "Sarp"))
+    assert ctx.settings.dictionary.learned == ("çok", "Sarp", "Kubernetes")
+
+
+def test_ctrl_c_quits_application(ctx, monkeypatch):
+    """Konsolda Ctrl+C, Qt geri çağrısında yutulan KeyboardInterrupt yerine app.quit()."""
+    import signal
+
+    from PySide6.QtCore import QObject, Signal
+
+    class FakeApp(QObject):
+        aboutToQuit = Signal()  # noqa: N815 - Qt sinyal adı
+
+        def __init__(self):
+            super().__init__()
+            self.quit_called = False
+
+        def quit(self):
+            self.quit_called = True
+
+    handlers = {}
+    monkeypatch.setattr(app_mod.signal, "signal", lambda sig, h: handlers.__setitem__(sig, h))
+    fake_app = FakeApp()
+    app_mod._install_shutdown(ctx, fake_app)
+    handlers[signal.SIGINT](signal.SIGINT, None)
+    assert fake_app.quit_called

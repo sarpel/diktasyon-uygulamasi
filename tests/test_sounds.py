@@ -37,3 +37,10 @@ def test_player_failure_is_logged_once(caplog):
     p.play("start")
     p.play("stop")
     assert caplog.text.count("cihaz yok") == 1
+
+
+def test_test_suite_never_plays_real_sound():
+    """build_app() kullanan testler hoparlörden bip çalmasın (conftest sahtesi)."""
+    from dikte.ui import sounds
+
+    assert sounds._default_player.__name__ == "<lambda>"

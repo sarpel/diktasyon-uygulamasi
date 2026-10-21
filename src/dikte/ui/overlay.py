@@ -6,7 +6,9 @@ from PySide6.QtCore import QElapsedTimer, QPoint, QRect, Qt, QTimer, Signal
 from PySide6.QtGui import QColor, QCursor, QGuiApplication, QMouseEvent
 from PySide6.QtWidgets import QHBoxLayout, QLabel, QPushButton, QVBoxLayout, QWidget
 
+from dikte.config import IndicatorSettings
 from dikte.core.state import DictationState
+from dikte.ui.nebula import NebulaWidget
 from dikte.ui.sphere import SphereWidget
 from dikte.ui.themes import DEFAULT_THEME, THEMES, get_theme
 from dikte.ui.waveform import WaveformWidget
@@ -48,11 +50,18 @@ class RecordingOverlay(QWidget):
         row = QHBoxLayout()
         row.setSpacing(12)
         self._dot = QLabel("●")
+        # Yanıp sönerken yeri korunsun; yoksa küre/dalga her yarım saniyede sağa-sola kayar.
+        policy = self._dot.sizePolicy()
+        policy.setRetainSizeWhenHidden(True)
+        self._dot.setSizePolicy(policy)
         self._wave = WaveformWidget()
         self._wave.setFixedSize(220, 44)
         self._sphere = SphereWidget()
         self._sphere.setFixedSize(88, 88)
         self._sphere.hide()
+        self._nebula = NebulaWidget()
+        self._nebula.setFixedSize(88, 88)
+        self._nebula.hide()
         self._indicator = "wave"
         self._time = QLabel("00:00")
         self._time.setMinimumWidth(48)
@@ -63,7 +72,15 @@ class RecordingOverlay(QWidget):
         self.cancel_btn.clicked.connect(self.cancel_requested)
         self.cancel_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self.setCursor(Qt.CursorShape.OpenHandCursor)  # panel sürüklenerek taşınabilir
-        for w in (self._dot, self._wave, self._sphere, self._time, self._status, self.cancel_btn):
+        for w in (
+            self._dot,
+            self._wave,
+            self._sphere,
+            self._nebula,
+            self._time,
+            self._status,
+            self.cancel_btn,
+        ):
             row.addWidget(w)
         self._partial = QLabel("")
         self._partial.hide()
@@ -146,6 +163,7 @@ class RecordingOverlay(QWidget):
         self._warning.setStyleSheet(f"color:{t.warning};font-size:12px;")
         self._wave.set_color(t.accent)
         self._sphere.set_colors(t.accent, t.accent2)
+        self._nebula.set_colors(t.accent, t.accent2)
         self._set_dot(self._dot_role)
 
     def _set_dot(self, role: str) -> None:
@@ -158,34 +176,48 @@ class RecordingOverlay(QWidget):
 
     @property
     def indicator(self) -> str:
-        """Kayıtta gösterilen ses animasyonu: "sphere" ya da "wave"."""
+        """Kayıtta gösterilen ses animasyonu: "nebula", "sphere" ya da "wave"."""
         return self._indicator
 
     def set_indicator(self, kind: str) -> None:
-        """Dalga ile küre birbirinin yerine geçer. Kayıt sürüyorsa hemen değişir; overlay
-        gizliyse yalnızca bir sonraki kayıt için hatırlanır (görünür hâle getirmez)."""
-        self._indicator = "sphere" if kind == "sphere" else "wave"
+        """Nebula, küre ve dalga birbirinin yerine geçer; bilinmeyen ad dalgaya düşer. Kayıt
+        sürüyorsa hemen değişir; overlay gizliyse yalnızca bir sonraki kayıt için hatırlanır
+        (görünür hâle getirmez)."""
+        self._indicator = kind if kind in ("nebula", "sphere") else "wave"
         if self._time.isVisibleTo(self):  # kayıt görünümündeyiz
             self._show_indicator()
             self._resize_keeping_anchor()
 
-    def _active_indicator(self) -> WaveformWidget | SphereWidget:
-        return self._sphere if self._indicator == "sphere" else self._wave
+    def set_indicator_settings(self, cfg: IndicatorSettings) -> None:
+        """Küre/dalga görünüm ayarları (boyut, duyarlılık, renk…); kayıt sürerken de uygulanır."""
+        self._sphere.set_settings(cfg)
+        self._sphere.setFixedSize(cfg.size, cfg.size)
+        self._nebula.set_settings(cfg)
+        self._nebula.setFixedSize(cfg.size, cfg.size)
+        self._wave.set_settings(cfg)
+        self._wave.setFixedSize(cfg.wave_width, 44)
+        if self.isVisible():
+            self._resize_keeping_anchor()
+
+    def _active_indicator(self) -> WaveformWidget | SphereWidget | NebulaWidget:
+        return {"sphere": self._sphere, "nebula": self._nebula}.get(self._indicator, self._wave)
 
     def _show_indicator(self) -> None:
         active = self._active_indicator()
-        for w in (self._wave, self._sphere):
+        for w in (self._wave, self._sphere, self._nebula):
             w.setVisible(w is active)
 
     def _hide_indicators(self) -> None:
         self._wave.hide()
         self._sphere.hide()
+        self._nebula.hide()
 
     def show_recording(self) -> None:
         self._showing_error = False
         self._clear_warning()
         self._wave.clear()
         self._sphere.clear()
+        self._nebula.clear()
         self._show_indicator()
         self._time.show()
         self._status.hide()

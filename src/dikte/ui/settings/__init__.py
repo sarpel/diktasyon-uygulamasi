@@ -6,6 +6,7 @@ Her sekmenin sözleşmesi: `title`, `validate() -> str | None` (hata mesajı ya 
 
 from dikte.ui.settings.about_tab import AboutTab
 from dikte.ui.settings.advanced_tab import AdvancedTab
+from dikte.ui.settings.appearance_tab import AppearanceTab
 from dikte.ui.settings.audio_tab import AudioTab
 from dikte.ui.settings.dictionary_tab import DictionaryTab
 from dikte.ui.settings.general_tab import GeneralTab
@@ -16,6 +17,7 @@ from dikte.ui.settings.stt_tab import SttTab
 __all__ = [
     "AboutTab",
     "AdvancedTab",
+    "AppearanceTab",
     "AudioTab",
     "DictionaryTab",
     "GeneralTab",

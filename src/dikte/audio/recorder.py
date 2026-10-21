@@ -301,7 +301,8 @@ class AudioRecorder(QObject):
             log.warning("audio status: %s", status)
         # PortAudio giriş tamponunu her geri çağırmada yeniden kullanır; view saklamak
         # sonradan üzerine yazılan (bozuk/çöp) ses verisi demektir. Bu yüzden kopya alınır.
-        frame: np.ndarray | None = np.array(indata, dtype=np.float32).reshape(-1)
+        samples = np.array(indata, dtype=np.float32).reshape(-1)
+        frame: np.ndarray | None = samples
         limit = self._active_settings.max_seconds * self._active_settings.sample_rate  # 0=sınırsız
         first_hit = False
         level = 0.0
@@ -313,7 +314,7 @@ class AudioRecorder(QObject):
                     first_hit, self._limit_hit = not self._limit_hit, True
                     frame = None
                 else:
-                    frame = frame[:room]
+                    frame = samples[:room]
             if frame is not None:
                 self._chunks.append(frame)
                 self._total += frame.shape[0]
