@@ -1,6 +1,14 @@
 import numpy as np
+import pytest
 
 from dikte.ui.sphere import BANDS, POINT_COUNT, REST_SPIKE, SphereWidget, fibonacci_sphere
+
+
+def feed(w, buckets, ticks=20):
+    """Kayıttaki gibi sürekli ses: her karede aynı paket; seviye hedefe yerleşir."""
+    for _ in range(ticks):
+        w.push_buckets(buckets)
+        w._tick()
 
 
 def test_fibonacci_sphere_gives_unit_vectors():
@@ -27,7 +35,7 @@ def test_silent_sphere_is_smooth(qtbot):
 def test_loud_audio_grows_spikes(qtbot):
     w = SphereWidget()
     qtbot.addWidget(w)
-    w.push_buckets((1.0,) * 16)
+    feed(w, (1.0,) * 16)
     assert w.level > 0.5
     radii = w.spike_radii()
     assert radii.max() > 1.3
@@ -38,8 +46,8 @@ def test_louder_audio_means_longer_spikes(qtbot):
     loud = SphereWidget()
     qtbot.addWidget(quiet)
     qtbot.addWidget(loud)
-    quiet.push_buckets((0.2,) * 16)
-    loud.push_buckets((0.9,) * 16)
+    feed(quiet, (0.2,) * 16)
+    feed(loud, (0.9,) * 16)
     assert loud.spike_radii().mean() > quiet.spike_radii().mean()
 
 
@@ -47,14 +55,14 @@ def test_spikes_are_uneven_when_loud(qtbot):
     """Dikenli görünüm: tüm noktalar aynı boyda uzarsa sadece büyüyen bir top olur."""
     w = SphereWidget()
     qtbot.addWidget(w)
-    w.push_buckets((0.8,) * 16)
+    feed(w, (0.8,) * 16)
     assert w.spike_radii().std() > 0.05
 
 
 def test_level_decays_on_tick(qtbot):
     w = SphereWidget()
     qtbot.addWidget(w)
-    w.push_buckets((1.0,) * 16)
+    feed(w, (1.0,) * 16)
     before = w.level
     w._tick()
     assert w.level < before
@@ -63,7 +71,7 @@ def test_level_decays_on_tick(qtbot):
 def test_clear_resets_level(qtbot):
     w = SphereWidget()
     qtbot.addWidget(w)
-    w.push_buckets((1.0,) * 16)
+    feed(w, (1.0,) * 16)
     w.clear()
     assert w.level == 0.0
 
@@ -91,7 +99,7 @@ def test_paints_without_error_silent_and_loud(qtbot):
     qtbot.addWidget(w)
     w.resize(96, 96)
     assert not w.grab().isNull()
-    w.push_buckets((1.0,) * 16)
+    feed(w, (1.0,) * 16)
     assert not w.grab().isNull()
 
 
@@ -99,7 +107,7 @@ def test_spikes_follow_their_own_band(qtbot):
     """Ses tek dilimdeyse yalnızca o dilime bağlı dikenler uzar."""
     w = SphereWidget()
     qtbot.addWidget(w)
-    w.push_buckets((1.0,) + (0.0,) * (BANDS - 1))
+    feed(w, (1.0,) + (0.0,) * (BANDS - 1))
     radii = w.spike_radii()
     quiet = radii[w._band != 0]
     assert radii[w._band == 0].max() > 1.3
@@ -110,10 +118,11 @@ def test_spin_speed_does_not_depend_on_level(qtbot):
     w = SphereWidget()
     qtbot.addWidget(w)
     w._tick()
-    quiet = w._angle
-    w.push_buckets((1.0,) * 16)
+    step = w._angle
+    feed(w, (1.0,) * 16)
+    before = w._angle
     w._tick()
-    assert w._angle - quiet == quiet
+    assert w._angle - before == pytest.approx(step)
 
 
 def test_sensitivity_scales_levels(qtbot):
@@ -122,7 +131,7 @@ def test_sensitivity_scales_levels(qtbot):
     w = SphereWidget()
     qtbot.addWidget(w)
     w.set_settings(IndicatorSettings(sensitivity=4.0))
-    w.push_buckets((0.2,) * 16)
+    feed(w, (0.2,) * 16)
     assert w.level == 0.8
 
 
@@ -132,7 +141,7 @@ def test_all_color_modes_paint(qtbot):
     w = SphereWidget()
     qtbot.addWidget(w)
     w.resize(96, 96)
-    w.push_buckets((1.0,) * 16)
+    feed(w, (1.0,) * 16)
     for mode in ("holo", "theme", "custom"):
         w.set_settings(IndicatorSettings(color_mode=mode, glow=0.0, core_opacity=0.0))
         assert not w.grab().isNull()
@@ -144,7 +153,29 @@ def test_core_swells_with_level(qtbot):
     w = SphereWidget()
     qtbot.addWidget(w)
     assert w.core_scale() == 1.0
-    w.push_buckets((1.0,) * 16)
+    feed(w, (1.0,) * 16)
     assert w.core_scale() == 1.0 + IndicatorSettings().swell
     w.set_settings(IndicatorSettings(swell=0.0))
     assert w.core_scale() == 1.0
+
+
+def test_more_spikes_appear_when_louder(qtbot):
+    """Dalga gibi: ses arttıkça hem açılan diken sayısı hem boyu artar."""
+    w = SphereWidget()
+    qtbot.addWidget(w)
+    counts = []
+    for level in (0.0, 0.3, 0.6, 1.0):
+        w.clear()
+        feed(w, (level,) * 16)
+        counts.append(int((w.spike_radii() > 1.0 + REST_SPIKE + 1e-6).sum()))
+    assert counts[0] == 0
+    assert counts == sorted(counts) and counts[1] < counts[3]
+
+
+def test_rise_is_smoothed_over_frames(qtbot):
+    """Ses paketi ~100 ms'de bir gelir; seviye tek karede sıçramaz, birkaç karede yükselir."""
+    w = SphereWidget()
+    qtbot.addWidget(w)
+    w.push_buckets((1.0,) * 16)
+    w._tick()
+    assert 0.0 < w.level < 1.0

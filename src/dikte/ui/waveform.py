@@ -10,7 +10,7 @@ from PySide6.QtWidgets import QWidget
 from dikte.config import IndicatorSettings
 
 BAR_COUNT = IndicatorSettings().bar_count
-TICK_MS = 33
+TICK_MS = 16
 
 
 class WaveformWidget(QWidget):
@@ -22,6 +22,7 @@ class WaveformWidget(QWidget):
         self._bars: tuple[float, ...] = (0.0,) * self._cfg.bar_count
         self._color = QColor(color)
         self._timer = QTimer(self)
+        self._timer.setTimerType(Qt.TimerType.PreciseTimer)
         self._timer.timeout.connect(self._tick)
         self._timer.start(TICK_MS)
         self.setMinimumHeight(40)
@@ -60,7 +61,9 @@ class WaveformWidget(QWidget):
 
     def _tick(self) -> None:
         if any(self._bars):
-            self._bars = tuple(v * self._cfg.decay if v > 0.01 else 0.0 for v in self._bars)
+            # `decay` 1/30 sn için tanımlı: kare hızı değişse de sönüş hızı aynı kalır.
+            k = self._cfg.decay ** (self._timer.interval() / 1000.0 * 30.0)
+            self._bars = tuple(v * k if v > 0.01 else 0.0 for v in self._bars)
             self.update()
 
     def paintEvent(self, event) -> None:

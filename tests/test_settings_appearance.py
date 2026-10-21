@@ -71,4 +71,5 @@ def test_fake_audio_drives_preview(qtbot):
     tab = make(qtbot)
     for _ in range(5):
         tab._push_fake_audio()
+    tab.preview_sphere._tick()
     assert tab.preview_sphere.level > 0

@@ -260,7 +260,8 @@ def test_buckets_reach_only_the_active_indicator(qtbot):
     o.set_indicator("sphere")
     o.show_recording()
     o.on_buckets((1.0,) * 16)
-    assert o._sphere.level > 0.5
+    o._sphere._tick()
+    assert o._sphere.level > 0.3
     assert max(o._wave.bars) == 0.0
 
 

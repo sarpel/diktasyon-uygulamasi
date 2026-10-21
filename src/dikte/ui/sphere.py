@@ -26,7 +26,8 @@ _DEFAULTS = IndicatorSettings()
 POINT_COUNT = _DEFAULTS.point_count
 REST_SPIKE = _DEFAULTS.rest_spike
 BANDS = 16  # ses dilimi sayısı; her diken birine bağlı
-TICK_MS = 33  # ~30 kare/sn (ayarla değişir)
+TICK_MS = 16  # ~60 kare/sn (ayarla değişir)
+ATTACK = 0.35  # yükselişte 1/30 sn sonra kalan fark oranı: ~100 ms'lik ses paketleri arası akıcı
 
 DEFAULT_COLORS = ("#E53935", "#FF8A65")  # (tema vurgusu, tema ikinci vurgusu)
 
@@ -50,9 +51,12 @@ class SphereWidget(QWidget):
         self._base = QColor(colors[0])
         self._tip = QColor(colors[1])
         self._levels = np.zeros(BANDS)
+        self._target = np.zeros(BANDS)  # son ses paketi; `_levels` kare kare buna yaklaşır
         self._t = 0.0
         self._angle = 0.0
         self._timer = QTimer(self)
+        # Windows'taki kaba (~16 ms) zamanlayıcı 60 fps'te kare atlatır.
+        self._timer.setTimerType(Qt.TimerType.PreciseTimer)
         self._timer.timeout.connect(self._tick)
         self.setMinimumSize(48, 48)
         self.set_settings(_DEFAULTS)
@@ -79,6 +83,7 @@ class SphereWidget(QWidget):
             self._phase = rng.uniform(0.0, 2.0 * math.pi, cfg.point_count)
             self._speed = rng.uniform(0.15, 0.45, cfg.point_count)
             self._band = rng.integers(0, BANDS, cfg.point_count)
+            self._rank = rng.uniform(0.0, 1.0, cfg.point_count)  # açılma sırası (eşik)
         self._cfg = cfg
         self._timer.setInterval(max(1, 1000 // cfg.fps))
         self.update()
@@ -90,17 +95,16 @@ class SphereWidget(QWidget):
         self.update()
 
     def push_buckets(self, buckets: tuple[float, ...]) -> None:
-        """0–1 arası seviye dilimlerini `BANDS` dilime örnekler: yükselişte anında, inişte
-        `_tick` içindeki sönümle (dalga göstergesindeki davranışla aynı)."""
+        """0–1 arası seviye dilimlerini `BANDS` dilime örnekleyip hedef yapar; görünen seviye
+        `_tick`te ona yumuşakça yaklaşır (yükselişte hızlı, inişte `decay` ile)."""
         if not buckets:
             return
         src = np.clip(np.asarray(buckets, dtype=np.float64) * self._cfg.sensitivity, 0.0, 1.0)
-        new = np.interp(np.linspace(0, src.size - 1, BANDS), np.arange(src.size), src)
-        self._levels = np.maximum(self._levels, new)
-        self.update()
+        self._target = np.interp(np.linspace(0, src.size - 1, BANDS), np.arange(src.size), src)
 
     def clear(self) -> None:
         self._levels = np.zeros(BANDS)
+        self._target = np.zeros(BANDS)
         self.update()
 
     def core_scale(self) -> float:
@@ -113,7 +117,11 @@ class SphereWidget(QWidget):
         wobble = 0.5 + 0.5 * np.sin(self._phase + self._t * self._speed * 6.0)
         # Gürültünün karesi: çoğu diken kısa, bazıları belirgin uzun → "dikenli" görünüm.
         shape = (1.0 - c.spikiness) + c.spikiness * wobble**2
-        return 1.0 + c.rest_spike + c.max_spike * self._levels[self._band] * shape
+        # Eşiği seviyenin altında kalan diken açılır: ses arttıkça hem sayı hem boy artar.
+        threshold = self._rank * c.spike_reveal
+        level = self._levels[self._band]
+        amount = np.clip((level - threshold) / (1.0 - threshold), 0.0, 1.0)
+        return 1.0 + c.rest_spike + c.max_spike * amount * shape
 
     # ---- Qt
     def showEvent(self, event) -> None:
@@ -128,8 +136,12 @@ class SphereWidget(QWidget):
         dt = self._timer.interval() / 1000.0
         self._t += dt
         self._angle += self._cfg.spin_speed * dt
-        decayed = self._levels * self._cfg.decay
-        self._levels = np.where(decayed > 0.01, decayed, 0.0)
+        frames = dt * 30.0  # `decay` ve `ATTACK` 1/30 sn için tanımlı: fps'ten bağımsız hız
+        rise = self._target > self._levels
+        keep = np.where(rise, ATTACK**frames, self._cfg.decay**frames)
+        levels = self._target + (self._levels - self._target) * keep
+        self._levels = np.where(np.abs(levels - self._target) > 0.005, levels, self._target)
+        self._target = self._target * self._cfg.decay**frames  # paket kesilirse sönsün
         self.update()
 
     def _projected(self) -> tuple[np.ndarray, np.ndarray]:

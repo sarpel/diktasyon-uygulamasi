@@ -160,15 +160,17 @@ class IndicatorSettings(BaseModel):
     # ---- ortak
     size: int = Field(default=88, ge=48, le=240)  # küre kutusu / dalga yüksekliği (piksel)
     sensitivity: float = Field(default=1.0, ge=0.2, le=5.0)  # ses seviyesi çarpanı
-    decay: float = Field(default=0.88, ge=0.5, le=0.99)  # her karede korunan seviye oranı
-    fps: int = Field(default=30, ge=10, le=60)
+    decay: float = Field(default=0.88, ge=0.5, le=0.99)  # 1/30 sn'de korunan seviye oranı
+    fps: int = Field(default=60, ge=10, le=120)
     # ---- küre
     color_mode: Literal["holo", "theme", "custom"] = "holo"  # diken renkleri nereden gelir
     hue_low: float = Field(default=0.48, ge=0.0, le=1.0)  # holografik ton aralığı başı
     hue_high: float = Field(default=0.86, ge=0.0, le=1.0)  # … sonu (cyan → magenta)
     custom_color: str = Field(default="#00E5FF", pattern=r"^#[0-9A-Fa-f]{6}$")
     custom_color2: str = Field(default="#FF00E5", pattern=r"^#[0-9A-Fa-f]{6}$")
-    point_count: int = Field(default=180, ge=30, le=600)  # diken sayısı
+    point_count: int = Field(default=96, ge=30, le=600)  # en fazla diken sayısı
+    # 0: tüm dikenler hep açık; 1: açık diken sayısı sesle sıfırdan tamamına çıkar.
+    spike_reveal: float = Field(default=0.85, ge=0.0, le=1.0)
     max_spike: float = Field(default=0.75, ge=0.1, le=2.0)  # tam seste diken boyu / yarıçap
     rest_spike: float = Field(default=0.05, ge=0.0, le=0.5)  # sessizlikte kalan diken boyu
     spikiness: float = Field(default=0.85, ge=0.0, le=1.0)  # 0 düzgün büyüme, 1 çok düzensiz

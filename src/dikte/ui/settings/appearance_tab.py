@@ -49,12 +49,20 @@ _COMMON = (
         "Ses seviyesi çarpanı; sessiz mikrofonda artırın.",
     ),
     ("decay", "Sönüm", 0.5, 0.99, 0.01, "Ses kesilince dikenlerin/çubukların inme yavaşlığı."),
-    ("fps", "Kare hızı", 10, 60, 5, "Saniyedeki çizim sayısı; düşük değer CPU'yu rahatlatır."),
+    ("fps", "Kare hızı", 10, 120, 5, "Saniyedeki çizim sayısı; düşük değer CPU'yu rahatlatır."),
 )
 _SPHERE = (
     ("hue_low", "Ton başı", 0.0, 1.0, 0.01, "Holografik kipte ton aralığının başı (0–1)."),
     ("hue_high", "Ton sonu", 0.0, 1.0, 0.01, "Holografik kipte ton aralığının sonu (0–1)."),
-    ("point_count", "Diken sayısı", 30, 600, 10, "Kürenin yüzeyindeki diken sayısı."),
+    ("point_count", "Diken sayısı", 30, 600, 10, "Tam seste çıkabilecek en fazla diken."),
+    (
+        "spike_reveal",
+        "Sesle açılım",
+        0.0,
+        1.0,
+        0.05,
+        "Ses yükseldikçe daha çok diken çıkar; 0 = tüm dikenler hep açık.",
+    ),
     ("max_spike", "En uzun diken", 0.1, 2.0, 0.05, "Tam seste dikenin yarıçapa oranı."),
     ("rest_spike", "Sessizlikte diken", 0.0, 0.5, 0.01, "Ses yokken kalan diken boyu."),
     ("spikiness", "Düzensizlik", 0.0, 1.0, 0.05, "0: tüm dikenler eşit uzar, 1: çok düzensiz."),
